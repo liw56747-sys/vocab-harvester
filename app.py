@@ -212,7 +212,15 @@ def main():
         js_api=JsApi(),
     )
 
-    webview.start(debug=False)
+    # 持久化浏览器数据目录（localStorage 等跨次启动保留）
+    webview_data = _EXE_DIR / "data" / "webview"
+    webview_data.mkdir(parents=True, exist_ok=True)
+
+    webview.start(
+        debug=False,
+        private_mode=False,
+        user_data_dir=str(webview_data),
+    )
     _log("application exited")
 
 
