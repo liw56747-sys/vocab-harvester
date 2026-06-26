@@ -136,6 +136,16 @@ class VocabStorage:
         await db.commit()
         return cursor.rowcount > 0
 
+    async def delete(self, word: str, category: str = "") -> bool:
+        """删除词条"""
+        db = await get_db()
+        cursor = await db.execute(
+            "DELETE FROM vocabulary WHERE word = ? AND category = ?",
+            (word, category),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
     async def export_all(self, status: VocabStatus | None = None) -> list[dict[str, Any]]:
         """导出所有词条"""
         db = await get_db()

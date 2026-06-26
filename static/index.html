@@ -1,0 +1,2764 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vocab Harvester - 词库构建系统</title>
+<style>
+/* ═══════════════════════════════════════════════════
+   Design System — Modern Minimalist
+   Primary: #4F46E5  |  Surface: #FFFFFF
+   Background: #F8FAFC  |  Text: #0F172A
+   ═══════════════════════════════════════════════════ */
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --primary: #4F46E5;
+  --primary-light: #EEF2FF;
+  --primary-hover: #4338CA;
+  --success: #059669;
+  --success-light: #ECFDF5;
+  --warning: #D97706;
+  --warning-light: #FFFBEB;
+  --danger: #DC2626;
+  --danger-light: #FEF2F2;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
+  --bg: #F8FAFC;
+  --surface: #FFFFFF;
+  --border: #E2E8F0;
+  --border-light: #F1F5F9;
+  --sidebar-bg: #0F172A;
+  --sidebar-hover: #1E293B;
+  --sidebar-active: rgba(79, 70, 229, 0.15);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+  --transition: 0.2s ease;
+}
+
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ── */
+.app { display: flex; min-height: 100vh; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 240px;
+  background: var(--sidebar-bg);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  z-index: 100;
+}
+
+.sidebar-brand {
+  padding: 28px 24px 24px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.sidebar-brand h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-brand h1 svg { flex-shrink: 0; opacity: 0.9; }
+
+.sidebar-brand .subtitle {
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+  margin-top: 4px;
+  padding-left: 30px;
+}
+
+.sidebar-nav {
+  padding: 16px 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 450;
+  color: rgba(255,255,255,0.6);
+  transition: all var(--transition);
+  position: relative;
+  user-select: none;
+}
+
+.nav-item svg { flex-shrink: 0; opacity: 0.5; transition: opacity var(--transition); }
+
+.nav-item:hover {
+  background: var(--sidebar-hover);
+  color: rgba(255,255,255,0.9);
+}
+
+.nav-item:hover svg { opacity: 0.8; }
+
+.nav-item.active {
+  background: var(--sidebar-active);
+  color: #fff;
+  font-weight: 550;
+}
+
+.nav-item.active svg { opacity: 1; }
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  background: var(--primary);
+  border-radius: 0 3px 3px 0;
+}
+
+.sidebar-footer {
+  padding: 16px 24px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 11px;
+  color: rgba(255,255,255,0.25);
+}
+
+/* ── Update Banner ── */
+.update-banner {
+  display: none;
+  position: fixed;
+  top: 0; left: 240px; right: 0;
+  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+  color: #fff;
+  padding: 10px 24px;
+  font-size: 13px;
+  z-index: 200;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(79,70,229,0.3);
+}
+.update-banner.show { display: flex; }
+.update-banner a {
+  color: #fff;
+  background: rgba(255,255,255,0.2);
+  padding: 4px 14px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+.update-banner a:hover { background: rgba(255,255,255,0.35); }
+.update-banner-close {
+  background: none; border: none; color: rgba(255,255,255,0.6);
+  cursor: pointer; font-size: 18px; padding: 0 4px; margin-left: 8px;
+}
+.update-banner-close:hover { color: #fff; }
+.main.has-banner { padding-top: 72px; }
+
+/* ── Main Content ── */
+.main {
+  flex: 1;
+  margin-left: 240px;
+  padding: 32px 40px;
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
+.page { display: none; animation: fadeIn 0.25s ease; }
+.page.active { display: block; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+.page-header {
+  margin-bottom: 28px;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.page-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+/* ── Cards ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition);
+}
+
+.card:hover { box-shadow: var(--shadow); }
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.card-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+/* ── Stat Cards ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+}
+
+.stat-card.total::before { background: var(--primary); }
+.stat-card.pending::before { background: var(--warning); }
+.stat-card.approved::before { background: var(--success); }
+.stat-card.rejected::before { background: var(--danger); }
+
+.stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.stat-card.total .stat-value { color: var(--primary); }
+.stat-card.pending .stat-value { color: var(--warning); }
+.stat-card.approved .stat-value { color: var(--success); }
+.stat-card.rejected .stat-value { color: var(--danger); }
+
+/* ── Forms ── */
+.form-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--surface);
+  outline: none;
+  transition: all var(--transition);
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted);
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+
+/* ── Secret Input (password with eye toggle) ── */
+.secret-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.secret-input-wrap input {
+  width: 100%;
+  padding-right: 38px;
+}
+
+.secret-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  transition: color var(--transition);
+}
+
+.secret-toggle:hover { color: var(--text-secondary); }
+
+/* ── Collapsible Card ── */
+.card-header-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.card-header-toggle .chevron {
+  transition: transform 0.25s ease;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.collapsible-card.collapsed .card-body { display: none; }
+
+.collapsible-card.collapsed .chevron { transform: rotate(-90deg); }
+
+/* ── Scraping Cards Grid ── */
+.scrape-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+.scrape-cards-grid .card { margin-bottom: 0; }
+@media (max-width: 1024px) {
+  .scrape-cards-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Locked Panel ── */
+.cookie-panel.locked input { pointer-events: none; opacity: 0.6; background: var(--border-light); }
+.cookie-panel.locked .secret-toggle { display: none; }
+.cookie-panel.locked .cookie-edit-btn { display: inline-flex; }
+.cookie-panel.locked .cookie-save-btn { display: none; }
+.cookie-panel:not(.locked) .cookie-edit-btn { display: none; }
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 550;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-primary:active { transform: scale(0.98); }
+.btn-primary:disabled { background: #C7D2FE; cursor: not-allowed; transform: none; }
+
+.btn-success { background: var(--success); color: #fff; }
+.btn-success:hover { background: #047857; }
+
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: #B91C1C; }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border-light); border-color: #CBD5E1; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 9px 12px;
+}
+.btn-ghost:hover { background: var(--border-light); }
+
+.btn-upload {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px dashed var(--border);
+  padding: 6px 14px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.btn-upload:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+.btn-upload svg { width: 14px; height: 14px; margin-right: 4px; vertical-align: -3px; }
+
+.keyword-result {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.btn-sm { padding: 5px 12px; font-size: 12px; border-radius: var(--radius-xs); }
+
+/* ── Sort Toggle ── */
+.sort-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.sort-btn {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sort-btn:first-child { border-right: 1px solid var(--border); }
+.sort-btn:hover { background: var(--border-light); }
+.sort-btn.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-download {
+  background: #1D9BF0;
+  color: #fff;
+}
+.btn-download:hover { background: #1A8CD8; }
+
+/* ── Cookie Tabs ── */
+.cookie-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.cookie-tab {
+  padding: 10px 24px;
+  font-size: 13px;
+  font-weight: 550;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  position: relative;
+  transition: all var(--transition);
+  font-family: inherit;
+}
+
+.cookie-tab:hover { color: var(--text-secondary); }
+
+.cookie-tab.active {
+  color: var(--primary);
+}
+
+.cookie-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -2px;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 2px 2px 0 0;
+}
+
+.cookie-panel { animation: fadeIn 0.2s ease; }
+
+/* ── Platform Checks ── */
+.platform-checks {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.platform-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  user-select: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.platform-check:hover { border-color: #CBD5E1; background: var(--border-light); }
+
+.platform-check.selected {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.platform-check input[type="checkbox"] { display: none; }
+
+.platform-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.platform-dot.twitter { background: #1D9BF0; }
+.platform-dot.reddit { background: #FF4500; }
+
+/* ── Platform Badges in Post Cards ── */
+.post-platform-badge {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.post-platform-badge.twitter { background: #E8F5FD; color: #1D9BF0; }
+.post-platform-badge.reddit { background: #FFF0EB; color: #FF4500; }
+
+/* ── Table ── */
+.table-wrap { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead th {
+  background: var(--border-light);
+  padding: 10px 14px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+thead th:first-child { border-radius: var(--radius-sm) 0 0 0; }
+thead th:last-child { border-radius: 0 var(--radius-sm) 0 0; }
+
+tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+tbody tr { transition: background var(--transition); }
+tbody tr:hover { background: #FAFBFE; }
+
+/* ── Badges ── */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.badge-pending { background: var(--warning-light); color: #92400E; }
+.badge-approved { background: var(--success-light); color: #065F46; }
+.badge-rejected { background: var(--danger-light); color: #991B1B; }
+.badge-action { background: var(--primary-light); color: #3730A3; }
+.badge-observe { background: #DBEAFE; color: #1E40AF; }
+.badge-add { background: var(--success-light); color: #065F46; }
+.badge-reject-action { background: var(--danger-light); color: #991B1B; }
+
+/* ── Filters Bar ── */
+.filters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.filters .form-group { min-width: 0; }
+
+/* ── Batch Bar ── */
+.batch-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  background: var(--primary-light);
+  border: 1px solid #C7D2FE;
+  border-radius: var(--radius-sm);
+}
+
+.batch-bar .count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-right: auto;
+}
+.batch-bar .count strong { color: var(--primary); font-weight: 700; }
+
+/* ── Pagination ── */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-light);
+}
+
+.pagination .info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ── Evidence Cell ── */
+.evidence-cell {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+.evidence-cell:hover { white-space: normal; overflow: visible; }
+
+/* ── Loading Spinner ── */
+.loading {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #fff;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Toast ── */
+.toast {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  padding: 12px 24px;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 9999;
+  animation: slideIn 0.3s ease;
+  box-shadow: var(--shadow-md);
+}
+.toast-success { background: var(--success); }
+.toast-error { background: var(--danger); }
+.toast-info { background: var(--primary); }
+
+@keyframes slideIn { from { transform: translateX(80px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ── Crawl Result ── */
+.crawl-result {
+  background: var(--success-light);
+  border: 1px solid #A7F3D0;
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.crawl-result.error {
+  background: var(--danger-light);
+  border-color: #FECACA;
+}
+
+.result-stats {
+  display: flex;
+  gap: 24px;
+  margin-top: 14px;
+}
+
+.result-stat { text-align: center; }
+
+.result-stat .num {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: -0.02em;
+}
+
+.result-stat .lbl {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── Post Cards ── */
+.sampled-posts { margin-top: 24px; }
+
+.sampled-posts h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.post-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  transition: box-shadow var(--transition);
+}
+
+.post-card:hover { box-shadow: var(--shadow); }
+
+.post-card .post-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.post-card .post-platform {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 20px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.post-card .post-author {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.post-card .post-content {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 1.65em;
+  overflow: hidden;
+}
+.post-card .post-content.expanded {
+  max-height: none;
+  overflow: visible;
+}
+.post-card .post-content.long-truncated {
+  max-height: none;
+  overflow: visible;
+  color: var(--text-secondary, #666);
+}
+.post-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+  margin-top: 2px;
+}
+.post-toggle-btn:hover { text-decoration: underline; }
+
+.post-card .post-media {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #F0F7FF;
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+}
+.media-thumb-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.media-thumb-wrap {
+  position: relative;
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+  width: 120px;
+  height: 120px;
+  background: #f0f0f0;
+}
+.media-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.media-play-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 28px;
+  color: white;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  pointer-events: none;
+}
+.media-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+}
+.media-lightbox.active { display: flex; }
+.media-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  box-shadow: 0 4px 40px rgba(0,0,0,0.5);
+}
+.media-lightbox-close {
+  position: absolute;
+  top: 20px;
+  right: 30px;
+  font-size: 36px;
+  color: white;
+  cursor: pointer;
+}
+
+.post-card .post-meta {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 16px;
+}
+
+/* ── Export Buttons ── */
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: all var(--transition);
+  text-align: left;
+}
+
+.export-btn:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+}
+
+.export-btn .export-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.export-btn .export-icon.json { background: #EEF2FF; color: var(--primary); }
+.export-btn .export-icon.csv { background: #ECFDF5; color: var(--success); }
+.export-btn .export-icon.txt { background: #FEF3C7; color: var(--warning); }
+
+.export-btn .export-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.export-btn .export-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Checkbox group ── */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+
+/* ── Details/Summary ── */
+details {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+details summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--primary);
+  padding: 4px 0;
+  user-select: none;
+}
+
+details summary:hover { text-decoration: underline; }
+
+details[open] summary { margin-bottom: 8px; }
+
+details .detail-content {
+  padding: 12px 16px;
+  background: var(--border-light);
+  border-radius: var(--radius-sm);
+  line-height: 1.8;
+}
+
+/* ── Code blocks ── */
+code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12px;
+  background: var(--border-light);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--primary);
+}
+
+pre {
+  background: var(--border-light);
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  margin: 8px 0;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+kbd {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  background: var(--border-light);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--border);
+}
+
+/* ── Utility ── */
+.flex { display: flex; }
+.items-center { align-items: center; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+.gap-16 { gap: 16px; }
+.mt-8 { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.mb-16 { margin-bottom: 16px; }
+.text-muted { color: var(--text-muted); font-size: 13px; }
+.text-sm { font-size: 13px; }
+.fw-600 { font-weight: 600; }
+
+/* ── 结果卡片分页 ── */
+.posts-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; margin-bottom: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.posts-info { font-size: 13px; color: var(--text-muted); }
+.posts-pager {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; padding: 12px 0; margin-top: 8px;
+}
+.posts-page-info { font-size: 13px; color: var(--text-muted); min-width: 80px; text-align: center; }
+.posts-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ═══ Sidebar ═══ -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <h1>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
+        Vocab Harvester
+      </h1>
+      <div class="subtitle">词库构建系统</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showPage('dashboard', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        仪表盘
+      </div>
+      <div class="nav-item" onclick="showPage('twitter', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        数据抓取
+      </div>
+      <div class="nav-item" onclick="showPage('import', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        数据导入
+      </div>
+      <div class="nav-item" onclick="showPage('vocabulary', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        词库管理
+      </div>
+      <div class="nav-item" onclick="showPage('export', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        导出
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">Vocab Harvester <span id="app-version">v1.0</span></div>
+  </aside>
+
+  <!-- ═══ Main Content ═══ -->
+  <div class="main">
+
+    <!-- ─── Dashboard ─── -->
+    <div id="page-dashboard" class="page active">
+      <div class="page-header">
+        <div class="page-title">仪表盘</div>
+        <div class="page-desc">词库数据概览与最近词条</div>
+      </div>
+
+      <div class="stats-grid" id="stats-row">
+        <div class="stat-card total"><div class="stat-label">总词条</div><div class="stat-value" id="stat-total">-</div></div>
+        <div class="stat-card pending"><div class="stat-label">待审核</div><div class="stat-value" id="stat-pending">-</div></div>
+        <div class="stat-card approved"><div class="stat-label">已通过</div><div class="stat-value" id="stat-approved">-</div></div>
+        <div class="stat-card rejected"><div class="stat-label">已拒绝</div><div class="stat-value" id="stat-rejected">-</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">最近词条</div>
+        <div class="card-desc">最新进入词库的词条</div>
+        <div class="table-wrap">
+          <table id="recent-table">
+            <thead><tr><th>词条</th><th>分类</th><th>评分</th><th>动作</th><th>状态</th><th>发现时间</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Twitter ─── -->
+    <div id="page-twitter" class="page">
+      <div class="page-header">
+        <div class="page-title">多平台数据抓取</div>
+        <div class="page-desc">通过浏览器 Cookie 认证，从 Twitter/X、Reddit 等平台搜索并抓取数据</div>
+      </div>
+
+      <!-- Cookie 配置 -->
+      <div class="card collapsible-card" id="twitter-login-card">
+        <div class="card-header-toggle" onclick="toggleCookieCard()">
+          <div>
+            <div class="card-title" style="margin-bottom:0">Cookie 认证</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px" id="cookie-card-summary">未配置</div>
+          </div>
+          <svg class="chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+
+        <div class="card-body" style="margin-top:16px">
+          <div class="card-desc">
+            每个访问者使用<strong>自己浏览器中保存的 Cookie</strong>，Cookie 仅存储在你本机的浏览器中，不会共享给其他人。
+            <strong style="color:var(--danger)">国内用户需同时填写代理地址</strong>。
+          </div>
+
+          <!-- 平台 Tab -->
+          <div class="cookie-tabs">
+            <button class="cookie-tab active" onclick="switchCookieTab('twitter')">Twitter / X</button>
+            <button class="cookie-tab" onclick="switchCookieTab('reddit')">Reddit</button>
+          </div>
+
+          <!-- Twitter Cookie -->
+          <div id="cookie-panel-twitter" class="cookie-panel">
+            <details style="margin-bottom:12px">
+              <summary>如何获取 Twitter Cookie</summary>
+              <div class="detail-content">
+                <p><strong>步骤 1：</strong>在浏览器中打开 <a href="https://x.com" target="_blank" style="color:var(--primary)">x.com</a> 并登录</p>
+                <p><strong>步骤 2：</strong>按 <kbd>F12</kbd> 打开开发者工具</p>
+                <p><strong>步骤 3：</strong>Application → Cookies → <code>https://x.com</code></p>
+                <p><strong>步骤 4：</strong>复制 <code>ct0</code> 和 <code>auth_token</code> 的值</p>
+              </div>
+            </details>
+            <div class="form-row">
+              <div class="form-group" style="flex:1">
+                <label>ct0 <span style="color:var(--text-muted);font-size:11px">CSRF Token</span></label>
+                <div class="secret-input-wrap">
+                  <input type="password" id="tw-ct0" placeholder="从浏览器 Cookie 中复制" style="font-family:monospace;font-size:12px">
+                  <button type="button" class="secret-toggle" onclick="toggleSecret('tw-ct0', this)" title="显示/隐藏">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="form-group" style="flex:1">
+                <label>auth_token <span style="color:var(--text-muted);font-size:11px">会话 Token</span></label>
+                <div class="secret-input-wrap">
+                  <input type="password" id="tw-auth-token" placeholder="从浏览器 Cookie 中复制" style="font-family:monospace;font-size:12px">
+                  <button type="button" class="secret-toggle" onclick="toggleSecret('tw-auth-token', this)" title="显示/隐藏">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="flex:1;max-width:420px">
+                <label>代理地址 <span style="color:var(--text-muted);font-size:11px">国内必填</span></label>
+                <input type="text" id="tw-proxy" placeholder="http://127.0.0.1:7897">
+              </div>
+              <button class="btn btn-primary cookie-save-btn" onclick="saveCookie('twitter')">保存 Twitter Cookie</button>
+              <button class="btn btn-secondary cookie-edit-btn" onclick="unlockCookiePanel('twitter')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                修改
+              </button>
+            </div>
+            <div id="tw-cookie-status" style="margin-top:8px;font-size:12px"></div>
+          </div>
+
+          <!-- Reddit Cookie -->
+          <div id="cookie-panel-reddit" class="cookie-panel" style="display:none">
+            <details style="margin-bottom:12px">
+              <summary>如何获取 Reddit Cookie</summary>
+              <div class="detail-content">
+                <p><strong>步骤 1：</strong>在浏览器中打开 <a href="https://www.reddit.com" target="_blank" style="color:var(--primary)">reddit.com</a> 并登录</p>
+                <p><strong>步骤 2：</strong>按 <kbd>F12</kbd> 打开开发者工具</p>
+                <p><strong>步骤 3：</strong>Application → Cookies → <code>https://www.reddit.com</code></p>
+                <p><strong>步骤 4：</strong>分别复制以下 Cookie 的值（至少需要 <code>reddit_session</code>）：</p>
+                <p style="padding-left:16px">
+                  <code>reddit_session</code> — 会话凭证（必需）<br>
+                  <code>edgebucket</code> — 实验标记（推荐）<br>
+                  <code>redesign_optout</code> — 界面标记（推荐）
+                </p>
+                <p><strong>快捷方式：</strong>在 Console 中执行 <code>document.cookie</code>，复制输出的整段字符串粘贴到下方即可。</p>
+              </div>
+            </details>
+            <div class="form-group mb-16">
+              <label>Cookie <span style="color:var(--text-muted);font-size:11px">粘贴完整 Cookie 字符串或单独填写 reddit_session</span></label>
+              <div class="secret-input-wrap">
+                <input type="password" id="rd-cookies" placeholder='从 Console 粘贴 document.cookie 输出，或直接填写 reddit_session 值' style="font-family:monospace;font-size:12px;width:100%;padding-right:38px">
+                <button type="button" class="secret-toggle" onclick="toggleSecret('rd-cookies', this)" title="显示/隐藏">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="flex:1;max-width:420px">
+                <label>代理地址 <span style="color:var(--text-muted);font-size:11px">国内必填</span></label>
+                <input type="text" id="rd-proxy" placeholder="http://127.0.0.1:7897">
+              </div>
+              <button class="btn btn-primary cookie-save-btn" onclick="saveCookie('reddit')">保存 Reddit Cookie</button>
+              <button class="btn btn-secondary cookie-edit-btn" onclick="unlockCookiePanel('reddit')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                修改
+              </button>
+            </div>
+            <div id="rd-cookie-status" style="margin-top:8px;font-size:12px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 并列卡片容器 -->
+      <div class="scrape-cards-grid">
+
+      <!-- URL 抓取 -->
+      <div class="card collapsible-card" id="user-scrape-card">
+        <div class="card-header-toggle" onclick="toggleCard('user-scrape-card')">
+          <div class="card-title" style="margin:0">用户主页抓取</div>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="card-body" style="margin-top:12px">
+        <div class="card-desc">粘贴 Twitter/X 用户主页链接（每行一个），抓取该用户最近的推文。结果可手动下载为 CSV。</div>
+
+        <div class="form-group mb-16">
+          <label>用户主页链接</label>
+          <textarea id="twitter-urls" rows="6" placeholder="https://x.com/elonmusk&#10;https://x.com/someuser" style="width:100%;font-family:monospace;font-size:13px"></textarea>
+          <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+            <input type="file" id="url-file-input" accept=".txt,.csv" style="display:none" onchange="handleUrlFileUpload(this)">
+            <button class="btn-upload" onclick="document.getElementById('url-file-input').click()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              上传 TXT 文件
+            </button>
+            <span class="text-muted" style="font-size:11px">每行一个链接，自动填入上方</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-16 mb-16">
+          <div class="form-group">
+            <label>每用户条数</label>
+            <input type="number" id="twitter-count" value="50" min="1" max="200" style="width:90px">
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="twitter-include-replies">
+            同时抓取评论
+          </label>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+            <span id="twitter-url-count" class="text-muted text-sm">0 个链接</span>
+            <button class="btn btn-primary" id="twitter-fetch-btn" onclick="startTwitterFetch()">抓取推文</button>
+          </div>
+        </div>
+        </div>
+      </div>
+
+      <!-- 关键词搜索（多平台） -->
+      <div class="card collapsible-card" id="keyword-search-card">
+        <div class="card-header-toggle" onclick="toggleCard('keyword-search-card')">
+          <div class="card-title" style="margin:0">关键词搜索</div>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="card-body" style="margin-top:12px">
+        <div class="card-desc">在选中的平台上搜索相关数据，结果注明平台来源，可手动下载为 CSV。</div>
+
+        <div class="form-group mb-16">
+          <label>搜索关键词</label>
+          <input type="text" id="search-keyword" placeholder="输入关键词，如：网络赌博、电信诈骗" style="width:100%">
+          <details style="margin-top:8px">
+            <summary>高级搜索语法</summary>
+            <div class="detail-content">
+              <strong>Twitter：</strong><br>
+              <code>keyword1 OR keyword2</code> — 任一关键词 &nbsp;
+              <code>"精确短语"</code> — 精确匹配<br>
+              <code>keyword since:2026-01-01 until:2026-06-22</code> — 时间范围<br>
+              <code>keyword min_faves:100</code> — 至少 100 个赞 &nbsp;
+              <code>keyword -exclude_word</code> — 排除某个词<br><br>
+              <strong>Reddit：</strong><br>
+              <code>keyword1 OR keyword2</code> — 任一关键词 &nbsp;
+              <code>"精确短语"</code> — 精确匹配 &nbsp;
+              <code>keyword subreddit:news</code> — 限定子版块
+            </div>
+          </details>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+            <input type="file" id="keyword-file-input" accept=".txt,.csv" style="display:none" onchange="handleKeywordFileUpload(this)">
+            <button class="btn-upload" title="从 TXT 文件导入多个关键词，逐条搜索后合并结果" onclick="document.getElementById('keyword-file-input').click()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              上传 TXT 批量搜索
+            </button>
+            <span class="text-muted" style="font-size:11px">每行一个关键词，逐条搜索后合并为一个 CSV</span>
+          </div>
+        </div>
+
+        <div class="form-group mb-16">
+          <label>搜索平台 <span style="color:var(--text-muted);font-size:11px">（至少选一个）</span></label>
+          <div class="platform-checks" id="platform-checks">
+            <label class="platform-check selected" onclick="togglePlatform(this)">
+              <input type="checkbox" value="twitter" checked>
+              <span class="platform-dot twitter"></span>
+              Twitter / X
+            </label>
+            <label class="platform-check selected" onclick="togglePlatform(this)">
+              <input type="checkbox" value="reddit" checked>
+              <span class="platform-dot reddit"></span>
+              Reddit
+            </label>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-16 mb-16">
+          <div class="form-group">
+            <label>每平台条数</label>
+            <input type="number" id="search-count" value="50" min="1" max="200" style="width:90px">
+          </div>
+          <div class="form-group">
+            <label>排序</label>
+            <div class="sort-toggle">
+              <button class="sort-btn active" id="sort-top" onclick="setSortBy('top')">热门</button>
+              <button class="sort-btn" id="sort-live" onclick="setSortBy('live')">最新</button>
+            </div>
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="search-include-replies">
+            同时抓取评论
+          </label>
+          <div style="margin-left:auto">
+            <button class="btn btn-primary" id="multi-search-btn" onclick="startMultiSearch()">开始搜索</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:8px">
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-secondary)">
+            <input type="checkbox" id="block-resources-toggle">
+            加速模式（屏蔽图片/CSS，页面加载更快）
+          </label>
+        </div>
+        </div>
+      </div>
+
+      </div><!-- /scrape-cards-grid -->
+
+      <!-- 搜索结果（全宽，在卡片下方） -->
+      <div id="twitter-result"></div>
+      <div id="multi-search-result"></div>
+    </div>
+
+    <!-- ─── Import ─── -->
+    <div id="page-import" class="page">
+      <div class="page-header">
+        <div class="page-title">数据导入</div>
+        <div class="page-desc">上传数据文件，系统自动调用工作流提取关键词并写入词库</div>
+      </div>
+
+      <!-- 模型 API 配置 -->
+      <div class="card collapsible-card" id="model-config-card">
+        <div class="card-header-toggle" onclick="toggleCard('model-config-card')">
+          <div>
+            <div class="card-title" style="display:inline">模型 API 配置</div>
+            <span id="model-config-summary" class="text-muted" style="margin-left:12px;font-size:12px">未配置</span>
+          </div>
+          <svg class="chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="card-body" style="margin-top:16px">
+          <div class="card-desc" style="margin-bottom:12px">配置大模型 API 用于导入数据时的智能分析（黑词提取）。支持所有 OpenAI 兼容接口。未配置时仅导入存储，不进行分析。</div>
+          <div class="form-group">
+            <label>API 地址</label>
+            <input type="text" id="model-base-url" placeholder="例如 https://open.bigmodel.cn/api/paas/v4" style="width:100%">
+          </div>
+          <div class="form-group">
+            <label>API 密钥</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="password" id="model-api-key" placeholder="输入 API Key" style="flex:1">
+              <button class="btn btn-secondary btn-sm" onclick="toggleSecret('model-api-key', this)" style="padding:4px 8px;flex-shrink:0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div style="display:flex;gap:16px">
+            <div class="form-group" style="flex:1">
+              <label>模型名称</label>
+              <input type="text" id="model-name" placeholder="例如 glm-4-plus">
+            </div>
+            <div class="form-group" style="flex:1">
+              <label>备用模型</label>
+              <input type="text" id="model-backup" placeholder="例如 glm-4-flash">
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button class="btn btn-primary btn-sm" id="model-save-btn" onclick="saveModelSettings()">保存配置</button>
+            <button class="btn btn-secondary btn-sm" id="model-clear-btn" onclick="clearModelSettings()">清除</button>
+          </div>
+          <div id="model-config-status" style="margin-top:8px;font-size:12px"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">上传文件</div>
+        <div class="card-desc">支持 JSON 和 CSV 格式，文件应包含帖子内容。</div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>数据来源</label>
+            <select id="import-platform">
+              <option value="weibo">微博</option>
+              <option value="xiaohongshu">小红书</option>
+              <option value="twitter">Twitter</option>
+              <option value="douyin">抖音</option>
+              <option value="unknown">其他</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>选择文件</label>
+            <input type="file" id="import-file" accept=".json,.csv" style="padding:6px">
+          </div>
+          <button class="btn btn-primary" id="import-btn" onclick="startImport()">导入并分析</button>
+        </div>
+
+        <div id="import-result"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">数据格式说明</div>
+        <div class="card-desc" style="margin-bottom:0">
+          <p><strong>JSON 格式：</strong></p>
+          <pre>[
+  {"content": "帖子内容...", "author": "用户名", "platform": "weibo"},
+  {"content": "另一条帖子...", "author": "用户2"}
+]</pre>
+          <p class="mt-8"><strong>CSV 格式：</strong></p>
+          <pre>content,author,platform
+"帖子内容...","用户名","weibo"
+"另一条帖子...","用户2","xiaohongshu"</pre>
+          <p class="mt-8">必填字段：<code>content</code>（或 <code>text</code>、<code>body</code>）<br>
+          可选字段：<code>author</code>、<code>platform</code>、<code>published_at</code>、<code>id</code></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Vocabulary ─── -->
+    <div id="page-vocabulary" class="page">
+      <div class="page-header">
+        <div class="page-title">词库管理</div>
+        <div class="page-desc">审核、管理和维护词库词条</div>
+      </div>
+
+      <div class="card">
+        <div class="filters">
+          <div class="form-group">
+            <label>搜索</label>
+            <input type="text" id="filter-search" placeholder="搜索词条..." oninput="debounceLoad()" style="width:180px">
+          </div>
+          <div class="form-group">
+            <label>状态</label>
+            <select id="filter-status" onchange="loadVocab()" style="width:120px">
+              <option value="">全部</option>
+              <option value="pending">待审核</option>
+              <option value="approved">已通过</option>
+              <option value="rejected">已拒绝</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>动作</label>
+            <select id="filter-action" onchange="loadVocab()" style="width:140px">
+              <option value="">全部</option>
+              <option value="need_human_review">需人工审核</option>
+              <option value="observe">观察</option>
+              <option value="add_temp_kb">建议入库</option>
+              <option value="reject">建议拒绝</option>
+            </select>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadVocab()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            刷新
+          </button>
+        </div>
+
+        <div class="batch-bar" id="batch-bar" style="display:none">
+          <span class="count">已选 <strong id="batch-count">0</strong> 条</span>
+          <button class="btn btn-success btn-sm" onclick="batchReview('approve')">批量通过</button>
+          <button class="btn btn-danger btn-sm" onclick="batchReview('reject')">批量拒绝</button>
+          <button class="btn btn-danger btn-sm" onclick="batchDelete()" style="background:#991B1B">删除</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearSelection()">取消选择</button>
+        </div>
+
+        <div class="table-wrap">
+          <table id="vocab-table">
+            <thead><tr>
+              <th><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)"></th>
+              <th>#</th><th>词条</th><th>分类</th><th>评分</th><th>候选类型</th><th>动作</th><th>原文证据</th><th>原因</th><th>平台</th><th>状态</th><th>操作</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="pagination">
+          <button class="btn btn-secondary btn-sm" onclick="prevPage()">上一页</button>
+          <span class="info" id="page-info"></span>
+          <button class="btn btn-secondary btn-sm" onclick="nextPage()">下一页</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Export ─── -->
+    <div id="page-export" class="page">
+      <div class="page-header">
+        <div class="page-title">导出词库</div>
+        <div class="page-desc">将词库数据导出为不同格式</div>
+      </div>
+
+      <div class="card">
+        <div class="form-row mb-16">
+          <div class="form-group">
+            <label>筛选状态</label>
+            <select id="export-status" style="width:160px">
+              <option value="">全部词条</option>
+              <option value="approved">仅已通过</option>
+              <option value="pending">仅待审核</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="export-grid">
+          <div class="export-btn" onclick="doExport('json')">
+            <div class="export-icon json">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <div>
+              <div class="export-name">JSON</div>
+              <div class="export-desc">完整结构化数据</div>
+            </div>
+          </div>
+          <div class="export-btn" onclick="doExport('csv')">
+            <div class="export-icon csv">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+            </div>
+            <div>
+              <div class="export-name">CSV</div>
+              <div class="export-desc">Excel 可打开</div>
+            </div>
+          </div>
+          <div class="export-btn" onclick="doExport('txt')">
+            <div class="export-icon txt">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </div>
+            <div>
+              <div class="export-name">TXT</div>
+              <div class="export-desc">纯文本，每行一词</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="export-result" style="margin-top:20px"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// JavaScript — Business Logic
+// ═══════════════════════════════════════════════════
+
+// ── State ──
+let currentPage = 0;
+const pageSize = 20;
+let totalItems = 0;
+let debounceTimer = null;
+
+// ── 结果卡片分页 ──
+let _resultPosts = [];          // 当前搜索结果的全部帖子
+let _resultPageIdx = 0;        // 当前页码
+let _resultPageSize = 20;      // 每页条数
+let _resultContainerId = '';    // 帖子容器 ID
+
+// ── 手动取消控制器 ──
+let _fetchController = null;
+let _searchController = null;
+let _batchController = null;
+
+// ── Navigation ──
+function showPage(name, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  el.classList.add('active');
+  if (name === 'dashboard') loadStats();
+  if (name === 'vocabulary') loadVocab();
+  if (name === 'twitter') loadAllCookies();
+  if (name === 'import') loadModelSettings();
+}
+
+// ── Toast ──
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ── API helpers ──
+async function api(url, options = {}) {
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '请求失败');
+    }
+    return await res.json();
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw new Error('任务已取消');
+    }
+    toast(e.message, 'error');
+    throw e;
+  }
+}
+
+// ── Dashboard ──
+async function loadStats() {
+  try {
+    const stats = await api('/api/stats');
+    document.getElementById('stat-total').textContent = stats.total;
+    document.getElementById('stat-pending').textContent = stats.pending;
+    document.getElementById('stat-approved').textContent = stats.approved;
+    document.getElementById('stat-rejected').textContent = stats.rejected;
+
+    const data = await api('/api/vocabulary?limit=10');
+    const tbody = document.querySelector('#recent-table tbody');
+    tbody.innerHTML = '';
+    data.items.forEach(item => {
+      tbody.innerHTML += `<tr>
+        <td><strong>${esc(item.word)}</strong></td>
+        <td>${esc(item.category)}</td>
+        <td>${(item.score * 100).toFixed(0)}</td>
+        <td><span class="badge badge-${item.action === 'observe' ? 'observe' : item.action === 'add_temp_kb' ? 'add' : 'action'}">${esc(item.action)}</span></td>
+        <td><span class="badge badge-${item.status}">${item.status}</span></td>
+        <td>${item.first_seen?.slice(0, 16).replace('T', ' ') || ''}</td>
+      </tr>`;
+    });
+  } catch (e) { console.error(e); }
+}
+
+// ── Import ──
+async function startImport() {
+  const fileInput = document.getElementById('import-file');
+  const platform = document.getElementById('import-platform').value;
+  const file = fileInput.files[0];
+
+  if (!file) return toast('请选择文件', 'error');
+
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading"></span> 导入中...';
+  document.getElementById('import-result').innerHTML = '';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // 附加模型 API 配置（如有）
+    const _mKey = localStorage.getItem('model_api_key') || '';
+    const _mUrl = localStorage.getItem('model_base_url') || '';
+    if (_mKey && _mUrl) {
+      formData.append('model_api_key', _mKey);
+      formData.append('model_base_url', _mUrl);
+      formData.append('model_name', localStorage.getItem('model_name') || '');
+      formData.append('model_backup', localStorage.getItem('model_backup') || '');
+    }
+
+    const res = await fetch(`/api/import?platform=${platform}`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '导入失败');
+    }
+
+    const stats = await res.json();
+    const div = document.getElementById('import-result');
+
+    if (stats.status === 'success') {
+      let postsHtml = '';
+      if (stats.sampled_posts && stats.sampled_posts.length > 0) {
+        postsHtml = `<div class="sampled-posts">
+          <h4>导入的帖子（显示前 ${stats.sampled_posts.length} 条）</h4>
+          ${stats.sampled_posts.map(post => `
+            <div class="post-card">
+              <div class="post-header">
+                <span class="post-platform">${esc(post.platform)}</span>
+                <span class="post-author">@${esc(post.author)}</span>
+              </div>
+              <div class="post-content">${esc(post.content)}</div>
+            </div>
+          `).join('')}
+        </div>`;
+      }
+
+      div.innerHTML = `<div class="crawl-result">
+        <strong>导入完成</strong>
+        <div class="result-stats">
+          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">导入帖子</div></div>
+          <div class="result-stat"><div class="num">${stats.total_keywords}</div><div class="lbl">提取关键词</div></div>
+          <div class="result-stat"><div class="num">${stats.ingested_count || 0}</div><div class="lbl">词库更新</div></div>
+        </div>
+        ${postsHtml}
+      </div>`;
+      toast('导入完成！', 'success');
+    } else {
+      div.innerHTML = `<div class="crawl-result error"><strong>导入失败</strong>: ${esc(stats.error || '未知错误')}</div>`;
+    }
+    loadStats();
+  } catch (e) {
+    document.getElementById('import-result').innerHTML = `<div class="crawl-result error"><strong>导入失败</strong>: ${esc(e.message)}</div>`;
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '导入并分析';
+  }
+}
+
+// ── Vocabulary ──
+function debounceLoad() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => { currentPage = 0; loadVocab(); }, 400);
+}
+
+async function loadVocab() {
+  const search = document.getElementById('filter-search').value.trim();
+  const status = document.getElementById('filter-status').value;
+  const action = document.getElementById('filter-action').value;
+  const offset = currentPage * pageSize;
+
+  let url = `/api/vocabulary?limit=${pageSize}&offset=${offset}`;
+  if (search) url += `&search=${encodeURIComponent(search)}`;
+  if (status) url += `&status=${status}`;
+  if (action) url += `&action=${action}`;
+
+  try {
+    const data = await api(url);
+    totalItems = data.total;
+    const tbody = document.querySelector('#vocab-table tbody');
+    tbody.innerHTML = '';
+
+    if (data.items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--text-muted);padding:48px">暂无数据</td></tr>';
+    }
+
+    data.items.forEach((item, i) => {
+      const score = (item.score * 100).toFixed(0);
+      const actionBadge = item.action === 'observe' ? 'observe' : item.action === 'add_temp_kb' ? 'add' : item.action === 'reject' ? 'reject-action' : 'action';
+      tbody.innerHTML += `<tr>
+        <td><input type="checkbox" class="row-check" value="${esc(item.word)}" data-category="${esc(item.category)}" onchange="updateBatchBar()"></td>
+        <td>${offset + i + 1}</td>
+        <td><strong>${esc(item.word)}</strong></td>
+        <td>${esc(item.category)}</td>
+        <td>${score}</td>
+        <td>${esc(item.candidate_type || '')}</td>
+        <td><span class="badge badge-${actionBadge}">${esc(item.action || '')}</span></td>
+        <td class="evidence-cell" title="${esc(item.evidence || '')}">${esc(item.evidence || '-')}</td>
+        <td title="${esc(item.reason || '')}">${esc((item.reason || '').slice(0, 20))}</td>
+        <td>${(item.platforms || []).join(', ')}</td>
+        <td><span class="badge badge-${item.status}">${item.status}</span></td>
+        <td>
+          ${item.status === 'pending' ? `
+            <button class="btn btn-success btn-sm" onclick="review('${esc(item.word)}','approve','${esc(item.category)}')">通过</button>
+            <button class="btn btn-danger btn-sm" onclick="review('${esc(item.word)}','reject','${esc(item.category)}')">拒绝</button>
+          ` : '<span style="color:var(--text-muted)">-</span>'}
+        </td>
+      </tr>`;
+    });
+
+    const totalPages = Math.ceil(totalItems / pageSize);
+    document.getElementById('page-info').textContent = `第 ${currentPage + 1} / ${totalPages || 1} 页（共 ${totalItems} 条）`;
+  } catch (e) { console.error(e); }
+}
+
+function prevPage() { if (currentPage > 0) { currentPage--; loadVocab(); } }
+function nextPage() { if ((currentPage + 1) * pageSize < totalItems) { currentPage++; loadVocab(); } }
+
+async function review(word, action, category) {
+  try {
+    await api('/api/vocabulary/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ word, action, category }),
+    });
+    toast(`${action === 'approve' ? '已通过' : '已拒绝'}: ${word}`, 'success');
+    loadVocab();
+    loadStats();
+  } catch (e) {}
+}
+
+// ── Batch Processing ──
+function toggleSelectAll(el) {
+  document.querySelectorAll('.row-check').forEach(cb => { cb.checked = el.checked; });
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  const checked = document.querySelectorAll('.row-check:checked');
+  const bar = document.getElementById('batch-bar');
+  const count = document.getElementById('batch-count');
+  const selectAll = document.getElementById('select-all');
+  const total = document.querySelectorAll('.row-check').length;
+
+  if (checked.length > 0) {
+    bar.style.display = 'flex';
+    count.textContent = checked.length;
+  } else {
+    bar.style.display = 'none';
+  }
+  selectAll.checked = checked.length === total && total > 0;
+}
+
+function clearSelection() {
+  document.querySelectorAll('.row-check').forEach(cb => { cb.checked = false; });
+  document.getElementById('select-all').checked = false;
+  updateBatchBar();
+}
+
+async function batchReview(action) {
+  const checked = document.querySelectorAll('.row-check:checked');
+  if (checked.length === 0) return toast('请先选择词条', 'error');
+
+  const items = [...checked].map(cb => ({ word: cb.value, category: cb.dataset.category }));
+  const actionText = action === 'approve' ? '批量通过' : '批量拒绝';
+
+  if (!confirm(`确认${actionText} ${items.length} 条词条？`)) return;
+
+  try {
+    const result = await api('/api/vocabulary/batch-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, action }),
+    });
+    toast(`${actionText}完成：成功 ${result.success} 条${result.failed > 0 ? '，失败 ' + result.failed + ' 条' : ''}`, result.failed > 0 ? 'info' : 'success');
+    clearSelection();
+    loadVocab();
+    loadStats();
+  } catch (e) {}
+}
+
+async function batchDelete() {
+  const checked = document.querySelectorAll('.row-check:checked');
+  if (checked.length === 0) return toast('请先选择词条', 'error');
+
+  const items = [...checked].map(cb => ({ word: cb.value, category: cb.dataset.category }));
+
+  if (!confirm(`确认永久删除 ${items.length} 条词条？此操作不可撤销！`)) return;
+
+  try {
+    const result = await api('/api/vocabulary/batch-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    toast(`删除完成：成功 ${result.success} 条${result.failed > 0 ? '，失败 ' + result.failed + ' 条' : ''}`, result.failed > 0 ? 'info' : 'success');
+    clearSelection();
+    loadVocab();
+    loadStats();
+  } catch (e) {}
+}
+
+// ── Twitter ──
+const twitterUrlsInput = document.getElementById('twitter-urls');
+if (twitterUrlsInput) {
+  twitterUrlsInput.addEventListener('input', function() {
+    const lines = this.value.split('\n').filter(l => l.trim());
+    document.getElementById('twitter-url-count').textContent = `${lines.length} 个链接`;
+  });
+}
+
+// ── Multi-platform Cookie Management ──
+function switchCookieTab(platform) {
+  document.querySelectorAll('.cookie-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.cookie-panel').forEach(p => p.style.display = 'none');
+  event.currentTarget.classList.add('active');
+  document.getElementById('cookie-panel-' + platform).style.display = 'block';
+}
+
+function saveCookie(platform) {
+  if (platform === 'twitter') {
+    const ct0 = document.getElementById('tw-ct0').value.trim();
+    const auth_token = document.getElementById('tw-auth-token').value.trim();
+    const proxy = document.getElementById('tw-proxy').value.trim();
+    if (!ct0 || !auth_token) return toast('请填写 ct0 和 auth_token', 'error');
+    localStorage.setItem('tw_ct0', ct0);
+    localStorage.setItem('tw_auth_token', auth_token);
+    localStorage.setItem('tw_proxy', proxy);
+    lockCookiePanel('twitter');
+  } else if (platform === 'reddit') {
+    const raw = document.getElementById('rd-cookies').value.trim();
+    const proxy = document.getElementById('rd-proxy').value.trim();
+    if (!raw) return toast('请填写 Reddit Cookie', 'error');
+    localStorage.setItem('rd_cookies', raw);
+    localStorage.setItem('rd_proxy', proxy);
+    lockCookiePanel('reddit');
+  }
+  updateCookieSummary();
+  // Auto-collapse after saving
+  document.getElementById('twitter-login-card').classList.add('collapsed');
+  toast('Cookie 已保存到本浏览器', 'success');
+}
+
+function lockCookiePanel(platform) {
+  const panel = document.getElementById('cookie-panel-' + platform);
+  panel.classList.add('locked');
+  // Reset all secret inputs in this panel to password type
+  panel.querySelectorAll('.secret-input-wrap input').forEach(input => { input.type = 'password'; });
+  const statusId = platform === 'twitter' ? 'tw-cookie-status' : 'rd-cookie-status';
+  const label = platform === 'twitter' ? 'Twitter' : 'Reddit';
+  document.getElementById(statusId).innerHTML = `<span style="color:var(--success)">✓ ${label} Cookie 已保存</span>`;
+}
+
+function unlockCookiePanel(platform) {
+  const panel = document.getElementById('cookie-panel-' + platform);
+  panel.classList.remove('locked');
+  const statusId = platform === 'twitter' ? 'tw-cookie-status' : 'rd-cookie-status';
+  document.getElementById(statusId).innerHTML = '';
+}
+
+function toggleCookieCard() {
+  document.getElementById('twitter-login-card').classList.toggle('collapsed');
+}
+
+function toggleCard(cardId) {
+  document.getElementById(cardId).classList.toggle('collapsed');
+}
+
+function updateCookieSummary() {
+  const parts = [];
+  if (localStorage.getItem('tw_ct0') && localStorage.getItem('tw_auth_token')) parts.push('Twitter');
+  if (localStorage.getItem('rd_cookies')) parts.push('Reddit');
+  const el = document.getElementById('cookie-card-summary');
+  if (parts.length) {
+    el.innerHTML = '<span style="color:var(--success)">已配置：' + parts.join('、') + '</span>';
+  } else {
+    el.textContent = '未配置';
+  }
+}
+
+function loadAllCookies() {
+  // Twitter
+  document.getElementById('tw-ct0').value = localStorage.getItem('tw_ct0') || '';
+  document.getElementById('tw-auth-token').value = localStorage.getItem('tw_auth_token') || '';
+  document.getElementById('tw-proxy').value = localStorage.getItem('tw_proxy') || '';
+  if (localStorage.getItem('tw_ct0') && localStorage.getItem('tw_auth_token')) {
+    lockCookiePanel('twitter');
+  }
+  // Reddit
+  document.getElementById('rd-cookies').value = localStorage.getItem('rd_cookies') || '';
+  document.getElementById('rd-proxy').value = localStorage.getItem('rd_proxy') || '';
+  if (localStorage.getItem('rd_cookies')) {
+    lockCookiePanel('reddit');
+  }
+  updateCookieSummary();
+  // Auto-collapse if at least one platform is configured
+  if (localStorage.getItem('tw_ct0') || localStorage.getItem('rd_cookies')) {
+    document.getElementById('twitter-login-card').classList.add('collapsed');
+  }
+}
+
+function parseCookieString(str) {
+  const result = {};
+  if (!str) return result;
+  // If it looks like a full cookie string "key=val; key2=val2", parse it
+  if (str.includes('=')) {
+    str.split(';').forEach(pair => {
+      const idx = pair.indexOf('=');
+      if (idx > 0) {
+        const key = pair.slice(0, idx).trim();
+        const val = pair.slice(idx + 1).trim();
+        if (key) result[key] = val;
+      }
+    });
+  } else {
+    // Treat as bare reddit_session value
+    result['reddit_session'] = str;
+  }
+  return result;
+}
+
+function getPlatformCookies(platform) {
+  if (platform === 'twitter') {
+    return {
+      platform: 'twitter',
+      ct0: localStorage.getItem('tw_ct0') || '',
+      auth_token: localStorage.getItem('tw_auth_token') || '',
+      proxy: localStorage.getItem('tw_proxy') || '',
+    };
+  } else if (platform === 'reddit') {
+    const parsed = parseCookieString(localStorage.getItem('rd_cookies') || '');
+    return {
+      platform: 'reddit',
+      reddit_session: parsed.reddit_session || '',
+      edgebucket: parsed.edgebucket || '',
+      redesign_optout: parsed.redesign_optout || '',
+      extra_cookies: parsed,
+      proxy: localStorage.getItem('rd_proxy') || '',
+    };
+  }
+  return { platform };
+}
+
+function togglePlatform(el) {
+  const cb = el.querySelector('input[type="checkbox"]');
+  // onclick fires before the checkbox changes, so we read the *upcoming* state
+  setTimeout(() => {
+    el.classList.toggle('selected', cb.checked);
+  }, 0);
+}
+
+function getSelectedPlatforms() {
+  return [...document.querySelectorAll('#platform-checks input[type="checkbox"]:checked')].map(cb => cb.value);
+}
+
+let currentSortBy = 'top';
+function setSortBy(val) {
+  currentSortBy = val;
+  document.getElementById('sort-top').classList.toggle('active', val === 'top');
+  document.getElementById('sort-live').classList.toggle('active', val === 'live');
+}
+
+async function startTwitterFetch() {
+  const textarea = document.getElementById('twitter-urls');
+  const urls = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+  const count = parseInt(document.getElementById('twitter-count').value) || 50;
+  const includeReplies = document.getElementById('twitter-include-replies').checked;
+
+  if (!urls.length) return toast('请粘贴至少一个用户主页链接', 'error');
+
+  const cookies = getPlatformCookies('twitter');
+  if (!cookies.ct0 || !cookies.auth_token) return toast('请先配置 Twitter Cookie', 'error');
+
+  const btn = document.getElementById('twitter-fetch-btn');
+  document.getElementById('twitter-result').innerHTML = '';
+
+  // 手动取消控制器
+  const controller = new AbortController();
+  _fetchController = controller;
+  const _startTime = Date.now();
+  const _timer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - _startTime) / 1000);
+    const m = Math.floor(elapsed / 60), s = elapsed % 60;
+    btn.innerHTML = `<span class="loading"></span> 抓取中... (${m}:${String(s).padStart(2,'0')})`;
+  }, 1000);
+  // 运行中点击按钮 → 取消任务
+  btn.onclick = () => controller.abort();
+
+  try {
+    const stats = await api('/api/twitter-fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls, count, include_replies: includeReplies, ct0: cookies.ct0, auth_token: cookies.auth_token, proxy: cookies.proxy || null, block_resources: document.getElementById('block-resources-toggle').checked }),
+      signal: controller.signal,
+    });
+
+    const div = document.getElementById('twitter-result');
+
+    if (stats.status === 'success' || stats.status === 'empty') {
+      let postsHtml = '';
+      if (stats.sampled_posts && stats.sampled_posts.length > 0) {
+        postsHtml = `<div class="sampled-posts">
+          <h4>抓取到的推文（显示前 ${stats.sampled_posts.length} 条）</h4>
+          ${stats.sampled_posts.map((post, idx) => {
+            let mediaHtml = '';
+            if (post.has_media) {
+              const badge = post.media_type === 'image' ? '&#128247; 图片'
+                          : post.media_type === 'video' ? '&#127909; 视频'
+                          : post.media_type === 'mixed' ? '&#128247;&#127909; 图文+视频'
+                          : '&#128206; 媒体';
+              const urls = (post.media_urls || '').split(';').filter(Boolean);
+              const thumbsHtml = urls.map((u, i) => {
+                const isVideo = post.media_type === 'video' || (post.media_type === 'mixed' && i === urls.length - 1);
+                return '<div class="media-thumb-wrap" onclick="openMediaLightbox(\'' + esc(u) + '\')">'
+                  + '<img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="媒体' + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">'
+                  + (isVideo ? '<div class="media-play-icon">&#9654;</div>' : '')
+                  + '</div>';
+              }).join('');
+              mediaHtml = '<div class="post-media"><span style="margin-right:8px">' + badge + '</span><div class="media-thumb-grid">' + thumbsHtml + '</div></div>';
+            }
+            const _cid = 'twf-' + idx;
+            const _raw = post.content || '';
+            const _isLong = _raw.length >= 200;
+            const _displayText = _isLong ? _raw.slice(0, 200) + '…' : _raw;
+            const _toggleBtn = (!_isLong && _raw.length > 80)
+              ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">展开</button>' : '';
+            return `
+            <div class="post-card">
+              <div class="post-header">
+                <span class="post-platform">${esc(post.platform)}</span>
+                <span class="post-author">${esc(post.author)}</span>
+              </div>
+              <div class="post-content${_isLong ? ' long-truncated' : ''}" id="${_cid}">${esc(_displayText)}</div>
+              ${_toggleBtn}
+              ${mediaHtml}
+              <div class="post-meta">
+                <span>点赞 ${(post.metrics?.likes || 0).toLocaleString()}</span>
+                <span>转发 ${(post.metrics?.retweets || 0).toLocaleString()}</span>
+                <span>回复 ${(post.metrics?.replies || 0).toLocaleString()}</span>
+                <span>${post.published_at?.slice(0, 16).replace('T', ' ') || ''}</span>
+                ${post.replies_count > 0 ? `<span style="color:var(--primary);font-weight:600">已采 ${post.replies_count} 条评论</span>` : ''}
+              </div>
+            </div>
+          `}).join('')}
+        </div>`;
+      }
+
+      const isError = stats.status === 'empty';
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">用户主页抓取结果</h4>
+      <div class="crawl-result ${isError ? 'error' : ''}">
+        <strong>${isError ? '无有效结果' : '抓取完成'}</strong>
+        ${stats.error ? `<div style="font-size:12px;color:var(--danger);margin-top:4px">${esc(stats.error)}</div>` : ''}
+        <div class="result-stats">
+          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">抓取推文</div></div>
+        </div>
+        ${stats.csv_data ? `<div style="margin-top:16px">
+          <button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'tweets.csv')}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            下载 CSV 文件
+          </button>
+          <div class="text-muted mt-8">如需提取黑词，请下载后前往「数据导入」页面手动上传分析。</div>
+        </div>` : ''}
+        ${postsHtml}
+      </div>`;
+      if (!isError) toast('Twitter 抓取完成！', 'success');
+    } else {
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">用户主页抓取结果</h4><div class="crawl-result error"><strong>抓取失败</strong>: ${esc(stats.error || '未知错误')}</div>`;
+    }
+  } catch (e) {
+    document.getElementById('twitter-result').innerHTML =
+      `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">用户主页抓取结果</h4><div class="crawl-result error"><strong>请求失败</strong>: ${esc(e.message)}</div>`;
+  } finally {
+    clearInterval(_timer);
+    _fetchController = null;
+    btn.onclick = startTwitterFetch;
+    btn.innerHTML = '抓取推文';
+    // 显示总耗时
+    const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
+    const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
+    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">耗时 ${_em}分${String(_es).padStart(2,'0')}秒</div>`;
+    const _resultDiv = document.getElementById('twitter-result');
+    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+  }
+}
+
+async function startMultiSearch() {
+  const keyword = document.getElementById('search-keyword').value.trim();
+  const platforms = getSelectedPlatforms();
+  const count = parseInt(document.getElementById('search-count').value) || 50;
+  const includeReplies = document.getElementById('search-include-replies').checked;
+
+  if (!keyword) return toast('请输入搜索关键词', 'error');
+  if (!platforms.length) return toast('请至少选择一个搜索平台', 'error');
+
+  // Collect cookies for selected platforms
+  const cookies = [];
+  const skippedPlatforms = [];
+  for (const p of platforms) {
+    const pc = getPlatformCookies(p);
+    if (p === 'twitter' && (!pc.ct0 || !pc.auth_token)) {
+      skippedPlatforms.push({ platform: 'twitter', reason: 'Cookie 未配置' });
+      continue;
+    }
+    if (p === 'reddit' && !pc.reddit_session) {
+      skippedPlatforms.push({ platform: 'reddit', reason: 'Cookie 未配置' });
+      continue;
+    }
+    cookies.push(pc);
+  }
+
+  if (!cookies.length) {
+    toast('所选平台均未配置 Cookie，请先填写', 'error');
+    // Scroll to cookie section to help user configure
+    const cookieCard = document.querySelector('.cookie-tabs');
+    if (cookieCard) cookieCard.scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+
+  const btn = document.getElementById('multi-search-btn');
+  document.getElementById('multi-search-result').innerHTML = '';
+
+  // 手动取消控制器
+  const controller = new AbortController();
+  _searchController = controller;
+  const _startTime = Date.now();
+  const _timer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - _startTime) / 1000);
+    const m = Math.floor(elapsed / 60), s = elapsed % 60;
+    btn.innerHTML = `<span class="loading"></span> 搜索中... (${m}:${String(s).padStart(2,'0')})`;
+  }, 1000);
+  // 运行中点击按钮 → 取消任务
+  btn.onclick = () => controller.abort();
+
+  try {
+    const stats = await api('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        keyword, count, platforms, sort_by: currentSortBy,
+        include_replies: includeReplies, cookies,
+        block_resources: document.getElementById('block-resources-toggle').checked,
+      }),
+      signal: controller.signal,
+    });
+
+    const div = document.getElementById('multi-search-result');
+
+    if (stats.status === 'success' || stats.status === 'empty') {
+      // 存储帖子数据供分页使用
+      _resultPosts = stats.sampled_posts || [];
+      _resultPageIdx = 0;
+      _resultContainerId = 'result-posts-container';
+
+      // Platform counts
+      let countsHtml = '';
+      if (stats.platform_counts) {
+        countsHtml = Object.entries(stats.platform_counts).map(([p, c]) => {
+          const label = p === 'twitter' ? 'Twitter' : p === 'reddit' ? 'Reddit' : p;
+          return `<div class="result-stat"><div class="num">${c}</div><div class="lbl">${label}</div></div>`;
+        }).join('');
+      }
+
+      const isError = stats.status === 'empty';
+
+      // 显示被跳过的平台警告
+      let skippedHtml = '';
+      if (skippedPlatforms.length > 0) {
+        const skippedLabels = skippedPlatforms.map(s => {
+          const label = s.platform === 'twitter' ? 'Twitter / X' : 'Reddit';
+          return label + '（' + s.reason + '）';
+        }).join('、');
+        skippedHtml = '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px">'
+          + '<span style="font-size:16px;flex-shrink:0">\u26A0</span>'
+          + '<div><strong>以下平台已跳过：</strong>' + esc(skippedLabels)
+          + '<div style="margin-top:4px;font-size:11px;color:#B45309">请在页面顶部「Cookie 认证」中配置对应平台的 Cookie 后再试</div>'
+          + '</div></div>';
+      }
+
+      div.innerHTML = '<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">关键词搜索结果</h4>'
+        + '<div class="crawl-result ' + (isError ? 'error' : '') + '">'
+        + '<strong>' + (isError ? '无搜索结果' : '搜索完成') + '</strong>'
+        + (stats.error ? '<div style="font-size:12px;color:var(--danger);margin-top:4px">' + esc(stats.error) + '</div>' : '')
+        + (stats.errors && stats.errors.length ? '<div class="error-box" style="margin-top:8px">' + stats.errors.map(e => '<p>' + esc(e) + '</p>').join('') + '</div>' : '')
+        + skippedHtml
+        + '<div class="result-stats">'
+        + '<div class="result-stat"><div class="num">' + stats.total_posts + '</div><div class="lbl">总结果</div></div>'
+        + countsHtml
+        + '</div>'
+        + (stats.csv_data ? '<div style="margin-top:16px"><button class="btn btn-download" onclick="downloadCsv(\'' + stats.csv_data + '\',\'' + esc(stats.csv_filename || 'multi_search.csv') + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 下载 CSV 文件</button><div class="text-muted mt-8">如需提取黑词，请下载后前往「数据导入」页面手动上传分析。</div></div>' : '')
+        + (_resultPosts.length ? '<div id="result-posts-container"></div>' : '')
+        + '</div>';
+      if (_resultPosts.length) renderResultPosts();
+      if (!isError) toast('多平台搜索完成！', 'success');
+    } else {
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">关键词搜索结果</h4><div class="crawl-result error"><strong>搜索失败</strong>: ${esc(stats.error || '未知错误')}</div>`;
+    }
+  } catch (e) {
+    document.getElementById('multi-search-result').innerHTML =
+      `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">关键词搜索结果</h4><div class="crawl-result error"><strong>请求失败</strong>: ${esc(e.message)}</div>`;
+  } finally {
+    clearInterval(_timer);
+    _searchController = null;
+    btn.onclick = startMultiSearch;
+    btn.innerHTML = '开始搜索';
+    // 显示总耗时
+    const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
+    const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
+    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">耗时 ${_em}分${String(_es).padStart(2,'0')}秒</div>`;
+    const _resultDiv = document.getElementById('multi-search-result');
+    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+  }
+}
+
+// ── Export ──
+async function doExport(format) {
+  const status = document.getElementById('export-status').value;
+  let url = `/api/vocabulary/export?format=${format}`;
+  if (status) url += `&status=${status}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('导出失败');
+
+    if (format === 'json') {
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      downloadBlob(blob, `vocab_${Date.now()}.json`);
+    } else {
+      const text = await res.text();
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      downloadBlob(blob, `vocab_${Date.now()}.${format}`);
+    }
+    toast('导出成功', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function downloadBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── 结果卡片分页 ──
+function renderResultPosts() {
+  const container = document.getElementById(_resultContainerId);
+  if (!container || !_resultPosts.length) return;
+  const total = _resultPosts.length;
+  const totalPages = Math.ceil(total / _resultPageSize);
+  if (_resultPageIdx >= totalPages) _resultPageIdx = totalPages - 1;
+  const start = _resultPageIdx * _resultPageSize;
+  const pagePosts = _resultPosts.slice(start, start + _resultPageSize);
+
+  let html = '<div class="posts-toolbar">'
+    + '<div style="display:flex;align-items:center;gap:12px">'
+    + '<strong style="font-size:14px">搜索结果</strong>'
+    + '<span class="posts-info">共 ' + total + ' 条，显示 ' + (start+1) + '-' + Math.min(start+_resultPageSize, total) + '</span>'
+    + '</div>'
+    + '<div style="display:flex;align-items:center;gap:8px">'
+    + '<label style="font-size:12px;color:var(--text-muted)">每页</label>'
+    + '<select onchange="postsPageSize(this.value)" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:13px;min-width:80px">'
+    + [10,20,50,100].map(function(n){ return '<option value="'+n+'" '+(n===_resultPageSize?'selected':'')+'>'+n+' 条</option>'; }).join('')
+    + '</select>'
+    + '</div>'
+    + '</div>';
+
+  html += '<div class="sampled-posts">';
+  html += pagePosts.map((post, idx) => {
+    const platformLabel = post.platform === 'twitter' ? 'Twitter / X'
+                        : post.platform === 'reddit' ? 'Reddit'
+                        : (post.platform || 'unknown');
+    let metricsHtml = '';
+    if (post.platform === 'twitter') {
+      metricsHtml = `<span>点赞 ${(post.metrics?.likes||0).toLocaleString()}</span>
+        <span>转发 ${(post.metrics?.retweets||0).toLocaleString()}</span>
+        <span>回复 ${(post.metrics?.replies||0).toLocaleString()}</span>`;
+    } else if (post.platform === 'reddit') {
+      metricsHtml = `<span>得分 ${(post.metrics?.score||0).toLocaleString()}</span>
+        <span>评论 ${(post.metrics?.comments||0).toLocaleString()}</span>`;
+    }
+    let mediaHtml = '';
+    if (post.has_media) {
+      const badge = post.media_type === 'image' ? '&#128247; 图片'
+                  : post.media_type === 'video' ? '&#127909; 视频'
+                  : post.media_type === 'mixed' ? '&#128247;&#127909; 图文+视频'
+                  : '&#128206; 媒体';
+      const urls = (post.media_urls||'').split(';').filter(Boolean);
+      const thumbsHtml = urls.map((u, i) => {
+        const isVideo = post.media_type === 'video' || (post.media_type === 'mixed' && i === urls.length - 1);
+        return '<div class="media-thumb-wrap" onclick="openMediaLightbox(\'' + esc(u) + '\')">'
+          + '<img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="媒体' + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">'
+          + (isVideo ? '<div class="media-play-icon">&#9654;</div>' : '')
+          + '</div>';
+      }).join('');
+      mediaHtml = '<div class="post-media"><span style="margin-right:8px">' + badge + '</span><div class="media-thumb-grid">' + thumbsHtml + '</div></div>';
+    }
+    const kwBadge = post.keyword ? `<span style="background:var(--primary-light);color:var(--primary);font-size:11px;padding:2px 8px;border-radius:4px;margin-left:8px">${esc(post.keyword)}</span>` : '';
+    const _cid = 'rp-' + idx;
+    const _raw = post.content || '';
+    const _isLong = _raw.length >= 200;
+    const _displayText = _isLong ? _raw.slice(0, 200) + '…' : _raw;
+    const _toggleBtn = (!_isLong && _raw.length > 80)
+      ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">展开</button>' : '';
+    return `<div class="post-card" style="border-left-color:${post.platform==='reddit'?'#FF4500':'var(--primary)'}">
+      <div class="post-header">
+        <span class="post-platform-badge ${post.platform||''}">${esc(platformLabel)}</span>
+        ${kwBadge}
+        <span class="post-author">${esc(post.author)}</span>
+      </div>
+      <div class="post-content${_isLong ? ' long-truncated' : ''}" id="${_cid}">${esc(_displayText)}</div>
+      ${_toggleBtn}
+      ${mediaHtml}
+      <div class="post-meta">
+        ${metricsHtml}
+        <span>${post.published_at?.slice(0,16).replace('T',' ')||''}</span>
+        ${post.replies_count>0?`<span style="color:var(--primary);font-weight:600">已采 ${post.replies_count} 条评论</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  html += '</div>';
+
+  // 翻页按钮
+  if (totalPages > 1) {
+    html += `<div class="posts-pager">
+      <button class="btn btn-secondary btn-sm" onclick="postsPage(0)" ${_resultPageIdx===0?'disabled':''}>首页</button>
+      <button class="btn btn-secondary btn-sm" onclick="postsPage(${_resultPageIdx-1})" ${_resultPageIdx===0?'disabled':''}>上一页</button>
+      <span class="posts-page-info">第 ${_resultPageIdx+1} / ${totalPages} 页</span>
+      <button class="btn btn-secondary btn-sm" onclick="postsPage(${_resultPageIdx+1})" ${_resultPageIdx>=totalPages-1?'disabled':''}>下一页</button>
+      <button class="btn btn-secondary btn-sm" onclick="postsPage(${totalPages-1})" ${_resultPageIdx>=totalPages-1?'disabled':''}>末页</button>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function postsPage(idx) { _resultPageIdx = idx; renderResultPosts(); }
+function postsPageSize(val) { _resultPageSize = parseInt(val)||20; _resultPageIdx = 0; renderResultPosts(); }
+
+// ── Utils ──
+const EYE_OPEN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_CLOSED = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+function toggleSecret(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.innerHTML = EYE_CLOSED;
+  } else {
+    input.type = 'password';
+    btn.innerHTML = EYE_OPEN;
+  }
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+// ── 文件上传 ──
+
+function handleUrlFileUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const text = e.target.result;
+    const lines = text.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
+    const textarea = document.getElementById('twitter-urls');
+    textarea.value = lines.join('\n');
+    document.getElementById('twitter-url-count').textContent = `${lines.length} 个链接`;
+    toast(`已从文件导入 ${lines.length} 个链接`, 'success');
+  };
+  reader.onerror = function() { toast('文件读取失败', 'error'); };
+  reader.readAsText(file, 'UTF-8');
+  input.value = '';  // 清空以便重新选择同一文件
+}
+
+async function handleKeywordFileUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const text = e.target.result;
+    const keywords = text.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
+    if (!keywords.length) return toast('文件中没有找到有效关键词', 'error');
+    await startBatchSearch(keywords);
+  };
+  reader.onerror = function() { toast('文件读取失败', 'error'); };
+  reader.readAsText(file, 'UTF-8');
+  input.value = '';
+}
+
+async function startBatchSearch(keywords) {
+  const platforms = getSelectedPlatforms();
+  const count = parseInt(document.getElementById('search-count').value) || 50;
+  const includeReplies = document.getElementById('search-include-replies').checked;
+
+  if (!platforms.length) return toast('请至少选择一个搜索平台', 'error');
+
+  // 关键词数量警告 & 确认
+  if (keywords.length > 10) {
+    return toast('关键词过多（最多 10 个），请精简后重试', 'error');
+  }
+  if (keywords.length > 3 && includeReplies) {
+    const est = keywords.length * (includeReplies ? 10 : 3);
+    if (!confirm(`批量搜索 ${keywords.length} 个关键词` + (includeReplies ? '（含评论抓取）' : '') +
+      `\n预计耗时约 ${est} 分钟，期间请勿关闭页面。\n\n是否继续？`)) {
+      return;
+    }
+  }
+
+  const cookies = [];
+  const skippedPlatforms = [];
+  for (const p of platforms) {
+    const pc = getPlatformCookies(p);
+    if (p === 'twitter' && (!pc.ct0 || !pc.auth_token)) {
+      skippedPlatforms.push({ platform: 'twitter', reason: 'Cookie 未配置' });
+      continue;
+    }
+    if (p === 'reddit' && !pc.reddit_session) {
+      skippedPlatforms.push({ platform: 'reddit', reason: 'Cookie 未配置' });
+      continue;
+    }
+    cookies.push(pc);
+  }
+  if (!cookies.length) return toast('所有平台 Cookie 均未配置', 'error');
+
+  const btn = document.getElementById('multi-search-btn');
+  document.getElementById('multi-search-result').innerHTML = '';
+
+  // 手动取消控制器
+  const controller = new AbortController();
+  _batchController = controller;
+  const _startTime = Date.now();
+  const _timer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - _startTime) / 1000);
+    const m = Math.floor(elapsed / 60), s = elapsed % 60;
+    btn.innerHTML = `<span class="loading"></span> 批量搜索 ${keywords.length} 个关键词... (${m}:${String(s).padStart(2,'0')})`;
+  }, 1000);
+  // 运行中点击按钮 → 取消任务
+  btn.onclick = () => controller.abort();
+
+  try {
+    const stats = await api('/api/batch-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        keywords, count, platforms, sort_by: currentSortBy,
+        include_replies: includeReplies, cookies,
+        block_resources: document.getElementById('block-resources-toggle').checked,
+      }),
+      signal: controller.signal,
+    });
+
+    const div = document.getElementById('multi-search-result');
+    if (stats.status === 'success' || stats.status === 'empty') {
+      let kwSummary = '';
+      if (stats.keyword_results) {
+        kwSummary = stats.keyword_results.map(kr =>
+          `<span class="keyword-result">「${esc(kr.keyword)}」: ${kr.post_count} 帖</span>`
+        ).join('');
+      }
+
+      // 存储帖子数据供分页使用
+      _resultPosts = stats.sampled_posts || [];
+      _resultPageIdx = 0;
+      _resultContainerId = 'batch-posts-container';
+
+      let errorsHtml = '';
+      if (stats.errors && stats.errors.length) {
+        errorsHtml = `<div class="error-box">${stats.errors.map(e => `<p>${esc(e)}</p>`).join('')}</div>`;
+      }
+
+      let skippedHtml = '';
+      if (skippedPlatforms.length > 0) {
+        const skippedLabels = skippedPlatforms.map(s => {
+          const label = s.platform === 'twitter' ? 'Twitter / X' : 'Reddit';
+          return label + '（' + s.reason + '）';
+        }).join('、');
+        skippedHtml = '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px">'
+          + '<span style="font-size:16px;flex-shrink:0">\u26A0</span>'
+          + '<div><strong>以下平台已跳过：</strong>' + esc(skippedLabels)
+          + '<div style="margin-top:4px;font-size:11px;color:#B45309">请在页面顶部「Cookie 认证」中配置对应平台的 Cookie 后再试</div>'
+          + '</div></div>';
+      }
+
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">批量搜索结果</h4>
+        ${skippedHtml}
+        <div class="stats-success">
+          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">总帖子数</div></div>
+          <div class="result-stat"><div class="num">${stats.total_rows}</div><div class="lbl">总行数（含评论）</div></div>
+          <div class="result-stat"><div class="num">${keywords.length}</div><div class="lbl">关键词数</div></div>
+        </div>
+        ${kwSummary ? `<div style="margin:8px 0;font-size:13px;display:flex;flex-wrap:wrap;gap:8px">${kwSummary}</div>` : ''}
+        <div style="margin:16px 0;display:flex;align-items:center;gap:12px">
+          ${stats.csv_data ? `<button class="btn-download" onclick="downloadCsv('${stats.csv_data}','${stats.csv_filename || 'batch.csv'}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>下载 CSV 文件</button>` : ''}
+          <span class="text-sm text-muted">如需提取黑词，请下载后前往「数据导入」页面手动上传分析。</span>
+        </div>
+        ${_resultPosts.length ? '<div id="batch-posts-container"></div>' : ''}
+        ${errorsHtml}
+      `;
+      if (_resultPosts.length) renderResultPosts();
+    } else {
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">批量搜索结果</h4><p class="text-muted">批量搜索失败：${stats.error || '未知错误'}</p>`;
+    }
+  } catch (e) {
+    document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">批量搜索结果</h4><p class="text-error">请求失败: ${esc(e.message)}</p>`;
+  } finally {
+    clearInterval(_timer);
+    _batchController = null;
+    btn.onclick = startMultiSearch;
+    btn.textContent = '开始搜索';
+    // 显示总耗时
+    const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
+    const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
+    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">耗时 ${_em}分${String(_es).padStart(2,'0')}秒</div>`;
+    const _resultDiv = document.getElementById('multi-search-result');
+    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+  }
+}
+
+function downloadCsv(b64Data, filename) {
+  const binary = atob(b64Data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: 'text/csv;charset=utf-8' });
+  downloadBlob(blob, filename);
+}
+
+// ── Lightbox ──
+function openMediaLightbox(url) {
+  document.getElementById('media-lightbox-img').src = url;
+  document.getElementById('media-lightbox').classList.add('active');
+}
+function closeMediaLightbox() {
+  document.getElementById('media-lightbox').classList.remove('active');
+}
+
+// ── 文本展开/收起 ──
+function togglePostContent(btn, id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var expanded = el.classList.toggle('expanded');
+  btn.textContent = expanded ? '收起' : '展开';
+}
+
+// ── 模型 API 配置 ──
+function saveModelSettings() {
+  const baseUrl = document.getElementById('model-base-url').value.trim();
+  const apiKey = document.getElementById('model-api-key').value.trim();
+  const modelName = document.getElementById('model-name').value.trim();
+  const backup = document.getElementById('model-backup').value.trim();
+
+  if (!baseUrl) return toast('请填写 API 地址', 'error');
+  if (!apiKey) return toast('请填写 API 密钥', 'error');
+
+  localStorage.setItem('model_base_url', baseUrl);
+  localStorage.setItem('model_api_key', apiKey);
+  localStorage.setItem('model_name', modelName);
+  localStorage.setItem('model_backup', backup);
+
+  updateModelSummary();
+  document.getElementById('model-config-card').classList.add('collapsed');
+  toast('模型配置已保存', 'success');
+}
+
+function clearModelSettings() {
+  localStorage.removeItem('model_base_url');
+  localStorage.removeItem('model_api_key');
+  localStorage.removeItem('model_name');
+  localStorage.removeItem('model_backup');
+  document.getElementById('model-base-url').value = '';
+  document.getElementById('model-api-key').value = '';
+  document.getElementById('model-name').value = '';
+  document.getElementById('model-backup').value = '';
+  updateModelSummary();
+  toast('模型配置已清除', 'success');
+}
+
+function loadModelSettings() {
+  document.getElementById('model-base-url').value = localStorage.getItem('model_base_url') || '';
+  document.getElementById('model-api-key').value = localStorage.getItem('model_api_key') || '';
+  document.getElementById('model-name').value = localStorage.getItem('model_name') || '';
+  document.getElementById('model-backup').value = localStorage.getItem('model_backup') || '';
+  updateModelSummary();
+}
+
+function updateModelSummary() {
+  const el = document.getElementById('model-config-summary');
+  const hasKey = localStorage.getItem('model_api_key');
+  const hasUrl = localStorage.getItem('model_base_url');
+  if (hasKey && hasUrl) {
+    const model = localStorage.getItem('model_name') || '默认模型';
+    el.innerHTML = '<span style="color:var(--success)">已配置：' + esc(model) + '</span>';
+    // 有配置时自动折叠
+    document.getElementById('model-config-card').classList.add('collapsed');
+  } else {
+    el.textContent = '未配置';
+  }
+}
+
+// ── Init ──
+loadStats();
+
+// Load version into sidebar
+(async () => {
+  try {
+    const r = await fetch('/api/version');
+    if (r.ok) {
+      const d = await r.json();
+      document.getElementById('app-version').textContent = 'v' + d.version;
+    }
+  } catch (_) {}
+})();
+
+// Poll for update info (check on startup, then every 4 hours)
+let _updateDismissed = false;
+async function checkUpdateBanner() {
+  if (_updateDismissed) return;
+  try {
+    const r = await fetch('/api/update-info');
+    if (!r.ok) return;
+    const info = await r.json();
+    if (info && info.latest_version) {
+      const banner = document.getElementById('update-banner');
+      document.getElementById('update-version').textContent = 'v' + info.latest_version;
+      const link = document.getElementById('update-download-link');
+      link.href = info.download_url || info.release_page || '#';
+      banner.classList.add('show');
+      document.querySelector('.main').classList.add('has-banner');
+    }
+  } catch (_) {}
+}
+checkUpdateBanner();
+setInterval(checkUpdateBanner, 4 * 3600 * 1000);
+
+function dismissUpdate() {
+  _updateDismissed = true;
+  document.getElementById('update-banner').classList.remove('show');
+  document.querySelector('.main').classList.remove('has-banner');
+}
+</script>
+
+<!-- Media Lightbox -->
+<div id="media-lightbox" class="media-lightbox" onclick="closeMediaLightbox()">
+  <img id="media-lightbox-img" src="" alt="">
+  <div class="media-lightbox-close">&times;</div>
+</div>
+
+<!-- Update Banner -->
+<div id="update-banner" class="update-banner">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+  <span>新版本 <strong id="update-version">v0.0.0</strong> 已发布</span>
+  <a href="#" id="update-download-link" target="_blank">立即下载</a>
+  <button class="update-banner-close" onclick="dismissUpdate()">&times;</button>
+</div>
+
+</body>
+</html>

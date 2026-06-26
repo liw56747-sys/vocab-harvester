@@ -32,13 +32,13 @@ crawlers:
 
 # 工作流适配器配置
 workflow:
-  adapter: "xingpan"       # mock | xingpan
+  adapter: "mock"            # mock | xingpan（模型配置优先从前端 UI 传入）
   api:
-    base_url: "https://open.bigmodel.cn/api/paas/v4"
-    api_key: "458bd973a41640f49a66c3d0a01f14be.tTGbCVWDCp3aCT3w"
+    base_url: ""
+    api_key: ""
     workflow_id: ""
-    model: "glm-4-plus"         # 主模型
-    backup_model: "glm-4-flash" # 备用模型
+    model: ""
+    backup_model: ""
     timeout: 300
     poll_interval: 5
     batch_size: 10

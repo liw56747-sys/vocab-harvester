@@ -116,6 +116,10 @@ class VocabManager:
         """拒绝词条"""
         return await self.storage.update_status(word, VocabStatus.REJECTED, category)
 
+    async def delete(self, word: str, category: str = "") -> bool:
+        """删除词条"""
+        return await self.storage.delete(word, category)
+
     async def get_stats(self) -> dict:
         """获取词库统计"""
         return await self.storage.get_stats()

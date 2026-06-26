@@ -46,7 +46,9 @@ class MockCrawler(BaseCrawler):
     async def fetch(self, query: CrawlQuery) -> list[ParsedPost]:
         """生成模拟帖子数据"""
         posts: list[ParsedPost] = []
-        templates = _SAMPLE_TEMPLATES.get(query.platforms[0] if query.platforms else Platform.WEIBO, _SAMPLE_TEMPLATES[Platform.WEIBO])
+        # 使用当前爬虫实例对应的平台模板
+        platform_enum = Platform(self.platform)
+        templates = _SAMPLE_TEMPLATES.get(platform_enum, _SAMPLE_TEMPLATES[Platform.WEIBO])
 
         for i in range(query.max_results):
             keyword = random.choice(query.keywords) if query.keywords else "测试"

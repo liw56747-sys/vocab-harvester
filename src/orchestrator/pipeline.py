@@ -37,19 +37,11 @@ class Pipeline:
         """根据配置创建流水线"""
         settings = get_settings()
 
-        # 创建爬虫实例
+        # 创建爬虫实例 —— Mock 模式下为所有平台都创建爬虫
         crawlers: dict[str, BaseCrawler] = {}
         for platform in Platform:
-            platform_config = getattr(settings.crawlers, platform.value, None)
-            if platform_config and platform_config.enabled:
-                crawlers[platform.value] = MockCrawler(platform)
-                logger.info(f"已加载爬虫: {platform.value} (mock)")
-
-        # 如果没有启用的爬虫，默认加载 mock
-        if not crawlers:
-            for platform in Platform:
-                crawlers[platform.value] = MockCrawler(platform)
-            logger.info("未配置爬虫，使用 Mock 爬虫")
+            crawlers[platform.value] = MockCrawler(platform)
+            logger.info(f"已加载爬虫: {platform.value} (mock)")
 
         # 创建适配器
         adapter: WorkflowAdapter
@@ -62,6 +54,26 @@ class Pipeline:
             adapter = MockAdapter()
 
         return cls(crawlers=crawlers, adapter=adapter)
+
+    @classmethod
+    def from_config_with_model(
+        cls,
+        base_url: str,
+        api_key: str,
+        model: str,
+        backup_model: str = "",
+    ) -> Pipeline:
+        """根据前端传入的模型配置创建流水线（用于导入时的 LLM 分析）"""
+        from src.adapter.xingpan import XingpanAdapter, XingpanConfig
+
+        config = XingpanConfig(
+            base_url=base_url,
+            api_key=api_key,
+            model=model or "glm-4-plus",
+            backup_model=backup_model,
+        )
+        adapter = XingpanAdapter(config=config)
+        return cls(adapter=adapter)
 
     async def run(
         self,
@@ -84,6 +96,7 @@ class Pipeline:
             "total_posts": 0,
             "total_keywords": 0,
             "status": "running",
+            "debug_info": [],
         }
 
         # 记录采集日志
@@ -103,14 +116,20 @@ class Pipeline:
         try:
             # ── 阶段一：采集 ──
             all_posts = []
+            stats["debug_info"].append(f"Processing {len(query.platforms)} platforms: {[p.value for p in query.platforms]}")
+            stats["debug_info"].append(f"Available crawlers: {list(self.crawlers.keys())}")
+            
             for platform in query.platforms:
                 crawler = self.crawlers.get(platform.value)
                 if not crawler:
                     logger.warning(f"未找到平台 {platform.value} 的爬虫，跳过")
+                    stats["debug_info"].append(f"No crawler for {platform.value}, skipping")
                     continue
 
+                stats["debug_info"].append(f"Fetching from {platform.value}...")
                 logger.info(f"开始采集: {platform.value}, 关键词: {query.keywords}")
                 posts = await crawler.fetch(query)
+                stats["debug_info"].append(f"{platform.value} returned {len(posts)} posts")
                 all_posts.extend(posts)
                 stats["platforms"].append({
                     "name": platform.value,
@@ -119,6 +138,20 @@ class Pipeline:
                 logger.info(f"  {platform.value} 采集到 {len(posts)} 条数据")
 
             stats["total_posts"] = len(all_posts)
+
+            # 添加采集到的帖子摘要（最多50条）
+            stats["sampled_posts"] = [
+                {
+                    "platform": p.platform,
+                    "post_id": p.post_id,
+                    "author": p.author,
+                    "content": p.content[:200] if len(p.content) > 200 else p.content,
+                    "published_at": p.published_at.isoformat() if p.published_at else "",
+                    "metrics": p.metrics,
+                    "tags": p.tags,
+                }
+                for p in all_posts[:50]
+            ]
 
             if not all_posts:
                 stats["status"] = "empty"
@@ -166,3 +199,67 @@ class Pipeline:
             ),
         )
         await db.commit()
+
+    async def process_posts(
+        self,
+        posts: list[ParsedPost],
+        source: str = "import",
+    ) -> dict[str, Any]:
+        """
+        直接处理已有的帖子数据（跳过采集阶段）。
+        用于导入外部数据文件。
+        """
+        stats: dict[str, Any] = {
+            "started_at": datetime.now().isoformat(),
+            "total_posts": len(posts),
+            "total_keywords": 0,
+            "status": "running",
+            "sampled_posts": [
+                {
+                    "platform": p.platform,
+                    "post_id": p.post_id,
+                    "author": p.author,
+                    "content": p.content[:200] if len(p.content) > 200 else p.content,
+                    "published_at": p.published_at.isoformat() if p.published_at else "",
+                    "metrics": p.metrics,
+                    "tags": p.tags,
+                }
+                for p in posts[:50]
+            ],
+        }
+
+        db = await get_db()
+        cursor = await db.execute(
+            """INSERT INTO crawl_log (platform, query_keywords, started_at, status)
+               VALUES (?, ?, ?, 'running')""",
+            (source, "file_import", datetime.now().isoformat()),
+        )
+        log_id = cursor.lastrowid
+        await db.commit()
+
+        try:
+            if not posts:
+                stats["status"] = "empty"
+                await self._update_log(db, log_id, stats)
+                return stats
+
+            logger.info(f"导入 {len(posts)} 条数据到工作流...")
+            result = await self.adapter.submit_and_wait(posts)
+            stats["total_keywords"] = len(result.keywords)
+            stats["workflow_metadata"] = result.metadata
+
+            logger.info("写入词库...")
+            ingested = await self.vocab_manager.ingest(result, source_posts=posts)
+            stats["ingested_count"] = ingested
+
+            stats["status"] = "success"
+
+        except Exception as e:
+            stats["status"] = "failed"
+            stats["error"] = str(e)
+            logger.error(f"导入处理失败: {e}", exc_info=True)
+
+        stats["finished_at"] = datetime.now().isoformat()
+        await self._update_log(db, log_id, stats)
+
+        return stats
