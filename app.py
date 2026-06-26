@@ -46,6 +46,9 @@ if str(_BUNDLED_DIR) not in sys.path:
 PORT = 8000
 URL = ""
 
+# 端口持久化文件（保持端口不变，让 localStorage 跨次启动有效）
+_PORT_FILE = _EXE_DIR / ".port"
+
 
 def _port_is_open(port: int, timeout: float = 0.2) -> bool:
     try:
@@ -56,7 +59,16 @@ def _port_is_open(port: int, timeout: float = 0.2) -> bool:
 
 
 def _find_free_port(start: int = 8000, end: int = 8020) -> int:
-    """从 start 开始找一个空闲端口"""
+    """优先复用上次的端口（持久化 localStorage），否则从 start 开始找空闲端口"""
+    # 尝试上次的端口
+    try:
+        if _PORT_FILE.exists():
+            saved = int(_PORT_FILE.read_text(encoding="utf-8").strip())
+            if start <= saved < end and not _port_is_open(saved):
+                return saved
+    except (ValueError, OSError):
+        pass
+    # 找不到就扫描
     for port in range(start, end):
         if not _port_is_open(port):
             return port
@@ -130,10 +142,16 @@ def main():
     except Exception as e:
         _log(f"update check init failed: {e}")
 
-    # 自动找空闲端口
+    # 自动找空闲端口（优先复用上次的）
     PORT = _find_free_port()
     URL = f"http://127.0.0.1:{PORT}"
     _log(f"selected port: {PORT}")
+
+    # 保存端口以便下次启动复用（保持 localStorage origin 不变）
+    try:
+        _PORT_FILE.write_text(str(PORT), encoding="utf-8")
+    except OSError:
+        pass
 
     # 启动后端
     server_thread = threading.Thread(target=_start_server, args=(PORT,), daemon=True)

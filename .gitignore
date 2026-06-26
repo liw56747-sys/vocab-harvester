@@ -28,6 +28,7 @@ data/
 *.db
 *.log
 *.png
+.port
 twitter.log
 
 # Secrets - NEVER push credentials
