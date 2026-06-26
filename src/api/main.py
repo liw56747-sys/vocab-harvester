@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -240,6 +240,26 @@ async def batch_delete(req: BatchDeleteRequest):
         except Exception:
             failed += 1
     return {"ok": True, "success": success, "failed": failed, "total": len(req.items)}
+
+
+class CsvDownloadRequest(BaseModel):
+    csv_data: str       # base64-encoded CSV
+    filename: str = "data.csv"
+
+
+@app.post("/api/download-csv")
+async def download_csv(req: CsvDownloadRequest):
+    """将 base64 CSV 数据作为文件下载返回（兼容 PyWebView）"""
+    import base64
+    try:
+        raw = base64.b64decode(req.csv_data)
+    except Exception:
+        raise HTTPException(400, "无效的 base64 数据")
+    return Response(
+        content=raw,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{req.filename}"'},
+    )
 
 
 @app.get("/api/vocabulary/export")

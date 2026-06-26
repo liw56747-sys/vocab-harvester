@@ -179,6 +179,25 @@ def main():
     # 创建原生窗口
     import webview
 
+    # JS API：提供原生文件保存能力（PyWebView 不支持 HTML5 download 属性）
+    class JsApi:
+        def save_file(self, b64_data: str, filename: str):
+            """将 base64 数据保存到用户的 Downloads 文件夹"""
+            import base64
+            downloads = Path.home() / "Downloads"
+            downloads.mkdir(exist_ok=True)
+            dest = downloads / filename
+            # 避免覆盖
+            counter = 1
+            while dest.exists():
+                stem = dest.stem
+                suffix = dest.suffix
+                dest = downloads / f"{stem}_{counter}{suffix}"
+                counter += 1
+            dest.write_bytes(base64.b64decode(b64_data))
+            _log(f"file saved: {dest}")
+            return str(dest)
+
     # 图标在 _internal/ 里（打包数据），也在 exe 目录里
     icon_path = _BUNDLED_DIR / "icon.ico"
     if not icon_path.exists():
@@ -190,6 +209,7 @@ def main():
         width=1200,
         height=800,
         min_size=(900, 600),
+        js_api=JsApi(),
     )
 
     webview.start(debug=False)
