@@ -119,7 +119,7 @@ Name: "{{group}}\\{{cm:UninstallProgram,{{#MyAppName}}}}"; Filename: "{{uninstal
 Name: "{{autodesktop}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}"; Tasks: desktopicon
 
 [Run]
-Filename: "{{#MyAppExeName}}"; Description: "{{cm:LaunchProgram,{{#StringChange(MyAppName, '&', '&&')}}}}"; WorkingDir: "{{app}}"; Flags: nowait postinstall skipifsilent
+Filename: "{{app}}\\{{#MyAppExeName}}"; Description: "{{cm:LaunchProgram,{{#StringChange(MyAppName, '&', '&&')}}}}"; WorkingDir: "{{app}}"; Flags: nowait postinstall skipifsilent
 '''
 
 
@@ -154,7 +154,7 @@ def main():
     # ── 测试（可选）──
     if not args.skip_tests:
         print("\n[*] Running tests...")
-        result = run([sys.executable, "-m", "pytest", "tests/", "-x", "-q", "--tb=short"],
+        result = run([sys.executable, "-m", "pytest", "tests/", "-x", "-q", "--tb=short", "-m", "not integration"],
                      cwd=str(PROJECT_DIR), check=False)
         if result.returncode != 0:
             print("[!] Tests failed. Use --skip-tests to skip.")

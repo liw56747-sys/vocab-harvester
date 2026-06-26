@@ -32,6 +32,8 @@ class RedditCookieFetcher:
     """通过 Reddit JSON API + 异步 httpx 搜索 Reddit 帖子"""
 
     def __init__(self, proxy: str | None = None):
+        if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
+            proxy = f"http://{proxy}"
         self.proxy = proxy or None
         logger.info(f"RedditCookieFetcher 初始化, proxy={self.proxy}")
 

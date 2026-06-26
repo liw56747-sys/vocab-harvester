@@ -590,6 +590,8 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
     for platform in req.platforms:
         pc = cookie_map.get(platform, {})
         proxy = pc.get("proxy") or None
+        if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
+            proxy = f"http://{proxy}"
 
         if platform == "twitter":
             if not pc.get("ct0") or not pc.get("auth_token"):
@@ -846,6 +848,8 @@ async def batch_search(req: BatchSearchRequest):
             for platform in req.platforms:
                 pc = cookie_map.get(platform, {})
                 proxy = pc.get("proxy") or None
+                if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
+                    proxy = f"http://{proxy}"
 
                 if platform == "twitter":
                     if not pc.get("ct0") or not pc.get("auth_token"):

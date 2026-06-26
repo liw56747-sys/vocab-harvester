@@ -97,6 +97,7 @@ def _start_server(port: int):
             port=port,
             reload=False,
             log_level="warning",
+            log_config=None,
         )
     except Exception as e:
         _log(f"FATAL: server thread crashed: {e}")
