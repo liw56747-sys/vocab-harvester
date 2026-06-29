@@ -13,31 +13,12 @@ try:
 except NameError:
     project_dir = os.path.dirname(os.path.abspath(__file__))
 
-# ── Locate Playwright Chromium (macOS) ──
-def _find_playwright_browsers():
-    """Return Playwright browser directories to bundle"""
-    # Prefer environment variable
-    browsers_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
-    if not browsers_path:
-        # macOS default: ~/Library/Caches/ms-playwright
-        browsers_path = os.path.join(
-            str(Path.home()), "Library", "Caches", "ms-playwright"
-        )
-    if not os.path.isdir(browsers_path):
-        print("[WARN] Playwright browsers not found, skipping")
-        return []
-
-    datas = []
-    for name in os.listdir(browsers_path):
-        src = os.path.join(browsers_path, name)
-        if os.path.isdir(src) and name.startswith("chromium"):
-            dst = os.path.join("playwright_browser", name)
-            datas.append((src, dst))
-            print(f"  Bundling: {name} -> {dst}")
-    return datas
-
-print("[*] Locating Playwright browsers...")
-pw_datas = _find_playwright_browsers()
+# ── Playwright browsers are NOT bundled on macOS ──
+# Chromium's .app has deeply nested frameworks that break PyInstaller's codesign.
+# Instead, the app runs `playwright install chromium` on first launch.
+# This keeps the PyInstaller output clean and avoids signing errors.
+pw_datas = []
+print("[*] Playwright browsers: will be installed at runtime (not bundled)")
 
 a = Analysis(
     [os.path.join(project_dir, 'app.py')],
@@ -120,8 +101,8 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    strip=True,
-    upx=True,
+    strip=False,
+    upx=False,
     upx_exclude=[],
     name='vocab-harvester',
 )

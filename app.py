@@ -33,10 +33,41 @@ def _log(msg: str):
 
 
 # ── Playwright 浏览器路径 ──
-# 打包后 Chromium 位于 _internal/playwright_browser/
+# 打包后 Chromium 位于 _internal/playwright_browser/（Windows 打包方式）
 _BUNDLED_BROWSER = _BUNDLED_DIR / "playwright_browser"
 if _BUNDLED_BROWSER.is_dir():
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_BUNDLED_BROWSER)
+elif sys.platform == "darwin":
+    # macOS：Chromium 不打包进 .app（codesign 兼容性问题）
+    # 首次启动时自动安装到 ~/Library/Caches/ms-playwright
+    _MAC_PW_PATH = Path.home() / "Library" / "Caches" / "ms-playwright"
+    _MAC_CHROMIUM = _MAC_PW_PATH / "chromium-1223"  # 与 Windows 版本一致
+    if not _MAC_CHROMIUM.is_dir():
+        _log("Playwright Chromium not found, installing...")
+        try:
+            import subprocess
+            # 打包后 sys.executable 是 app 自身，无 playwright 模块
+            # 尝试系统 python3 和直接调用 playwright CLI
+            for cmd in [
+                ["python3", "-m", "playwright", "install", "chromium"],
+                ["playwright", "install", "chromium"],
+            ]:
+                try:
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", timeout=120,
+                    )
+                    if result.returncode == 0:
+                        _log(f"Playwright Chromium installed via: {' '.join(cmd)}")
+                        break
+                except FileNotFoundError:
+                    continue
+            else:
+                _log("Could not install Playwright Chromium automatically")
+        except Exception as e:
+            _log(f"Playwright install error: {e}")
+    else:
+        _log(f"Playwright Chromium found at {_MAC_PW_PATH}")
 
 # 确保 _MEIPASS 根目录在 sys.path（让 from src.xxx import 正常工作）
 if str(_BUNDLED_DIR) not in sys.path:
