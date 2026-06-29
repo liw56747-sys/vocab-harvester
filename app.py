@@ -212,36 +212,57 @@ def main():
 
     # JS API：提供原生文件保存能力（PyWebView 不支持 HTML5 download 属性）
     class JsApi:
-        def save_file(self, b64_data: str, filename: str):
-            """将 base64 数据保存到用户的 Downloads 文件夹"""
+        def __init__(self):
+            self.window = None
+
+        def save_file(self, b64_data: str, filename: str, folder: str = ""):
+            """将 base64 数据保存到指定文件夹（或默认 Downloads）"""
             import base64
-            downloads = Path.home() / "Downloads"
-            downloads.mkdir(exist_ok=True)
-            dest = downloads / filename
+            if folder:
+                dest_dir = Path(folder)
+            else:
+                dest_dir = Path.home() / "Downloads"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / filename
             # 避免覆盖
             counter = 1
             while dest.exists():
                 stem = dest.stem
                 suffix = dest.suffix
-                dest = downloads / f"{stem}_{counter}{suffix}"
+                dest = dest_dir / f"{stem}_{counter}{suffix}"
                 counter += 1
             dest.write_bytes(base64.b64decode(b64_data))
             _log(f"file saved: {dest}")
             return str(dest)
+
+        def choose_folder(self):
+            """打开原生文件夹选择对话框，返回用户选择的路径"""
+            if not self.window:
+                return ""
+            result = self.window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=False,
+                directory=True,
+            )
+            if result and len(result) > 0:
+                return result[0]
+            return ""
 
     # 图标在 _internal/ 里（打包数据），也在 exe 目录里
     icon_path = _BUNDLED_DIR / "icon.ico"
     if not icon_path.exists():
         icon_path = _EXE_DIR / "icon.ico"
 
+    js_api = JsApi()
     window = webview.create_window(
         "vocab-harvester",
         url=URL,
         width=1200,
         height=800,
         min_size=(900, 600),
-        js_api=JsApi(),
+        js_api=js_api,
     )
+    js_api.window = window
 
     # 持久化浏览器数据目录（localStorage 等跨次启动保留）
     webview_data = _EXE_DIR / "data" / "webview"

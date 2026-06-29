@@ -1098,6 +1098,21 @@ async def api_update_info():
     return info
 
 
+@app.post("/api/choose-folder")
+async def choose_folder():
+    """打开原生文件夹选择对话框，返回用户选择的路径"""
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()  # 隐藏主窗口
+    root.attributes("-topmost", True)  # 确保对话框在最前面
+    selected_path = filedialog.askdirectory(title="选择文件夹")
+    root.destroy()
+
+    return {"path": selected_path or ""}
+
+
 @app.get("/api/platforms")
 async def get_platforms():
     """获取可用平台列表"""

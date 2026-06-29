@@ -42,6 +42,38 @@
   --transition: 0.2s ease;
 }
 
+/* ── Dark Theme ── */
+body.dark-theme {
+  --bg: #0F172A;
+  --surface: #1E293B;
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --border: #334155;
+  --border-light: #1E293B;
+  --sidebar-bg: #0B1120;
+  --sidebar-hover: #1E293B;
+  --primary-light: rgba(79, 70, 229, 0.15);
+  --success-light: rgba(5, 150, 105, 0.15);
+  --warning-light: rgba(217, 119, 6, 0.15);
+  --danger-light: rgba(220, 38, 38, 0.15);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+  --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.3), 0 2px 4px -2px rgba(0,0,0,0.2);
+}
+body.dark-theme .card { background: var(--surface); border-color: var(--border); }
+body.dark-theme .form-control, body.dark-theme select, body.dark-theme textarea {
+  background: #0F172A; border-color: var(--border); color: var(--text-primary);
+}
+body.dark-theme .table th { background: #0F172A; border-color: var(--border); }
+body.dark-theme .table td { border-color: var(--border); }
+body.dark-theme .stat-card { background: var(--surface); border-color: var(--border); }
+body.dark-theme .cookie-status { background: #0F172A; }
+body.dark-theme details { background: #0F172A; }
+body.dark-theme .export-btn { background: var(--surface); border-color: var(--border); }
+body.dark-theme .export-btn:hover { border-color: var(--primary); }
+body.dark-theme .update-banner { background: #312E81; }
+
 body {
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
   background: var(--bg);
@@ -1070,6 +1102,22 @@ kbd {
 }
 .posts-page-info { font-size: 13px; color: var(--text-muted); min-width: 80px; text-align: center; }
 .posts-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Settings Page ── */
+.settings-options { display: flex; gap: 16px; flex-wrap: wrap; }
+.settings-radio {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 20px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); cursor: pointer;
+  transition: var(--transition); font-size: 14px;
+  background: var(--surface);
+}
+.settings-radio:hover { border-color: var(--primary); }
+.settings-radio input[type="radio"] { accent-color: var(--primary); }
+.settings-radio:has(input:checked) { border-color: var(--primary); background: var(--primary-light); }
+.settings-download-row { display: flex; gap: 10px; align-items: center; }
+.settings-download-row .form-control { flex: 1; }
+.settings-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -1081,29 +1129,33 @@ kbd {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
         Vocab Harvester
       </h1>
-      <div class="subtitle">词库构建系统</div>
+      <div class="subtitle" data-i18n="subtitle">词库构建系统</div>
     </div>
 
     <nav class="sidebar-nav">
       <div class="nav-item active" onclick="showPage('dashboard', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        仪表盘
+        <span data-i18n="nav_dashboard">仪表盘</span>
       </div>
       <div class="nav-item" onclick="showPage('twitter', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        数据抓取
+        <span data-i18n="nav_scrape">数据抓取</span>
       </div>
       <div class="nav-item" onclick="showPage('import', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        数据导入
+        <span data-i18n="nav_import">数据导入</span>
       </div>
       <div class="nav-item" onclick="showPage('vocabulary', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-        词库管理
+        <span data-i18n="nav_vocabulary">词库管理</span>
       </div>
       <div class="nav-item" onclick="showPage('export', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        导出
+        <span data-i18n="nav_export">导出</span>
+      </div>
+      <div class="nav-item" onclick="showPage('settings', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span data-i18n="nav_settings">设置</span>
       </div>
     </nav>
 
@@ -1116,23 +1168,23 @@ kbd {
     <!-- ─── Dashboard ─── -->
     <div id="page-dashboard" class="page active">
       <div class="page-header">
-        <div class="page-title">仪表盘</div>
-        <div class="page-desc">词库数据概览与最近词条</div>
+        <div class="page-title" data-i18n="dashboard_title">仪表盘</div>
+        <div class="page-desc" data-i18n="dashboard_desc">词库数据概览与最近词条</div>
       </div>
 
       <div class="stats-grid" id="stats-row">
-        <div class="stat-card total"><div class="stat-label">总词条</div><div class="stat-value" id="stat-total">-</div></div>
+        <div class="stat-card total"><div class="stat-label" data-i18n="stat_total">总词条</div><div class="stat-value" id="stat-total">-</div></div>
         <div class="stat-card pending"><div class="stat-label">待审核</div><div class="stat-value" id="stat-pending">-</div></div>
-        <div class="stat-card approved"><div class="stat-label">已通过</div><div class="stat-value" id="stat-approved">-</div></div>
-        <div class="stat-card rejected"><div class="stat-label">已拒绝</div><div class="stat-value" id="stat-rejected">-</div></div>
+        <div class="stat-card approved"><div class="stat-label" data-i18n="stat_approved">已通过</div><div class="stat-value" id="stat-approved">-</div></div>
+        <div class="stat-card rejected"><div class="stat-label" data-i18n="stat_rejected">已拒绝</div><div class="stat-value" id="stat-rejected">-</div></div>
       </div>
 
       <div class="card">
-        <div class="card-title">最近词条</div>
-        <div class="card-desc">最新进入词库的词条</div>
+        <div class="card-title" data-i18n="recent_title">最近词条</div>
+        <div class="card-desc" data-i18n="recent_desc">最新进入词库的词条</div>
         <div class="table-wrap">
           <table id="recent-table">
-            <thead><tr><th>词条</th><th>分类</th><th>评分</th><th>动作</th><th>状态</th><th>发现时间</th></tr></thead>
+            <thead><tr><th data-i18n="th_word">词条</th><th data-i18n="th_category">分类</th><th data-i18n="th_score">评分</th><th data-i18n="th_action">动作</th><th data-i18n="th_status">状态</th><th data-i18n="th_time">发现时间</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -1142,22 +1194,22 @@ kbd {
     <!-- ─── Twitter ─── -->
     <div id="page-twitter" class="page">
       <div class="page-header">
-        <div class="page-title">多平台数据抓取</div>
-        <div class="page-desc">通过浏览器 Cookie 认证，从 Twitter/X、Reddit 等平台搜索并抓取数据</div>
+        <div class="page-title" data-i18n="scrape_title">多平台数据抓取</div>
+        <div class="page-desc" data-i18n="scrape_desc">通过浏览器 Cookie 认证，从 Twitter/X、Reddit 等平台搜索并抓取数据</div>
       </div>
 
       <!-- Cookie 配置 -->
       <div class="card collapsible-card" id="twitter-login-card">
         <div class="card-header-toggle" onclick="toggleCookieCard()">
           <div>
-            <div class="card-title" style="margin-bottom:0">Cookie 认证</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px" id="cookie-card-summary">未配置</div>
+            <div class="card-title" style="margin-bottom:0" data-i18n="cookie_auth">Cookie 认证</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px" id="cookie-card-summary" data-i18n="cookie_not_configured">未配置</div>
           </div>
           <svg class="chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
 
         <div class="card-body" style="margin-top:16px">
-          <div class="card-desc">
+          <div class="card-desc" data-i18n="cookie_desc">
             每个访问者使用<strong>自己浏览器中保存的 Cookie</strong>，Cookie 仅存储在你本机的浏览器中，不会共享给其他人。
             <strong style="color:var(--danger)">国内用户需同时填写代理地址</strong>。
           </div>
@@ -1171,7 +1223,7 @@ kbd {
           <!-- Twitter Cookie -->
           <div id="cookie-panel-twitter" class="cookie-panel">
             <details style="margin-bottom:12px">
-              <summary>如何获取 Twitter Cookie</summary>
+              <summary data-i18n="how_get_tw">如何获取 Twitter Cookie</summary>
               <div class="detail-content">
                 <p><strong>步骤 1：</strong>在浏览器中打开 <a href="https://x.com" target="_blank" style="color:var(--primary)">x.com</a> 并登录</p>
                 <p><strong>步骤 2：</strong>按 <kbd>F12</kbd> 打开开发者工具</p>
@@ -1181,7 +1233,7 @@ kbd {
             </details>
             <div class="form-row">
               <div class="form-group" style="flex:1">
-                <label>ct0 <span style="color:var(--text-muted);font-size:11px">CSRF Token</span></label>
+                <label data-i18n="ct0_label">ct0 <span style="color:var(--text-muted);font-size:11px">CSRF Token</span></label>
                 <div class="secret-input-wrap">
                   <input type="password" id="tw-ct0" placeholder="从浏览器 Cookie 中复制" style="font-family:monospace;font-size:12px">
                   <button type="button" class="secret-toggle" onclick="toggleSecret('tw-ct0', this)" title="显示/隐藏">
@@ -1190,7 +1242,7 @@ kbd {
                 </div>
               </div>
               <div class="form-group" style="flex:1">
-                <label>auth_token <span style="color:var(--text-muted);font-size:11px">会话 Token</span></label>
+                <label data-i18n="auth_token_label">auth_token <span style="color:var(--text-muted);font-size:11px">会话 Token</span></label>
                 <div class="secret-input-wrap">
                   <input type="password" id="tw-auth-token" placeholder="从浏览器 Cookie 中复制" style="font-family:monospace;font-size:12px">
                   <button type="button" class="secret-toggle" onclick="toggleSecret('tw-auth-token', this)" title="显示/隐藏">
@@ -1201,13 +1253,13 @@ kbd {
             </div>
             <div class="form-row">
               <div class="form-group" style="flex:1;max-width:420px">
-                <label>代理地址 <span style="color:var(--text-muted);font-size:11px">国内必填</span></label>
+                <label data-i18n="proxy_label">代理地址 <span style="color:var(--text-muted);font-size:11px">国内必填</span></label>
                 <input type="text" id="tw-proxy" placeholder="http://127.0.0.1:7897">
               </div>
-              <button class="btn btn-primary cookie-save-btn" onclick="saveCookie('twitter')">保存 Twitter Cookie</button>
+              <button class="btn btn-primary cookie-save-btn" onclick="saveCookie('twitter')" data-i18n="save_tw_cookie">保存 Twitter Cookie</button>
               <button class="btn btn-secondary cookie-edit-btn" onclick="unlockCookiePanel('twitter')">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                修改
+                <span data-i18n="btn_modify">修改</span>
               </button>
             </div>
             <div id="tw-cookie-status" style="margin-top:8px;font-size:12px"></div>
@@ -1216,7 +1268,7 @@ kbd {
           <!-- Reddit Cookie -->
           <div id="cookie-panel-reddit" class="cookie-panel" style="display:none">
             <details style="margin-bottom:12px">
-              <summary>如何获取 Reddit Cookie</summary>
+              <summary data-i18n="how_get_rd">如何获取 Reddit Cookie</summary>
               <div class="detail-content">
                 <p><strong>步骤 1：</strong>在浏览器中打开 <a href="https://www.reddit.com" target="_blank" style="color:var(--primary)">reddit.com</a> 并登录</p>
                 <p><strong>步骤 2：</strong>按 <kbd>F12</kbd> 打开开发者工具</p>
@@ -1241,13 +1293,13 @@ kbd {
             </div>
             <div class="form-row">
               <div class="form-group" style="flex:1;max-width:420px">
-                <label>代理地址 <span style="color:var(--text-muted);font-size:11px">国内必填</span></label>
+                <label data-i18n="proxy_label">代理地址 <span style="color:var(--text-muted);font-size:11px">国内必填</span></label>
                 <input type="text" id="rd-proxy" placeholder="http://127.0.0.1:7897">
               </div>
-              <button class="btn btn-primary cookie-save-btn" onclick="saveCookie('reddit')">保存 Reddit Cookie</button>
+              <button class="btn btn-primary cookie-save-btn" onclick="saveCookie('reddit')" data-i18n="save_rd_cookie">保存 Reddit Cookie</button>
               <button class="btn btn-secondary cookie-edit-btn" onclick="unlockCookiePanel('reddit')">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                修改
+                <span data-i18n="btn_modify">修改</span>
               </button>
             </div>
             <div id="rd-cookie-status" style="margin-top:8px;font-size:12px"></div>
@@ -1261,20 +1313,20 @@ kbd {
       <!-- URL 抓取 -->
       <div class="card collapsible-card" id="user-scrape-card">
         <div class="card-header-toggle" onclick="toggleCard('user-scrape-card')">
-          <div class="card-title" style="margin:0">用户主页抓取</div>
+          <div class="card-title" style="margin:0" data-i18n="user_scrape_title">用户主页抓取</div>
           <span class="chevron">▼</span>
         </div>
         <div class="card-body" style="margin-top:12px">
-        <div class="card-desc">粘贴 Twitter/X 用户主页链接（每行一个），抓取该用户最近的推文。结果可手动下载为 CSV。</div>
+        <div class="card-desc" data-i18n="user_scrape_desc">粘贴 Twitter/X 用户主页链接（每行一个），抓取该用户最近的推文。结果可手动下载为 CSV。</div>
 
         <div class="form-group mb-16">
-          <label>用户主页链接</label>
+          <label data-i18n="user_urls_label">用户主页链接</label>
           <textarea id="twitter-urls" rows="6" placeholder="https://x.com/elonmusk&#10;https://x.com/someuser" style="width:100%;font-family:monospace;font-size:13px"></textarea>
           <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
             <input type="file" id="url-file-input" accept=".txt,.csv" style="display:none" onchange="handleUrlFileUpload(this)">
             <button class="btn-upload" onclick="document.getElementById('url-file-input').click()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              上传 TXT 文件
+              <span data-i18n="upload_txt">上传 TXT 文件</span>
             </button>
             <span class="text-muted" style="font-size:11px">每行一个链接，自动填入上方</span>
           </div>
@@ -1282,16 +1334,16 @@ kbd {
 
         <div class="flex items-center gap-16 mb-16">
           <div class="form-group">
-            <label>每用户条数</label>
+            <label data-i18n="per_user_count">每用户条数</label>
             <input type="number" id="twitter-count" value="50" min="1" max="200" style="width:90px">
           </div>
           <label class="checkbox-label">
             <input type="checkbox" id="twitter-include-replies">
-            同时抓取评论
+            <span data-i18n="include_replies">同时抓取评论</span>
           </label>
           <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
             <span id="twitter-url-count" class="text-muted text-sm">0 个链接</span>
-            <button class="btn btn-primary" id="twitter-fetch-btn" onclick="startTwitterFetch()">抓取推文</button>
+            <button class="btn btn-primary" id="twitter-fetch-btn" onclick="startTwitterFetch()" data-i18n="btn_scrape">抓取推文</button>
           </div>
         </div>
         </div>
@@ -1300,17 +1352,17 @@ kbd {
       <!-- 关键词搜索（多平台） -->
       <div class="card collapsible-card" id="keyword-search-card">
         <div class="card-header-toggle" onclick="toggleCard('keyword-search-card')">
-          <div class="card-title" style="margin:0">关键词搜索</div>
+          <div class="card-title" style="margin:0" data-i18n="keyword_search_title">关键词搜索</div>
           <span class="chevron">▼</span>
         </div>
         <div class="card-body" style="margin-top:12px">
-        <div class="card-desc">在选中的平台上搜索相关数据，结果注明平台来源，可手动下载为 CSV。</div>
+        <div class="card-desc" data-i18n="keyword_search_desc">在选中的平台上搜索相关数据，结果注明平台来源，可手动下载为 CSV。</div>
 
         <div class="form-group mb-16">
-          <label>搜索关键词</label>
+          <label data-i18n="keyword_label">搜索关键词</label>
           <input type="text" id="search-keyword" placeholder="输入关键词，如：网络赌博、电信诈骗" style="width:100%">
           <details style="margin-top:8px">
-            <summary>高级搜索语法</summary>
+            <summary data-i18n="advanced_syntax">高级搜索语法</summary>
             <div class="detail-content">
               <strong>Twitter：</strong><br>
               <code>keyword1 OR keyword2</code> — 任一关键词 &nbsp;
@@ -1328,14 +1380,14 @@ kbd {
             <input type="file" id="keyword-file-input" accept=".txt,.csv" style="display:none" onchange="handleKeywordFileUpload(this)">
             <button class="btn-upload" title="从 TXT 文件导入多个关键词，逐条搜索后合并结果" onclick="document.getElementById('keyword-file-input').click()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              上传 TXT 批量搜索
+              <span data-i18n="upload_batch">上传 TXT 批量搜索</span>
             </button>
             <span class="text-muted" style="font-size:11px">每行一个关键词，逐条搜索后合并为一个 CSV</span>
           </div>
         </div>
 
         <div class="form-group mb-16">
-          <label>搜索平台 <span style="color:var(--text-muted);font-size:11px">（至少选一个）</span></label>
+          <label data-i18n="platform_label">搜索平台 <span style="color:var(--text-muted);font-size:11px" data-i18n="platform_hint">（至少选一个）</span></label>
           <div class="platform-checks" id="platform-checks">
             <label class="platform-check selected" onclick="togglePlatform(this)">
               <input type="checkbox" value="twitter" checked>
@@ -1352,29 +1404,29 @@ kbd {
 
         <div class="flex items-center gap-16 mb-16">
           <div class="form-group">
-            <label>每平台条数</label>
+            <label data-i18n="per_platform_count">每平台条数</label>
             <input type="number" id="search-count" value="50" min="1" max="200" style="width:90px">
           </div>
           <div class="form-group">
-            <label>排序</label>
+            <label data-i18n="sort_label">排序</label>
             <div class="sort-toggle">
-              <button class="sort-btn active" id="sort-top" onclick="setSortBy('top')">热门</button>
-              <button class="sort-btn" id="sort-live" onclick="setSortBy('live')">最新</button>
+              <button class="sort-btn active" id="sort-top" onclick="setSortBy('top')"><span data-i18n="sort_top">热门</span></button>
+              <button class="sort-btn" id="sort-live" onclick="setSortBy('live')"><span data-i18n="sort_live">最新</span></button>
             </div>
           </div>
           <label class="checkbox-label">
             <input type="checkbox" id="search-include-replies">
-            同时抓取评论
+            <span data-i18n="include_replies">同时抓取评论</span>
           </label>
           <div style="margin-left:auto">
-            <button class="btn btn-primary" id="multi-search-btn" onclick="startMultiSearch()">开始搜索</button>
+            <button class="btn btn-primary" id="multi-search-btn" onclick="startMultiSearch()" data-i18n="btn_search">开始搜索</button>
           </div>
         </div>
 
         <div style="margin-bottom:8px">
           <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-secondary)">
             <input type="checkbox" id="block-resources-toggle">
-            加速模式（屏蔽图片/CSS，页面加载更快）
+            <span data-i18n="block_resources">加速模式（屏蔽图片/CSS，页面加载更快）</span>
           </label>
         </div>
         </div>
@@ -1390,27 +1442,27 @@ kbd {
     <!-- ─── Import ─── -->
     <div id="page-import" class="page">
       <div class="page-header">
-        <div class="page-title">数据导入</div>
-        <div class="page-desc">上传数据文件，系统自动调用工作流提取关键词并写入词库</div>
+        <div class="page-title" data-i18n="import_title">数据导入</div>
+        <div class="page-desc" data-i18n="import_desc">上传数据文件，系统自动调用工作流提取关键词并写入词库</div>
       </div>
 
       <!-- 模型 API 配置 -->
       <div class="card collapsible-card" id="model-config-card">
         <div class="card-header-toggle" onclick="toggleCard('model-config-card')">
           <div>
-            <div class="card-title" style="display:inline">模型 API 配置</div>
-            <span id="model-config-summary" class="text-muted" style="margin-left:12px;font-size:12px">未配置</span>
+            <div class="card-title" style="display:inline" data-i18n="model_config">模型 API 配置</div>
+            <span id="model-config-summary" class="text-muted" style="margin-left:12px;font-size:12px" data-i18n="model_not_configured">未配置</span>
           </div>
           <svg class="chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
         <div class="card-body" style="margin-top:16px">
-          <div class="card-desc" style="margin-bottom:12px">配置大模型 API 用于导入数据时的智能分析（黑词提取）。支持所有 OpenAI 兼容接口。未配置时仅导入存储，不进行分析。</div>
+          <div class="card-desc" style="margin-bottom:12px" data-i18n="model_desc">配置大模型 API 用于导入数据时的智能分析（黑词提取）。支持所有 OpenAI 兼容接口。未配置时仅导入存储，不进行分析。</div>
           <div class="form-group">
-            <label>API 地址</label>
+            <label data-i18n="api_url">API 地址</label>
             <input type="text" id="model-base-url" placeholder="例如 https://open.bigmodel.cn/api/paas/v4" style="width:100%">
           </div>
           <div class="form-group">
-            <label>API 密钥</label>
+            <label data-i18n="api_key">API 密钥</label>
             <div style="display:flex;gap:8px;align-items:center">
               <input type="password" id="model-api-key" placeholder="输入 API Key" style="flex:1">
               <button class="btn btn-secondary btn-sm" onclick="toggleSecret('model-api-key', this)" style="padding:4px 8px;flex-shrink:0">
@@ -1420,49 +1472,49 @@ kbd {
           </div>
           <div style="display:flex;gap:16px">
             <div class="form-group" style="flex:1">
-              <label>模型名称</label>
+              <label data-i18n="model_name">模型名称</label>
               <input type="text" id="model-name" placeholder="例如 glm-4-plus">
             </div>
             <div class="form-group" style="flex:1">
-              <label>备用模型</label>
+              <label data-i18n="model_backup">备用模型</label>
               <input type="text" id="model-backup" placeholder="例如 glm-4-flash">
             </div>
           </div>
           <div style="display:flex;gap:8px;margin-top:12px">
-            <button class="btn btn-primary btn-sm" id="model-save-btn" onclick="saveModelSettings()">保存配置</button>
-            <button class="btn btn-secondary btn-sm" id="model-clear-btn" onclick="clearModelSettings()">清除</button>
+            <button class="btn btn-primary btn-sm" id="model-save-btn" onclick="saveModelSettings()" data-i18n="btn_save_config">保存配置</button>
+            <button class="btn btn-secondary btn-sm" id="model-clear-btn" onclick="clearModelSettings()" data-i18n="btn_clear">清除</button>
           </div>
           <div id="model-config-status" style="margin-top:8px;font-size:12px"></div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">上传文件</div>
-        <div class="card-desc">支持 JSON 和 CSV 格式，文件应包含帖子内容。</div>
+        <div class="card-title" data-i18n="upload_file_title">上传文件</div>
+        <div class="card-desc" data-i18n="upload_file_desc">支持 JSON 和 CSV 格式，文件应包含帖子内容。</div>
 
         <div class="form-row">
           <div class="form-group">
-            <label>数据来源</label>
+            <label data-i18n="data_source">数据来源</label>
             <select id="import-platform">
-              <option value="weibo">微博</option>
-              <option value="xiaohongshu">小红书</option>
-              <option value="twitter">Twitter</option>
-              <option value="douyin">抖音</option>
-              <option value="unknown">其他</option>
+              <option value="weibo" data-i18n="platform_weibo">微博</option>
+              <option value="xiaohongshu" data-i18n="platform_xhs">小红书</option>
+              <option value="twitter" data-i18n="platform_twitter">Twitter</option>
+              <option value="douyin" data-i18n="platform_douyin">抖音</option>
+              <option value="unknown" data-i18n="platform_other">其他</option>
             </select>
           </div>
           <div class="form-group">
-            <label>选择文件</label>
+            <label data-i18n="select_file">选择文件</label>
             <input type="file" id="import-file" accept=".json,.csv" style="padding:6px">
           </div>
-          <button class="btn btn-primary" id="import-btn" onclick="startImport()">导入并分析</button>
+          <button class="btn btn-primary" id="import-btn" onclick="startImport()" data-i18n="btn_import">导入并分析</button>
         </div>
 
         <div id="import-result"></div>
       </div>
 
       <div class="card">
-        <div class="card-title">数据格式说明</div>
+        <div class="card-title" data-i18n="format_title">数据格式说明</div>
         <div class="card-desc" style="margin-bottom:0">
           <p><strong>JSON 格式：</strong></p>
           <pre>[
@@ -1482,54 +1534,54 @@ kbd {
     <!-- ─── Vocabulary ─── -->
     <div id="page-vocabulary" class="page">
       <div class="page-header">
-        <div class="page-title">词库管理</div>
-        <div class="page-desc">审核、管理和维护词库词条</div>
+        <div class="page-title" data-i18n="vocab_title">词库管理</div>
+        <div class="page-desc" data-i18n="vocab_desc">审核、管理和维护词库词条</div>
       </div>
 
       <div class="card">
         <div class="filters">
           <div class="form-group">
-            <label>搜索</label>
+            <label data-i18n="search_label">搜索</label>
             <input type="text" id="filter-search" placeholder="搜索词条..." oninput="debounceLoad()" style="width:180px">
           </div>
           <div class="form-group">
-            <label>状态</label>
+            <label data-i18n="status_label">状态</label>
             <select id="filter-status" onchange="loadVocab()" style="width:120px">
-              <option value="">全部</option>
-              <option value="pending">待审核</option>
-              <option value="approved">已通过</option>
-              <option value="rejected">已拒绝</option>
+              <option value="" data-i18n="all">全部</option>
+              <option value="pending" data-i18n="pending">待审核</option>
+              <option value="approved" data-i18n="approved">已通过</option>
+              <option value="rejected" data-i18n="rejected">已拒绝</option>
             </select>
           </div>
           <div class="form-group">
-            <label>动作</label>
+            <label data-i18n="action_label">动作</label>
             <select id="filter-action" onchange="loadVocab()" style="width:140px">
-              <option value="">全部</option>
-              <option value="need_human_review">需人工审核</option>
-              <option value="observe">观察</option>
-              <option value="add_temp_kb">建议入库</option>
-              <option value="reject">建议拒绝</option>
+              <option value="" data-i18n="all">全部</option>
+              <option value="need_human_review" data-i18n="action_review">需人工审核</option>
+              <option value="observe" data-i18n="action_watch">观察</option>
+              <option value="add_temp_kb" data-i18n="action_suggest_add">建议入库</option>
+              <option value="reject" data-i18n="action_suggest_reject">建议拒绝</option>
             </select>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="loadVocab()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            刷新
+            <span data-i18n="btn_refresh">刷新</span>
           </button>
         </div>
 
         <div class="batch-bar" id="batch-bar" style="display:none">
           <span class="count">已选 <strong id="batch-count">0</strong> 条</span>
-          <button class="btn btn-success btn-sm" onclick="batchReview('approve')">批量通过</button>
-          <button class="btn btn-danger btn-sm" onclick="batchReview('reject')">批量拒绝</button>
-          <button class="btn btn-danger btn-sm" onclick="batchDelete()" style="background:#991B1B">删除</button>
-          <button class="btn btn-secondary btn-sm" onclick="clearSelection()">取消选择</button>
+          <button class="btn btn-success btn-sm" onclick="batchReview('approve')" data-i18n="btn_batch_approve">批量通过</button>
+          <button class="btn btn-danger btn-sm" onclick="batchReview('reject')" data-i18n="btn_batch_reject">批量拒绝</button>
+          <button class="btn btn-danger btn-sm" onclick="batchDelete()" style="background:#991B1B" data-i18n="btn_delete">删除</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearSelection()" data-i18n="btn_cancel_select">取消选择</button>
         </div>
 
         <div class="table-wrap">
           <table id="vocab-table">
             <thead><tr>
               <th><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)"></th>
-              <th>#</th><th>词条</th><th>分类</th><th>评分</th><th>候选类型</th><th>动作</th><th>原文证据</th><th>原因</th><th>平台</th><th>状态</th><th>操作</th>
+              <th data-i18n="th_num">#</th><th data-i18n="th_word">词条</th><th data-i18n="th_category">分类</th><th data-i18n="th_score">评分</th><th data-i18n="th_candidate">候选类型</th><th data-i18n="th_action">动作</th><th data-i18n="th_evidence">原文证据</th><th data-i18n="th_reason">原因</th><th data-i18n="th_platform">平台</th><th data-i18n="th_status">状态</th><th data-i18n="th_ops">操作</th>
             </tr></thead>
             <tbody></tbody>
           </table>
@@ -1546,18 +1598,18 @@ kbd {
     <!-- ─── Export ─── -->
     <div id="page-export" class="page">
       <div class="page-header">
-        <div class="page-title">导出词库</div>
-        <div class="page-desc">将词库数据导出为不同格式</div>
+        <div class="page-title" data-i18n="export_title">导出词库</div>
+        <div class="page-desc" data-i18n="export_desc">将词库数据导出为不同格式</div>
       </div>
 
       <div class="card">
         <div class="form-row mb-16">
           <div class="form-group">
-            <label>筛选状态</label>
+            <label data-i18n="filter_status">筛选状态</label>
             <select id="export-status" style="width:160px">
-              <option value="">全部词条</option>
-              <option value="approved">仅已通过</option>
-              <option value="pending">仅待审核</option>
+              <option value="" data-i18n="filter_all">全部词条</option>
+              <option value="approved" data-i18n="filter_approved">仅已通过</option>
+              <option value="pending" data-i18n="filter_pending">仅待审核</option>
             </select>
           </div>
         </div>
@@ -1569,7 +1621,7 @@ kbd {
             </div>
             <div>
               <div class="export-name">JSON</div>
-              <div class="export-desc">完整结构化数据</div>
+              <div class="export-desc" data-i18n="export_json_desc">完整结构化数据</div>
             </div>
           </div>
           <div class="export-btn" onclick="doExport('csv')">
@@ -1578,7 +1630,7 @@ kbd {
             </div>
             <div>
               <div class="export-name">CSV</div>
-              <div class="export-desc">Excel 可打开</div>
+              <div class="export-desc" data-i18n="export_csv_desc">Excel 可打开</div>
             </div>
           </div>
           <div class="export-btn" onclick="doExport('txt')">
@@ -1587,7 +1639,7 @@ kbd {
             </div>
             <div>
               <div class="export-name">TXT</div>
-              <div class="export-desc">纯文本，每行一词</div>
+              <div class="export-desc" data-i18n="export_txt_desc">纯文本，每行一词</div>
             </div>
           </div>
         </div>
@@ -1596,13 +1648,488 @@ kbd {
       </div>
     </div>
 
+    <!-- ─── Settings ─── -->
+    <div id="page-settings" class="page">
+      <div class="page-header">
+        <div class="page-title" data-i18n="settings_title">设置</div>
+        <div class="page-desc" data-i18n="settings_desc">语言、主题和文件保存位置</div>
+      </div>
+
+      <!-- Language -->
+      <div class="card">
+        <div class="card-title" data-i18n="settings_language">语言 / Language</div>
+        <div class="settings-options">
+          <label class="settings-radio">
+            <input type="radio" name="lang" value="zh" onchange="switchLanguage('zh')" checked>
+            <span>中文</span>
+          </label>
+          <label class="settings-radio">
+            <input type="radio" name="lang" value="en" onchange="switchLanguage('en')">
+            <span>English</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Theme -->
+      <div class="card">
+        <div class="card-title" data-i18n="settings_theme">外观主题</div>
+        <div class="settings-options">
+          <label class="settings-radio">
+            <input type="radio" name="theme" value="light" onchange="switchTheme('light')" checked>
+            <span>☀️ <span data-i18n="theme_light">浅色</span></span>
+          </label>
+          <label class="settings-radio">
+            <input type="radio" name="theme" value="dark" onchange="switchTheme('dark')">
+            <span>🌙 <span data-i18n="theme_dark">深色</span></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Download Folder -->
+      <div class="card">
+        <div class="card-title" data-i18n="settings_download_dir">文件保存位置</div>
+        <div class="settings-download-row">
+          <input type="text" id="download-path" class="form-control" readonly placeholder="Downloads">
+          <button class="btn btn-secondary btn-sm" onclick="chooseDownloadFolder()" data-i18n="btn_browse">选择文件夹</button>
+        </div>
+        <div class="settings-hint" data-i18n="settings_download_hint">导出的 CSV、JSON、TXT 文件将保存到此位置</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
 <script>
 // ═══════════════════════════════════════════════════
-// JavaScript — Business Logic
+// i18n + Settings System
 // ═══════════════════════════════════════════════════
+
+const I18N = {
+  zh: {
+    // Nav
+    nav_dashboard: '仪表盘', nav_scrape: '数据抓取', nav_import: '数据导入',
+    nav_vocabulary: '词库管理', nav_export: '导出', nav_settings: '设置',
+    subtitle: '词库构建系统',
+    // Dashboard
+    dashboard_title: '仪表盘', dashboard_desc: '词库数据概览与最近词条',
+    stat_total: '总词条', stat_pending: '待审核', stat_approved: '已通过', stat_rejected: '已拒绝',
+    recent_title: '最近词条', recent_desc: '最新进入词库的词条',
+    th_word: '词条', th_category: '分类', th_score: '评分', th_action: '动作',
+    th_status: '状态', th_time: '发现时间',
+    // Scrape
+    scrape_title: '多平台数据抓取',
+    scrape_desc: '通过浏览器 Cookie 认证，从 Twitter/X、Reddit 等平台搜索并抓取数据',
+    cookie_auth: 'Cookie 认证', cookie_not_configured: '未配置',
+    cookie_desc: '每个访问者使用自己浏览器中保存的 Cookie，Cookie 仅存储在你本机的浏览器中，不会共享给其他人。',
+    cookie_warning: '国内用户需同时填写代理地址',
+    how_get_tw: '如何获取 Twitter Cookie',
+    step1: '步骤 1：', step2: '步骤 2：', step3: '步骤 3：', step4: '步骤 4：',
+    open_browser_login: '在浏览器中打开', and_login: '并登录',
+    open_devtools: '打开开发者工具',
+    copy_values: '复制', values_suffix: '的值',
+    ct0_label: 'ct0', ct0_hint: 'CSRF Token',
+    auth_token_label: 'auth_token', auth_token_hint: '会话 Token',
+    proxy_label: '代理地址', proxy_hint: '国内必填',
+    from_browser_cookie: '从浏览器 Cookie 中复制',
+    save_tw_cookie: '保存 Twitter Cookie', btn_modify: '修改',
+    how_get_rd: '如何获取 Reddit Cookie',
+    rd_cookie_instr: '分别复制以下 Cookie 的值（至少需要 reddit_session）：',
+    rd_session_desc: 'reddit_session — 会话凭证（必需）',
+    rd_edge_desc: 'edgebucket — 实验标记（推荐）',
+    rd_optout_desc: 'redesign_optout — 界面标记（推荐）',
+    rd_quick_way: '快捷方式：在 Console 中执行 document.cookie，复制输出的整段字符串粘贴到下方即可。',
+    rd_cookie_label: 'Cookie', rd_cookie_hint: '粘贴完整 Cookie 字符串或单独填写 reddit_session 值',
+    rd_cookie_placeholder: '从 Console 粘贴 document.cookie 输出，或直接填写 reddit_session 值',
+    save_rd_cookie: '保存 Reddit Cookie',
+    user_scrape_title: '用户主页抓取',
+    user_scrape_desc: '粘贴 Twitter/X 用户主页链接（每行一个），抓取该用户最近的推文。结果可手动下载为 CSV。',
+    user_urls_label: '用户主页链接',
+    upload_txt: '上传 TXT 文件', upload_txt_hint: '每行一个链接，自动填入上方',
+    per_user_count: '每用户条数', include_replies: '同时抓取评论',
+    url_count: '0 个链接', btn_scrape: '抓取推文',
+    keyword_search_title: '关键词搜索',
+    keyword_search_desc: '在选定的平台上搜索相关数据，结果注明平台来源，可手动下载为 CSV。',
+    keyword_label: '搜索关键词', keyword_placeholder: '输入关键词，如：网络赌博、电信诈骗',
+    advanced_syntax: '高级搜索语法',
+    adv_any: '任一关键词', adv_phrase: '精确短语', adv_exact: '精确匹配',
+    adv_since: '时间范围', adv_faves: '至少 100 个赞', adv_exclude: '排除某个词', adv_sub: '限定子版块',
+    upload_batch: '上传 TXT 批量搜索',
+    upload_batch_title_attr: '从 TXT 文件导入多个关键词，逐条搜索后合并结果',
+    upload_batch_hint: '每行一个关键词，逐条搜索后合并为一个 CSV',
+    platform_label: '搜索平台', platform_hint: '（至少选一个）',
+    per_platform_count: '每平台条数', sort_label: '排序',
+    sort_top: '热门', sort_live: '最新',
+    block_resources: '加速模式（屏蔽图片/CSS，页面加载更快）',
+    btn_search: '开始搜索',
+    // Import
+    import_title: '数据导入',
+    import_desc: '上传数据文件，系统自动调用工作流提取关键词并写入词库',
+    model_config: '模型 API 配置', model_not_configured: '未配置',
+    model_desc: '配置大模型 API 用于导入数据时的智能分析（黑词提取）。支持所有 OpenAI 兼容接口。未配置时仅导入存储，不进行分析。',
+    api_url: 'API 地址', api_url_placeholder: '例如 https://open.bigmodel.cn/api/paas/v4',
+    api_key: 'API 密钥', api_key_placeholder: '输入 API Key',
+    model_name: '模型名称', model_name_placeholder: '例如 glm-4-plus',
+    model_backup: '备用模型', model_backup_placeholder: '例如 glm-4-flash',
+    btn_save_config: '保存配置', btn_clear: '清除',
+    upload_file_title: '上传文件',
+    upload_file_desc: '支持 JSON 和 CSV 格式，文件应包含帖子内容。',
+    data_source: '数据来源',
+    platform_weibo: '微博', platform_xhs: '小红书', platform_twitter: 'Twitter',
+    platform_douyin: '抖音', platform_other: '其他',
+    select_file: '选择文件', btn_import: '导入并分析',
+    format_title: '数据格式说明',
+    format_json: 'JSON 格式：', format_csv: 'CSV 格式：',
+    format_required: '必填字段：', format_optional: '可选字段：',
+    // Vocabulary
+    vocab_title: '词库管理', vocab_desc: '审核、管理和维护词库词条',
+    search_label: '搜索', search_placeholder: '搜索词条...',
+    status_label: '状态', all: '全部',
+    pending: '待审核', approved: '已通过', rejected: '已拒绝',
+    action_label: '动作',
+    action_review: '需人工审核', action_watch: '观察',
+    action_suggest_add: '建议入库', action_suggest_reject: '建议拒绝',
+    btn_refresh: '刷新',
+    batch_selected: '已选', batch_items: '条',
+    btn_batch_approve: '批量通过', btn_batch_reject: '批量拒绝',
+    btn_delete: '删除', btn_cancel_select: '取消选择',
+    th_num: '#', th_candidate: '候选类型', th_evidence: '原文证据',
+    th_reason: '原因', th_platform: '平台', th_ops: '操作',
+    btn_approve: '通过', btn_reject: '拒绝',
+    btn_prev: '上一页', btn_next: '下一页',
+    page_info_tpl: '第 {x} / {y} 页（共 {z} 条）',
+    no_data: '暂无数据',
+    // Export
+    export_title: '导出词库', export_desc: '将词库数据导出为不同格式',
+    filter_status: '筛选状态',
+    filter_all: '全部词条', filter_approved: '仅已通过', filter_pending: '仅待审核',
+    export_json_desc: '完整结构化数据', export_csv_desc: 'Excel 可打开',
+    export_txt_desc: '纯文本，每行一词',
+    // Settings
+    settings_title: '设置', settings_desc: '语言、主题和文件保存位置',
+    settings_language: '语言 / Language',
+    settings_theme: '外观主题',
+    theme_light: '浅色', theme_dark: '深色',
+    settings_download_dir: '文件保存位置',
+    btn_browse: '选择文件夹',
+    settings_download_hint: '导出的 CSV、JSON、TXT 文件将保存到此位置',
+    // Update banner
+    new_version: '新版本', released: '已发布', download_now: '立即下载',
+    // Dynamic / toast
+    request_failed: '请求失败', task_cancelled: '任务已取消',
+    select_file_toast: '请选择文件', importing: '导入中...',
+    import_complete: '导入完成', import_posts: '导入的帖子（显示前 {n} 条）',
+    import_stat_posts: '导入帖子', import_stat_keywords: '提取关键词',
+    import_stat_vocab: '词库更新', import_success: '导入完成！',
+    import_failed: '导入失败', unknown_error: '未知错误',
+    approved_word: '已通过: {word}', rejected_word: '已拒绝: {word}',
+    select_words_first: '请先选择词条',
+    confirm_batch_approve: '确认批量通过 {n} 条词条？',
+    confirm_batch_reject: '确认批量拒绝 {n} 条词条？',
+    batch_approve_done: '批量通过完成：成功 {n} 条',
+    batch_reject_done: '批量拒绝完成：成功 {n} 条',
+    batch_failed: '，失败 {n} 条',
+    confirm_delete: '确认永久删除 {n} 条词条？此操作不可撤销！',
+    delete_done: '删除完成：成功 {n} 条',
+    n_links: '{n} 个链接',
+    cookie_saved: 'Cookie 已保存到本浏览器',
+    tw_cookie_saved: 'Twitter Cookie 已保存', rd_cookie_saved: 'Reddit Cookie 已保存',
+    configured: '已配置：',
+    paste_user_links: '请粘贴至少一个用户主页链接',
+    configure_tw_cookie: '请先配置 Twitter Cookie',
+    scraping: '抓取中... ({t})',
+    scraped_posts: '抓取到的推文（显示前 {n} 条）',
+    user_scrape_result: '用户主页抓取结果',
+    no_valid_result: '无有效结果', scrape_complete: '抓取完成', scrape_failed: '抓取失败',
+    stat_scraped: '抓取推文', btn_download_csv: '下载 CSV 文件',
+    scrape_hint: '如需提取黑词，请下载后前往「数据导入」页面手动上传分析。',
+    tw_scrape_done: 'Twitter 抓取完成！',
+    enter_keyword: '请输入搜索关键词', select_platform: '请至少选择一个搜索平台',
+    searching: '搜索中... ({t})',
+    search_result: '关键词搜索结果',
+    no_search_result: '无搜索结果', search_complete: '搜索完成', search_failed: '搜索失败',
+    total_results: '总结果',
+    multi_search_done: '多平台搜索完成！',
+    cookie_not_configured_short: 'Cookie 未配置',
+    no_platform_cookie: '所选平台均未配置 Cookie，请先填写',
+    skipped_platforms: '以下平台已跳过：',
+    configure_cookie_first: '请在页面顶部「Cookie 认证」中配置对应平台的 Cookie 后再试',
+    results_heading: '搜索结果',
+    total_n_showing: '共 {n} 条，显示 {x}-{y}',
+    per_page: '每页', n_items: '{n} 条',
+    first_page: '首页', last_page: '末页',
+    likes: '点赞', retweets: '转发', replies: '回复', score: '得分', comments: '评论',
+    images: '图片', videos: '视频', media: '媒体',
+    expand: '展开', collapse: '收起',
+    replies_collected: '已采 {n} 条评论',
+    elapsed: '耗时 {m}分{s}秒',
+    file_saved_to: '文件已保存到: {path}',
+    export_success: '导出成功', export_failed: '导出失败',
+    save_failed: '保存失败: {error}', download_failed: '下载失败',
+    no_keywords_in_file: '文件中没有找到有效关键词',
+    file_read_failed: '文件读取失败',
+    imported_n_links: '已从文件导入 {n} 个链接',
+    too_many_keywords: '关键词过多（最多 10 个），请精简后重试',
+    batch_search_n: '批量搜索 {n} 个关键词',
+    with_replies: '（含评论抓取）',
+    estimated_time: '预计耗时约 {n} 分钟，期间请勿关闭页面。',
+    confirm_continue: '是否继续？',
+    batch_searching: '批量搜索 {n} 个关键词... ({t})',
+    batch_result: '批量搜索结果',
+    stat_total_posts: '总帖子数', stat_total_rows: '总行数（含评论）', stat_keyword_count: '关键词数',
+    all_cookie_not_configured: '所有平台 Cookie 均未配置',
+    fill_api_url: '请填写 API 地址', fill_api_key: '请填写 API 密钥',
+    model_saved: '模型配置已保存', model_cleared: '模型配置已清除',
+    model_configured: '已配置：{model}', default_model: '默认模型',
+    fill_ct0_auth: '请填写 ct0 和 auth_token',
+    fill_rd_cookie: '请填写 Reddit Cookie',
+    toggle_visibility: '显示/隐藏',
+  },
+  en: {
+    nav_dashboard: 'Dashboard', nav_scrape: 'Data Scraping', nav_import: 'Data Import',
+    nav_vocabulary: 'Vocabulary', nav_export: 'Export', nav_settings: 'Settings',
+    subtitle: 'Vocabulary Builder',
+    dashboard_title: 'Dashboard', dashboard_desc: 'Vocabulary overview and recent entries',
+    stat_total: 'Total', stat_pending: 'Pending', stat_approved: 'Approved', stat_rejected: 'Rejected',
+    recent_title: 'Recent Entries', recent_desc: 'Latest vocabulary entries',
+    th_word: 'Word', th_category: 'Category', th_score: 'Score', th_action: 'Action',
+    th_status: 'Status', th_time: 'Discovered',
+    scrape_title: 'Multi-Platform Scraping',
+    scrape_desc: 'Search and scrape data from Twitter/X, Reddit and other platforms via browser cookies',
+    cookie_auth: 'Cookie Authentication', cookie_not_configured: 'Not configured',
+    cookie_desc: 'Each user uses cookies saved in their own browser. Cookies are stored locally and never shared.',
+    cookie_warning: 'Users in China must also provide a proxy address',
+    how_get_tw: 'How to get Twitter Cookies',
+    step1: 'Step 1: ', step2: 'Step 2: ', step3: 'Step 3: ', step4: 'Step 4: ',
+    open_browser_login: 'Open in browser', and_login: 'and log in',
+    open_devtools: 'Open Developer Tools',
+    copy_values: 'Copy', values_suffix: ' values',
+    ct0_label: 'ct0', ct0_hint: 'CSRF Token',
+    auth_token_label: 'auth_token', auth_token_hint: 'Session Token',
+    proxy_label: 'Proxy Address', proxy_hint: 'Required in China',
+    from_browser_cookie: 'Copy from browser cookies',
+    save_tw_cookie: 'Save Twitter Cookie', btn_modify: 'Edit',
+    how_get_rd: 'How to get Reddit Cookies',
+    rd_cookie_instr: 'Copy the values of the following cookies (at least reddit_session):',
+    rd_session_desc: 'reddit_session — Session credential (required)',
+    rd_edge_desc: 'edgebucket — Experiment flag (recommended)',
+    rd_optout_desc: 'redesign_optout — UI flag (recommended)',
+    rd_quick_way: 'Quick way: Run document.cookie in Console, copy the entire output string and paste below.',
+    rd_cookie_label: 'Cookie', rd_cookie_hint: 'Paste full cookie string or enter reddit_session value',
+    rd_cookie_placeholder: 'Paste document.cookie output from Console, or enter reddit_session value',
+    save_rd_cookie: 'Save Reddit Cookie',
+    user_scrape_title: 'User Profile Scraping',
+    user_scrape_desc: 'Paste Twitter/X profile URLs (one per line) to scrape recent tweets. Results can be downloaded as CSV.',
+    user_urls_label: 'Profile URLs',
+    upload_txt: 'Upload TXT', upload_txt_hint: 'One URL per line, auto-fills above',
+    per_user_count: 'Tweets per user', include_replies: 'Include replies',
+    url_count: '0 links', btn_scrape: 'Scrape Tweets',
+    keyword_search_title: 'Keyword Search',
+    keyword_search_desc: 'Search for relevant data on selected platforms. Results include platform source and can be downloaded as CSV.',
+    keyword_label: 'Search Keywords', keyword_placeholder: 'Enter keywords, e.g.: online gambling, fraud',
+    advanced_syntax: 'Advanced Search Syntax',
+    adv_any: 'Any keyword', adv_phrase: 'Exact phrase', adv_exact: 'Exact match',
+    adv_since: 'Date range', adv_faves: 'Min 100 likes', adv_exclude: 'Exclude word', adv_sub: 'Limit subreddit',
+    upload_batch: 'Upload TXT for Batch', upload_batch_title_attr: 'Import keywords from TXT, search each and merge results',
+    upload_batch_hint: 'One keyword per line, search each and merge into one CSV',
+    platform_label: 'Platforms', platform_hint: '(select at least one)',
+    per_platform_count: 'Results per platform', sort_label: 'Sort',
+    sort_top: 'Top', sort_live: 'Latest',
+    block_resources: 'Speed mode (block images/CSS for faster loading)',
+    btn_search: 'Start Search',
+    import_title: 'Data Import',
+    import_desc: 'Upload data files. The system uses AI workflow to extract keywords and write to vocabulary.',
+    model_config: 'Model API Config', model_not_configured: 'Not configured',
+    model_desc: 'Configure LLM API for intelligent analysis during import. Supports all OpenAI-compatible APIs. Without config, data is stored but not analyzed.',
+    api_url: 'API URL', api_url_placeholder: 'e.g. https://open.bigmodel.cn/api/paas/v4',
+    api_key: 'API Key', api_key_placeholder: 'Enter API Key',
+    model_name: 'Model Name', model_name_placeholder: 'e.g. glm-4-plus',
+    model_backup: 'Backup Model', model_backup_placeholder: 'e.g. glm-4-flash',
+    btn_save_config: 'Save Config', btn_clear: 'Clear',
+    upload_file_title: 'Upload File',
+    upload_file_desc: 'Supports JSON and CSV formats. Files should contain post content.',
+    data_source: 'Data Source',
+    platform_weibo: 'Weibo', platform_xhs: 'Xiaohongshu', platform_twitter: 'Twitter',
+    platform_douyin: 'Douyin', platform_other: 'Other',
+    select_file: 'Select File', btn_import: 'Import & Analyze',
+    format_title: 'Data Format Reference',
+    format_json: 'JSON format:', format_csv: 'CSV format:',
+    format_required: 'Required fields:', format_optional: 'Optional fields:',
+    vocab_title: 'Vocabulary Management', vocab_desc: 'Review, manage and maintain vocabulary entries',
+    search_label: 'Search', search_placeholder: 'Search entries...',
+    status_label: 'Status', all: 'All',
+    pending: 'Pending', approved: 'Approved', rejected: 'Rejected',
+    action_label: 'Action',
+    action_review: 'Needs Review', action_watch: 'Watch',
+    action_suggest_add: 'Suggest Add', action_suggest_reject: 'Suggest Reject',
+    btn_refresh: 'Refresh',
+    batch_selected: 'Selected', batch_items: 'items',
+    btn_batch_approve: 'Batch Approve', btn_batch_reject: 'Batch Reject',
+    btn_delete: 'Delete', btn_cancel_select: 'Cancel',
+    th_num: '#', th_candidate: 'Candidate Type', th_evidence: 'Evidence',
+    th_reason: 'Reason', th_platform: 'Platform', th_ops: 'Actions',
+    btn_approve: 'Approve', btn_reject: 'Reject',
+    btn_prev: 'Previous', btn_next: 'Next',
+    page_info_tpl: 'Page {x} / {y} ({z} total)',
+    no_data: 'No data',
+    export_title: 'Export Vocabulary', export_desc: 'Export vocabulary data in different formats',
+    filter_status: 'Filter by Status',
+    filter_all: 'All entries', filter_approved: 'Approved only', filter_pending: 'Pending only',
+    export_json_desc: 'Full structured data', export_csv_desc: 'Opens in Excel',
+    export_txt_desc: 'Plain text, one word per line',
+    settings_title: 'Settings', settings_desc: 'Language, theme and file save location',
+    settings_language: 'Language / 语言',
+    settings_theme: 'Appearance',
+    theme_light: 'Light', theme_dark: 'Dark',
+    settings_download_dir: 'File Save Location',
+    btn_browse: 'Browse',
+    settings_download_hint: 'Exported CSV, JSON, TXT files will be saved here',
+    new_version: 'New version', released: 'released', download_now: 'Download Now',
+    request_failed: 'Request failed', task_cancelled: 'Task cancelled',
+    select_file_toast: 'Please select a file', importing: 'Importing...',
+    import_complete: 'Import Complete', import_posts: 'Imported posts (showing first {n})',
+    import_stat_posts: 'Posts', import_stat_keywords: 'Keywords',
+    import_stat_vocab: 'Vocabulary Updates', import_success: 'Import complete!',
+    import_failed: 'Import failed', unknown_error: 'Unknown error',
+    approved_word: 'Approved: {word}', rejected_word: 'Rejected: {word}',
+    select_words_first: 'Please select entries first',
+    confirm_batch_approve: 'Approve {n} entries?',
+    confirm_batch_reject: 'Reject {n} entries?',
+    batch_approve_done: 'Batch approve: {n} succeeded',
+    batch_reject_done: 'Batch reject: {n} succeeded',
+    batch_failed: ', {n} failed',
+    confirm_delete: 'Permanently delete {n} entries? This cannot be undone!',
+    delete_done: 'Delete: {n} succeeded',
+    n_links: '{n} links',
+    cookie_saved: 'Cookie saved to browser',
+    tw_cookie_saved: 'Twitter Cookie saved', rd_cookie_saved: 'Reddit Cookie saved',
+    configured: 'Configured: ',
+    paste_user_links: 'Please paste at least one profile URL',
+    configure_tw_cookie: 'Please configure Twitter Cookie first',
+    scraping: 'Scraping... ({t})',
+    scraped_posts: 'Scraped tweets (showing first {n})',
+    user_scrape_result: 'User Profile Results',
+    no_valid_result: 'No valid results', scrape_complete: 'Scraping complete', scrape_failed: 'Scraping failed',
+    stat_scraped: 'Tweets', btn_download_csv: 'Download CSV',
+    scrape_hint: 'To extract keywords, download and upload to the Data Import page.',
+    tw_scrape_done: 'Twitter scraping complete!',
+    enter_keyword: 'Please enter search keywords', select_platform: 'Please select at least one platform',
+    searching: 'Searching... ({t})',
+    search_result: 'Search Results',
+    no_search_result: 'No results', search_complete: 'Search complete', search_failed: 'Search failed',
+    total_results: 'Total results',
+    multi_search_done: 'Multi-platform search complete!',
+    cookie_not_configured_short: 'Cookie not configured',
+    no_platform_cookie: 'No cookies configured for selected platforms',
+    skipped_platforms: 'Skipped platforms:',
+    configure_cookie_first: 'Please configure cookies in the Cookie Authentication section first',
+    results_heading: 'Results',
+    total_n_showing: '{n} total, showing {x}-{y}',
+    per_page: 'Per page', n_items: '{n} items',
+    first_page: 'First', last_page: 'Last',
+    likes: 'Likes', retweets: 'Retweets', replies: 'Replies', score: 'Score', comments: 'Comments',
+    images: 'Images', videos: 'Videos', media: 'Media',
+    expand: 'Expand', collapse: 'Collapse',
+    replies_collected: '{n} replies collected',
+    elapsed: 'Elapsed {m}m{s}s',
+    file_saved_to: 'File saved to: {path}',
+    export_success: 'Export successful', export_failed: 'Export failed',
+    save_failed: 'Save failed: {error}', download_failed: 'Download failed',
+    no_keywords_in_file: 'No valid keywords found in file',
+    file_read_failed: 'File read failed',
+    imported_n_links: 'Imported {n} links from file',
+    too_many_keywords: 'Too many keywords (max 10)',
+    batch_search_n: 'Batch search {n} keywords',
+    with_replies: '(with replies)',
+    estimated_time: 'Estimated {n} minutes. Do not close the page.',
+    confirm_continue: 'Continue?',
+    batch_searching: 'Batch searching {n} keywords... ({t})',
+    batch_result: 'Batch Results',
+    stat_total_posts: 'Total Posts', stat_total_rows: 'Total Rows (incl. replies)', stat_keyword_count: 'Keywords',
+    all_cookie_not_configured: 'No platform cookies configured',
+    fill_api_url: 'Please enter API URL', fill_api_key: 'Please enter API Key',
+    model_saved: 'Model config saved', model_cleared: 'Model config cleared',
+    model_configured: 'Configured: {model}', default_model: 'Default model',
+    fill_ct0_auth: 'Please fill in ct0 and auth_token',
+    fill_rd_cookie: 'Please fill in Reddit Cookie',
+    toggle_visibility: 'Show/Hide',
+  }
+};
+
+let _currentLang = localStorage.getItem('app_language') || 'zh';
+
+function t(key, params) {
+  let s = (I18N[_currentLang] || I18N.zh)[key] || key;
+  if (params) Object.keys(params).forEach(k => { s = s.replace('{' + k + '}', params[k]); });
+  return s;
+}
+
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    const val = t(key);
+    if (val !== key) el.textContent = val;
+  });
+  // Update page title
+  document.title = _currentLang === 'en' ? 'Vocab Harvester - Vocabulary Builder' : 'Vocab Harvester - 词库构建系统';
+  // Update sidebar subtitle
+  const sub = document.querySelector('.subtitle');
+  if (sub) sub.textContent = t('subtitle');
+}
+
+function switchLanguage(lang) {
+  _currentLang = lang;
+  localStorage.setItem('app_language', lang);
+  applyI18n();
+}
+
+// ── Theme ──
+function switchTheme(theme) {
+  if (theme === 'dark') document.body.classList.add('dark-theme');
+  else document.body.classList.remove('dark-theme');
+  localStorage.setItem('app_theme', theme);
+}
+
+function loadTheme() {
+  const saved = localStorage.getItem('app_theme') || 'light';
+  document.querySelector(`input[name="theme"][value="${saved}"]`).checked = true;
+  switchTheme(saved);
+}
+
+// ── Download Folder ──
+function chooseDownloadFolder() {
+  // PyWebView: use native dialog; Browser: use backend API
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.choose_folder) {
+    window.pywebview.api.choose_folder().then(path => {
+      if (path) {
+        document.getElementById('download-path').value = path;
+        localStorage.setItem('download_folder', path);
+      }
+    });
+  } else {
+    fetch('/api/choose-folder', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.path) {
+          document.getElementById('download-path').value = data.path;
+          localStorage.setItem('download_folder', data.path);
+        }
+      })
+      .catch(e => toast(t('unknown_error'), 'error'));
+  }
+}
+
+function loadSettings() {
+  // Language
+  const lang = localStorage.getItem('app_language') || 'zh';
+  const langRadio = document.querySelector(`input[name="lang"][value="${lang}"]`);
+  if (langRadio) langRadio.checked = true;
+  switchLanguage(lang);
+  // Theme
+  loadTheme();
+  // Download folder
+  const folder = localStorage.getItem('download_folder') || '';
+  document.getElementById('download-path').value = folder;
+}
 
 // ── State ──
 let currentPage = 0;
@@ -1631,6 +2158,7 @@ function showPage(name, el) {
   if (name === 'vocabulary') loadVocab();
   if (name === 'twitter') loadAllCookies();
   if (name === 'import') loadModelSettings();
+  if (name === 'settings') loadSettings();
 }
 
 // ── Toast ──
@@ -1648,12 +2176,12 @@ async function api(url, options = {}) {
     const res = await fetch(url, options);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || '请求失败');
+      throw new Error(err.detail || t('request_failed'));
     }
     return await res.json();
   } catch (e) {
     if (e.name === 'AbortError') {
-      throw new Error('任务已取消');
+      throw new Error(t('task_cancelled'));
     }
     toast(e.message, 'error');
     throw e;
@@ -1691,11 +2219,11 @@ async function startImport() {
   const platform = document.getElementById('import-platform').value;
   const file = fileInput.files[0];
 
-  if (!file) return toast('请选择文件', 'error');
+  if (!file) return toast(t('select_file_toast'), 'error');
 
   const btn = document.getElementById('import-btn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="loading"></span> 导入中...';
+  btn.innerHTML = '<span class="loading"></span> ' + t('importing');
   document.getElementById('import-result').innerHTML = '';
 
   try {
@@ -1719,7 +2247,7 @@ async function startImport() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || '导入失败');
+      throw new Error(err.detail || t('import_failed'));
     }
 
     const stats = await res.json();
@@ -1729,7 +2257,7 @@ async function startImport() {
       let postsHtml = '';
       if (stats.sampled_posts && stats.sampled_posts.length > 0) {
         postsHtml = `<div class="sampled-posts">
-          <h4>导入的帖子（显示前 ${stats.sampled_posts.length} 条）</h4>
+          <h4>${t('import_posts', {n: stats.sampled_posts.length})}</h4>
           ${stats.sampled_posts.map(post => `
             <div class="post-card">
               <div class="post-header">
@@ -1743,25 +2271,25 @@ async function startImport() {
       }
 
       div.innerHTML = `<div class="crawl-result">
-        <strong>导入完成</strong>
+        <strong>${t('import_success')}</strong>
         <div class="result-stats">
-          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">导入帖子</div></div>
-          <div class="result-stat"><div class="num">${stats.total_keywords}</div><div class="lbl">提取关键词</div></div>
-          <div class="result-stat"><div class="num">${stats.ingested_count || 0}</div><div class="lbl">词库更新</div></div>
+          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('import_stat_posts')}</div></div>
+          <div class="result-stat"><div class="num">${stats.total_keywords}</div><div class="lbl">${t('import_stat_keywords')}</div></div>
+          <div class="result-stat"><div class="num">${stats.ingested_count || 0}</div><div class="lbl">${t('import_stat_vocab')}</div></div>
         </div>
         ${postsHtml}
       </div>`;
-      toast('导入完成！', 'success');
+      toast(t('import_success'), 'success');
     } else {
-      div.innerHTML = `<div class="crawl-result error"><strong>导入失败</strong>: ${esc(stats.error || '未知错误')}</div>`;
+      div.innerHTML = `<div class="crawl-result error"><strong>${t('import_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
     }
     loadStats();
   } catch (e) {
-    document.getElementById('import-result').innerHTML = `<div class="crawl-result error"><strong>导入失败</strong>: ${esc(e.message)}</div>`;
+    document.getElementById('import-result').innerHTML = `<div class="crawl-result error"><strong>${t('import_failed')}</strong>: ${esc(e.message)}</div>`;
     toast(e.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '导入并分析';
+    btn.innerHTML = t('btn_import');
   }
 }
 
@@ -1789,7 +2317,7 @@ async function loadVocab() {
     tbody.innerHTML = '';
 
     if (data.items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--text-muted);padding:48px">暂无数据</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--text-muted);padding:48px">' + t('no_data') + '</td></tr>';
     }
 
     data.items.forEach((item, i) => {
@@ -1809,15 +2337,15 @@ async function loadVocab() {
         <td><span class="badge badge-${item.status}">${item.status}</span></td>
         <td>
           ${item.status === 'pending' ? `
-            <button class="btn btn-success btn-sm" onclick="review('${esc(item.word)}','approve','${esc(item.category)}')">通过</button>
-            <button class="btn btn-danger btn-sm" onclick="review('${esc(item.word)}','reject','${esc(item.category)}')">拒绝</button>
+            <button class="btn btn-success btn-sm" onclick="review('${esc(item.word)}','approve','${esc(item.category)}')">${t('btn_approve')}</button>
+            <button class="btn btn-danger btn-sm" onclick="review('${esc(item.word)}','reject','${esc(item.category)}')">${t('btn_reject')}</button>
           ` : '<span style="color:var(--text-muted)">-</span>'}
         </td>
       </tr>`;
     });
 
     const totalPages = Math.ceil(totalItems / pageSize);
-    document.getElementById('page-info').textContent = `第 ${currentPage + 1} / ${totalPages || 1} 页（共 ${totalItems} 条）`;
+    document.getElementById('page-info').textContent = t('page_info_tpl', {x: currentPage + 1, y: totalPages || 1, z: totalItems});
   } catch (e) { console.error(e); }
 }
 
@@ -1831,7 +2359,7 @@ async function review(word, action, category) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ word, action, category }),
     });
-    toast(`${action === 'approve' ? '已通过' : '已拒绝'}: ${word}`, 'success');
+    toast(action === 'approve' ? t('approved_word', {word}) : t('rejected_word', {word}), 'success');
     loadVocab();
     loadStats();
   } catch (e) {}
@@ -1867,12 +2395,12 @@ function clearSelection() {
 
 async function batchReview(action) {
   const checked = document.querySelectorAll('.row-check:checked');
-  if (checked.length === 0) return toast('请先选择词条', 'error');
+  if (checked.length === 0) return toast(t('select_words_first'), 'error');
 
   const items = [...checked].map(cb => ({ word: cb.value, category: cb.dataset.category }));
-  const actionText = action === 'approve' ? '批量通过' : '批量拒绝';
+  const actionText = action === 'approve' ? t('btn_batch_approve') : t('btn_batch_reject');
 
-  if (!confirm(`确认${actionText} ${items.length} 条词条？`)) return;
+  if (!confirm(action === 'approve' ? t('confirm_batch_approve', {n: items.length}) : t('confirm_batch_reject', {n: items.length}))) return;
 
   try {
     const result = await api('/api/vocabulary/batch-review', {
@@ -1880,7 +2408,8 @@ async function batchReview(action) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items, action }),
     });
-    toast(`${actionText}完成：成功 ${result.success} 条${result.failed > 0 ? '，失败 ' + result.failed + ' 条' : ''}`, result.failed > 0 ? 'info' : 'success');
+    const _batchMsg = action === 'approve' ? t('batch_approve_done', {n: result.success}) : t('batch_reject_done', {n: result.success});
+    toast(_batchMsg + (result.failed > 0 ? t('batch_failed', {n: result.failed}) : ''), result.failed > 0 ? 'info' : 'success');
     clearSelection();
     loadVocab();
     loadStats();
@@ -1889,11 +2418,11 @@ async function batchReview(action) {
 
 async function batchDelete() {
   const checked = document.querySelectorAll('.row-check:checked');
-  if (checked.length === 0) return toast('请先选择词条', 'error');
+  if (checked.length === 0) return toast(t('select_words_first'), 'error');
 
   const items = [...checked].map(cb => ({ word: cb.value, category: cb.dataset.category }));
 
-  if (!confirm(`确认永久删除 ${items.length} 条词条？此操作不可撤销！`)) return;
+  if (!confirm(t('confirm_delete', {n: items.length}))) return;
 
   try {
     const result = await api('/api/vocabulary/batch-delete', {
@@ -1901,7 +2430,7 @@ async function batchDelete() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
     });
-    toast(`删除完成：成功 ${result.success} 条${result.failed > 0 ? '，失败 ' + result.failed + ' 条' : ''}`, result.failed > 0 ? 'info' : 'success');
+    toast(t('delete_done', {n: result.success}) + (result.failed > 0 ? t('batch_failed', {n: result.failed}) : ''), result.failed > 0 ? 'info' : 'success');
     clearSelection();
     loadVocab();
     loadStats();
@@ -1913,7 +2442,7 @@ const twitterUrlsInput = document.getElementById('twitter-urls');
 if (twitterUrlsInput) {
   twitterUrlsInput.addEventListener('input', function() {
     const lines = this.value.split('\n').filter(l => l.trim());
-    document.getElementById('twitter-url-count').textContent = `${lines.length} 个链接`;
+    document.getElementById('twitter-url-count').textContent = t('n_links', {n: lines.length});
   });
 }
 
@@ -1930,7 +2459,7 @@ function saveCookie(platform) {
     const ct0 = document.getElementById('tw-ct0').value.trim();
     const auth_token = document.getElementById('tw-auth-token').value.trim();
     const proxy = document.getElementById('tw-proxy').value.trim();
-    if (!ct0 || !auth_token) return toast('请填写 ct0 和 auth_token', 'error');
+    if (!ct0 || !auth_token) return toast(t('fill_ct0_auth'), 'error');
     localStorage.setItem('tw_ct0', ct0);
     localStorage.setItem('tw_auth_token', auth_token);
     localStorage.setItem('tw_proxy', proxy);
@@ -1938,7 +2467,7 @@ function saveCookie(platform) {
   } else if (platform === 'reddit') {
     const raw = document.getElementById('rd-cookies').value.trim();
     const proxy = document.getElementById('rd-proxy').value.trim();
-    if (!raw) return toast('请填写 Reddit Cookie', 'error');
+    if (!raw) return toast(t('fill_rd_cookie'), 'error');
     localStorage.setItem('rd_cookies', raw);
     localStorage.setItem('rd_proxy', proxy);
     lockCookiePanel('reddit');
@@ -1946,7 +2475,7 @@ function saveCookie(platform) {
   updateCookieSummary();
   // Auto-collapse after saving
   document.getElementById('twitter-login-card').classList.add('collapsed');
-  toast('Cookie 已保存到本浏览器', 'success');
+  toast(t('cookie_saved'), 'success');
 }
 
 function lockCookiePanel(platform) {
@@ -1955,8 +2484,8 @@ function lockCookiePanel(platform) {
   // Reset all secret inputs in this panel to password type
   panel.querySelectorAll('.secret-input-wrap input').forEach(input => { input.type = 'password'; });
   const statusId = platform === 'twitter' ? 'tw-cookie-status' : 'rd-cookie-status';
-  const label = platform === 'twitter' ? 'Twitter' : 'Reddit';
-  document.getElementById(statusId).innerHTML = `<span style="color:var(--success)">✓ ${label} Cookie 已保存</span>`;
+  const msgKey = platform === 'twitter' ? 'tw_cookie_saved' : 'rd_cookie_saved';
+  document.getElementById(statusId).innerHTML = `<span style="color:var(--success)">✓ ${t(msgKey)}</span>`;
 }
 
 function unlockCookiePanel(platform) {
@@ -1980,9 +2509,9 @@ function updateCookieSummary() {
   if (localStorage.getItem('rd_cookies')) parts.push('Reddit');
   const el = document.getElementById('cookie-card-summary');
   if (parts.length) {
-    el.innerHTML = '<span style="color:var(--success)">已配置：' + parts.join('、') + '</span>';
+    el.innerHTML = '<span style="color:var(--success)">' + t('configured') + parts.join(', ') + '</span>';
   } else {
-    el.textContent = '未配置';
+    el.textContent = t('cookie_not_configured');
   }
 }
 
@@ -2074,10 +2603,10 @@ async function startTwitterFetch() {
   const count = parseInt(document.getElementById('twitter-count').value) || 50;
   const includeReplies = document.getElementById('twitter-include-replies').checked;
 
-  if (!urls.length) return toast('请粘贴至少一个用户主页链接', 'error');
+  if (!urls.length) return toast(t('paste_user_links'), 'error');
 
   const cookies = getPlatformCookies('twitter');
-  if (!cookies.ct0 || !cookies.auth_token) return toast('请先配置 Twitter Cookie', 'error');
+  if (!cookies.ct0 || !cookies.auth_token) return toast(t('configure_tw_cookie'), 'error');
 
   const btn = document.getElementById('twitter-fetch-btn');
   document.getElementById('twitter-result').innerHTML = '';
@@ -2089,7 +2618,7 @@ async function startTwitterFetch() {
   const _timer = setInterval(() => {
     const elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const m = Math.floor(elapsed / 60), s = elapsed % 60;
-    btn.innerHTML = `<span class="loading"></span> 抓取中... (${m}:${String(s).padStart(2,'0')})`;
+    btn.innerHTML = `<span class="loading"></span> ${t('scraping', {t: m + ':' + String(s).padStart(2,'0')})}`;
   }, 1000);
   // 运行中点击按钮 → 取消任务
   btn.onclick = () => controller.abort();
@@ -2108,19 +2637,19 @@ async function startTwitterFetch() {
       let postsHtml = '';
       if (stats.sampled_posts && stats.sampled_posts.length > 0) {
         postsHtml = `<div class="sampled-posts">
-          <h4>抓取到的推文（显示前 ${stats.sampled_posts.length} 条）</h4>
+          <h4>${t('scraped_posts', {n: stats.sampled_posts.length})}</h4>
           ${stats.sampled_posts.map((post, idx) => {
             let mediaHtml = '';
             if (post.has_media) {
-              const badge = post.media_type === 'image' ? '&#128247; 图片'
-                          : post.media_type === 'video' ? '&#127909; 视频'
-                          : post.media_type === 'mixed' ? '&#128247;&#127909; 图文+视频'
-                          : '&#128206; 媒体';
+              const badge = post.media_type === 'image' ? '&#128247; ' + t('images')
+                          : post.media_type === 'video' ? '&#127909; ' + t('videos')
+                          : post.media_type === 'mixed' ? '&#128247;&#127909; ' + t('images') + '+' + t('videos')
+                          : '&#128206; ' + t('media');
               const urls = (post.media_urls || '').split(';').filter(Boolean);
               const thumbsHtml = urls.map((u, i) => {
                 const isVideo = post.media_type === 'video' || (post.media_type === 'mixed' && i === urls.length - 1);
                 return '<div class="media-thumb-wrap" onclick="openMediaLightbox(\'' + esc(u) + '\')">'
-                  + '<img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="媒体' + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">'
+                  + '<img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="' + t('media') + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">'
                   + (isVideo ? '<div class="media-play-icon">&#9654;</div>' : '')
                   + '</div>';
               }).join('');
@@ -2131,7 +2660,7 @@ async function startTwitterFetch() {
             const _isLong = _raw.length >= 200;
             const _displayText = _isLong ? _raw.slice(0, 200) + '…' : _raw;
             const _toggleBtn = (!_isLong && _raw.length > 80)
-              ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">展开</button>' : '';
+              ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">' + t('expand') + '</button>' : '';
             return `
             <div class="post-card">
               <div class="post-header">
@@ -2142,11 +2671,11 @@ async function startTwitterFetch() {
               ${_toggleBtn}
               ${mediaHtml}
               <div class="post-meta">
-                <span>点赞 ${(post.metrics?.likes || 0).toLocaleString()}</span>
-                <span>转发 ${(post.metrics?.retweets || 0).toLocaleString()}</span>
-                <span>回复 ${(post.metrics?.replies || 0).toLocaleString()}</span>
+                <span>${t('likes')} ${(post.metrics?.likes || 0).toLocaleString()}</span>
+                <span>${t('retweets')} ${(post.metrics?.retweets || 0).toLocaleString()}</span>
+                <span>${t('replies')} ${(post.metrics?.replies || 0).toLocaleString()}</span>
                 <span>${post.published_at?.slice(0, 16).replace('T', ' ') || ''}</span>
-                ${post.replies_count > 0 ? `<span style="color:var(--primary);font-weight:600">已采 ${post.replies_count} 条评论</span>` : ''}
+                ${post.replies_count > 0 ? `<span style="color:var(--primary);font-weight:600">${t('replies_collected', {n: post.replies_count})}</span>` : ''}
               </div>
             </div>
           `}).join('')}
@@ -2154,38 +2683,38 @@ async function startTwitterFetch() {
       }
 
       const isError = stats.status === 'empty';
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">用户主页抓取结果</h4>
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4>
       <div class="crawl-result ${isError ? 'error' : ''}">
-        <strong>${isError ? '无有效结果' : '抓取完成'}</strong>
+        <strong>${isError ? t('no_valid_result') : t('scrape_complete')}</strong>
         ${stats.error ? `<div style="font-size:12px;color:var(--danger);margin-top:4px">${esc(stats.error)}</div>` : ''}
         <div class="result-stats">
-          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">抓取推文</div></div>
+          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('stat_scraped')}</div></div>
         </div>
         ${stats.csv_data ? `<div style="margin-top:16px">
           <button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'tweets.csv')}')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            下载 CSV 文件
+            ${t('btn_download_csv')}
           </button>
-          <div class="text-muted mt-8">如需提取黑词，请下载后前往「数据导入」页面手动上传分析。</div>
+          <div class="text-muted mt-8">${t('scrape_hint')}</div>
         </div>` : ''}
         ${postsHtml}
       </div>`;
-      if (!isError) toast('Twitter 抓取完成！', 'success');
+      if (!isError) toast(t('tw_scrape_done'), 'success');
     } else {
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">用户主页抓取结果</h4><div class="crawl-result error"><strong>抓取失败</strong>: ${esc(stats.error || '未知错误')}</div>`;
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('scrape_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
     }
   } catch (e) {
     document.getElementById('twitter-result').innerHTML =
-      `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">用户主页抓取结果</h4><div class="crawl-result error"><strong>请求失败</strong>: ${esc(e.message)}</div>`;
+      `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
   } finally {
     clearInterval(_timer);
     _fetchController = null;
     btn.onclick = startTwitterFetch;
-    btn.innerHTML = '抓取推文';
+    btn.innerHTML = t('btn_scrape');
     // 显示总耗时
     const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
-    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">耗时 ${_em}分${String(_es).padStart(2,'0')}秒</div>`;
+    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
     const _resultDiv = document.getElementById('twitter-result');
     if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
   }
@@ -2197,8 +2726,8 @@ async function startMultiSearch() {
   const count = parseInt(document.getElementById('search-count').value) || 50;
   const includeReplies = document.getElementById('search-include-replies').checked;
 
-  if (!keyword) return toast('请输入搜索关键词', 'error');
-  if (!platforms.length) return toast('请至少选择一个搜索平台', 'error');
+  if (!keyword) return toast(t('enter_keyword'), 'error');
+  if (!platforms.length) return toast(t('select_platform'), 'error');
 
   // Collect cookies for selected platforms
   const cookies = [];
@@ -2206,18 +2735,18 @@ async function startMultiSearch() {
   for (const p of platforms) {
     const pc = getPlatformCookies(p);
     if (p === 'twitter' && (!pc.ct0 || !pc.auth_token)) {
-      skippedPlatforms.push({ platform: 'twitter', reason: 'Cookie 未配置' });
+      skippedPlatforms.push({ platform: 'twitter', reason: t('cookie_not_configured_short') });
       continue;
     }
     if (p === 'reddit' && !pc.reddit_session) {
-      skippedPlatforms.push({ platform: 'reddit', reason: 'Cookie 未配置' });
+      skippedPlatforms.push({ platform: 'reddit', reason: t('cookie_not_configured_short') });
       continue;
     }
     cookies.push(pc);
   }
 
   if (!cookies.length) {
-    toast('所选平台均未配置 Cookie，请先填写', 'error');
+    toast(t('no_platform_cookie'), 'error');
     // Scroll to cookie section to help user configure
     const cookieCard = document.querySelector('.cookie-tabs');
     if (cookieCard) cookieCard.scrollIntoView({ behavior: 'smooth' });
@@ -2234,7 +2763,7 @@ async function startMultiSearch() {
   const _timer = setInterval(() => {
     const elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const m = Math.floor(elapsed / 60), s = elapsed % 60;
-    btn.innerHTML = `<span class="loading"></span> 搜索中... (${m}:${String(s).padStart(2,'0')})`;
+    btn.innerHTML = `<span class="loading"></span> ${t('searching', {t: m + ':' + String(s).padStart(2,'0')})}`;
   }, 1000);
   // 运行中点击按钮 → 取消任务
   btn.onclick = () => controller.abort();
@@ -2275,45 +2804,45 @@ async function startMultiSearch() {
       if (skippedPlatforms.length > 0) {
         const skippedLabels = skippedPlatforms.map(s => {
           const label = s.platform === 'twitter' ? 'Twitter / X' : 'Reddit';
-          return label + '（' + s.reason + '）';
-        }).join('、');
+          return label + ' (' + t('cookie_not_configured_short') + ')';
+        }).join(', ');
         skippedHtml = '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px">'
           + '<span style="font-size:16px;flex-shrink:0">\u26A0</span>'
-          + '<div><strong>以下平台已跳过：</strong>' + esc(skippedLabels)
-          + '<div style="margin-top:4px;font-size:11px;color:#B45309">请在页面顶部「Cookie 认证」中配置对应平台的 Cookie 后再试</div>'
+          + '<div><strong>' + t('skipped_platforms') + '</strong>' + esc(skippedLabels)
+          + '<div style="margin-top:4px;font-size:11px;color:#B45309">' + t('configure_cookie_first') + '</div>'
           + '</div></div>';
       }
 
-      div.innerHTML = '<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">关键词搜索结果</h4>'
+      div.innerHTML = '<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">' + t('search_result') + '</h4>'
         + '<div class="crawl-result ' + (isError ? 'error' : '') + '">'
-        + '<strong>' + (isError ? '无搜索结果' : '搜索完成') + '</strong>'
+        + '<strong>' + (isError ? t('no_search_result') : t('search_complete')) + '</strong>'
         + (stats.error ? '<div style="font-size:12px;color:var(--danger);margin-top:4px">' + esc(stats.error) + '</div>' : '')
         + (stats.errors && stats.errors.length ? '<div class="error-box" style="margin-top:8px">' + stats.errors.map(e => '<p>' + esc(e) + '</p>').join('') + '</div>' : '')
         + skippedHtml
         + '<div class="result-stats">'
-        + '<div class="result-stat"><div class="num">' + stats.total_posts + '</div><div class="lbl">总结果</div></div>'
+        + '<div class="result-stat"><div class="num">' + stats.total_posts + '</div><div class="lbl">' + t('total_results') + '</div></div>'
         + countsHtml
         + '</div>'
-        + (stats.csv_data ? '<div style="margin-top:16px"><button class="btn btn-download" onclick="downloadCsv(\'' + stats.csv_data + '\',\'' + esc(stats.csv_filename || 'multi_search.csv') + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 下载 CSV 文件</button><div class="text-muted mt-8">如需提取黑词，请下载后前往「数据导入」页面手动上传分析。</div></div>' : '')
+        + (stats.csv_data ? '<div style="margin-top:16px"><button class="btn btn-download" onclick="downloadCsv(\'' + stats.csv_data + '\',\'' + esc(stats.csv_filename || 'multi_search.csv') + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ' + t('btn_download_csv') + '</button><div class="text-muted mt-8">' + t('scrape_hint') + '</div></div>' : '')
         + (_resultPosts.length ? '<div id="result-posts-container"></div>' : '')
         + '</div>';
       if (_resultPosts.length) renderResultPosts();
-      if (!isError) toast('多平台搜索完成！', 'success');
+      if (!isError) toast(t('multi_search_done'), 'success');
     } else {
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">关键词搜索结果</h4><div class="crawl-result error"><strong>搜索失败</strong>: ${esc(stats.error || '未知错误')}</div>`;
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('search_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
     }
   } catch (e) {
     document.getElementById('multi-search-result').innerHTML =
-      `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">关键词搜索结果</h4><div class="crawl-result error"><strong>请求失败</strong>: ${esc(e.message)}</div>`;
+      `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
   } finally {
     clearInterval(_timer);
     _searchController = null;
     btn.onclick = startMultiSearch;
-    btn.innerHTML = '开始搜索';
+    btn.innerHTML = t('btn_search');
     // 显示总耗时
     const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
-    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">耗时 ${_em}分${String(_es).padStart(2,'0')}秒</div>`;
+    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
     const _resultDiv = document.getElementById('multi-search-result');
     if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
   }
@@ -2327,7 +2856,7 @@ async function doExport(format) {
 
   try {
     const res = await fetch(url);
-    if (!res.ok) throw new Error('导出失败');
+    if (!res.ok) throw new Error(t('export_failed'));
 
     let content, filename;
     if (format === 'json') {
@@ -2342,14 +2871,15 @@ async function doExport(format) {
     // 优先使用 PyWebView 原生保存
     if (window.pywebview && window.pywebview.api && window.pywebview.api.save_file) {
       const b64 = btoa(unescape(encodeURIComponent(content)));
-      const path = await window.pywebview.api.save_file(b64, filename);
-      toast('文件已保存到: ' + path, 'success');
+      const _folder = localStorage.getItem('download_folder') || '';
+      const path = await window.pywebview.api.save_file(b64, filename, _folder);
+      toast(t('file_saved_to', {path}), 'success');
     } else {
       // 降级：blob URL
       const type = format === 'json' ? 'application/json' : 'text/plain;charset=utf-8';
       const blob = new Blob([content], { type });
       downloadBlob(blob, filename);
-      toast('导出成功', 'success');
+      toast(t('export_success'), 'success');
     }
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -2374,13 +2904,13 @@ function renderResultPosts() {
 
   let html = '<div class="posts-toolbar">'
     + '<div style="display:flex;align-items:center;gap:12px">'
-    + '<strong style="font-size:14px">搜索结果</strong>'
-    + '<span class="posts-info">共 ' + total + ' 条，显示 ' + (start+1) + '-' + Math.min(start+_resultPageSize, total) + '</span>'
+    + '<strong style="font-size:14px">' + t('results_heading') + '</strong>'
+    + '<span class="posts-info">' + t('total_n_showing', {n: total, x: start+1, y: Math.min(start+_resultPageSize, total)}) + '</span>'
     + '</div>'
     + '<div style="display:flex;align-items:center;gap:8px">'
-    + '<label style="font-size:12px;color:var(--text-muted)">每页</label>'
+    + '<label style="font-size:12px;color:var(--text-muted)">' + t('per_page') + '</label>'
     + '<select onchange="postsPageSize(this.value)" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:13px;min-width:80px">'
-    + [10,20,50,100].map(function(n){ return '<option value="'+n+'" '+(n===_resultPageSize?'selected':'')+'>'+n+' 条</option>'; }).join('')
+    + [10,20,50,100].map(function(n){ return '<option value="'+n+'" '+(n===_resultPageSize?'selected':'')+'>'+t('n_items',{n})+'</option>'; }).join('')
     + '</select>'
     + '</div>'
     + '</div>';
@@ -2392,24 +2922,24 @@ function renderResultPosts() {
                         : (post.platform || 'unknown');
     let metricsHtml = '';
     if (post.platform === 'twitter') {
-      metricsHtml = `<span>点赞 ${(post.metrics?.likes||0).toLocaleString()}</span>
-        <span>转发 ${(post.metrics?.retweets||0).toLocaleString()}</span>
-        <span>回复 ${(post.metrics?.replies||0).toLocaleString()}</span>`;
+      metricsHtml = `<span>${t('likes')} ${(post.metrics?.likes||0).toLocaleString()}</span>
+        <span>${t('retweets')} ${(post.metrics?.retweets||0).toLocaleString()}</span>
+        <span>${t('replies')} ${(post.metrics?.replies||0).toLocaleString()}</span>`;
     } else if (post.platform === 'reddit') {
-      metricsHtml = `<span>得分 ${(post.metrics?.score||0).toLocaleString()}</span>
-        <span>评论 ${(post.metrics?.comments||0).toLocaleString()}</span>`;
+      metricsHtml = `<span>${t('score')} ${(post.metrics?.score||0).toLocaleString()}</span>
+        <span>${t('comments')} ${(post.metrics?.comments||0).toLocaleString()}</span>`;
     }
     let mediaHtml = '';
     if (post.has_media) {
-      const badge = post.media_type === 'image' ? '&#128247; 图片'
-                  : post.media_type === 'video' ? '&#127909; 视频'
-                  : post.media_type === 'mixed' ? '&#128247;&#127909; 图文+视频'
-                  : '&#128206; 媒体';
+      const badge = post.media_type === 'image' ? '&#128247; ' + t('images')
+                  : post.media_type === 'video' ? '&#127909; ' + t('videos')
+                  : post.media_type === 'mixed' ? '&#128247;&#127909; ' + t('images') + '+' + t('videos')
+                  : '&#128206; ' + t('media');
       const urls = (post.media_urls||'').split(';').filter(Boolean);
       const thumbsHtml = urls.map((u, i) => {
         const isVideo = post.media_type === 'video' || (post.media_type === 'mixed' && i === urls.length - 1);
         return '<div class="media-thumb-wrap" onclick="openMediaLightbox(\'' + esc(u) + '\')">'
-          + '<img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="媒体' + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">'
+          + '<img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="' + t('media') + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">'
           + (isVideo ? '<div class="media-play-icon">&#9654;</div>' : '')
           + '</div>';
       }).join('');
@@ -2421,7 +2951,7 @@ function renderResultPosts() {
     const _isLong = _raw.length >= 200;
     const _displayText = _isLong ? _raw.slice(0, 200) + '…' : _raw;
     const _toggleBtn = (!_isLong && _raw.length > 80)
-      ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">展开</button>' : '';
+      ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">' + t('expand') + '</button>' : '';
     return `<div class="post-card" style="border-left-color:${post.platform==='reddit'?'#FF4500':'var(--primary)'}">
       <div class="post-header">
         <span class="post-platform-badge ${post.platform||''}">${esc(platformLabel)}</span>
@@ -2434,7 +2964,7 @@ function renderResultPosts() {
       <div class="post-meta">
         ${metricsHtml}
         <span>${post.published_at?.slice(0,16).replace('T',' ')||''}</span>
-        ${post.replies_count>0?`<span style="color:var(--primary);font-weight:600">已采 ${post.replies_count} 条评论</span>`:''}
+        ${post.replies_count>0?`<span style="color:var(--primary);font-weight:600">${t('replies_collected', {n: post.replies_count})}</span>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2443,11 +2973,11 @@ function renderResultPosts() {
   // 翻页按钮
   if (totalPages > 1) {
     html += `<div class="posts-pager">
-      <button class="btn btn-secondary btn-sm" onclick="postsPage(0)" ${_resultPageIdx===0?'disabled':''}>首页</button>
-      <button class="btn btn-secondary btn-sm" onclick="postsPage(${_resultPageIdx-1})" ${_resultPageIdx===0?'disabled':''}>上一页</button>
-      <span class="posts-page-info">第 ${_resultPageIdx+1} / ${totalPages} 页</span>
-      <button class="btn btn-secondary btn-sm" onclick="postsPage(${_resultPageIdx+1})" ${_resultPageIdx>=totalPages-1?'disabled':''}>下一页</button>
-      <button class="btn btn-secondary btn-sm" onclick="postsPage(${totalPages-1})" ${_resultPageIdx>=totalPages-1?'disabled':''}>末页</button>
+      <button class="btn btn-secondary btn-sm" onclick="postsPage(0)" ${_resultPageIdx===0?'disabled':''}>${t('first_page')}</button>
+      <button class="btn btn-secondary btn-sm" onclick="postsPage(${_resultPageIdx-1})" ${_resultPageIdx===0?'disabled':''}>${t('btn_prev')}</button>
+      <span class="posts-page-info">${_resultPageIdx+1} / ${totalPages}</span>
+      <button class="btn btn-secondary btn-sm" onclick="postsPage(${_resultPageIdx+1})" ${_resultPageIdx>=totalPages-1?'disabled':''}>${t('btn_next')}</button>
+      <button class="btn btn-secondary btn-sm" onclick="postsPage(${totalPages-1})" ${_resultPageIdx>=totalPages-1?'disabled':''}>${t('last_page')}</button>
     </div>`;
   }
   container.innerHTML = html;
@@ -2484,10 +3014,10 @@ function handleUrlFileUpload(input) {
     const lines = text.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
     const textarea = document.getElementById('twitter-urls');
     textarea.value = lines.join('\n');
-    document.getElementById('twitter-url-count').textContent = `${lines.length} 个链接`;
-    toast(`已从文件导入 ${lines.length} 个链接`, 'success');
+    document.getElementById('twitter-url-count').textContent = t('n_links', {n: lines.length});
+    toast(t('imported_n_links', {n: lines.length}), 'success');
   };
-  reader.onerror = function() { toast('文件读取失败', 'error'); };
+  reader.onerror = function() { toast(t('file_read_failed'), 'error'); };
   reader.readAsText(file, 'UTF-8');
   input.value = '';  // 清空以便重新选择同一文件
 }
@@ -2499,10 +3029,10 @@ async function handleKeywordFileUpload(input) {
   reader.onload = async function(e) {
     const text = e.target.result;
     const keywords = text.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
-    if (!keywords.length) return toast('文件中没有找到有效关键词', 'error');
+    if (!keywords.length) return toast(t('no_keywords_in_file'), 'error');
     await startBatchSearch(keywords);
   };
-  reader.onerror = function() { toast('文件读取失败', 'error'); };
+  reader.onerror = function() { toast(t('file_read_failed'), 'error'); };
   reader.readAsText(file, 'UTF-8');
   input.value = '';
 }
@@ -2512,16 +3042,16 @@ async function startBatchSearch(keywords) {
   const count = parseInt(document.getElementById('search-count').value) || 50;
   const includeReplies = document.getElementById('search-include-replies').checked;
 
-  if (!platforms.length) return toast('请至少选择一个搜索平台', 'error');
+  if (!platforms.length) return toast(t('select_platform'), 'error');
 
   // 关键词数量警告 & 确认
   if (keywords.length > 10) {
-    return toast('关键词过多（最多 10 个），请精简后重试', 'error');
+    return toast(t('too_many_keywords'), 'error');
   }
   if (keywords.length > 3 && includeReplies) {
     const est = keywords.length * (includeReplies ? 10 : 3);
-    if (!confirm(`批量搜索 ${keywords.length} 个关键词` + (includeReplies ? '（含评论抓取）' : '') +
-      `\n预计耗时约 ${est} 分钟，期间请勿关闭页面。\n\n是否继续？`)) {
+    if (!confirm(t('batch_search_n', {n: keywords.length}) + (includeReplies ? ' ' + t('with_replies') : '') +
+      '\n' + t('estimated_time', {n: est}) + '\n\n' + t('confirm_continue'))) {
       return;
     }
   }
@@ -2531,16 +3061,16 @@ async function startBatchSearch(keywords) {
   for (const p of platforms) {
     const pc = getPlatformCookies(p);
     if (p === 'twitter' && (!pc.ct0 || !pc.auth_token)) {
-      skippedPlatforms.push({ platform: 'twitter', reason: 'Cookie 未配置' });
+      skippedPlatforms.push({ platform: 'twitter', reason: t('cookie_not_configured_short') });
       continue;
     }
     if (p === 'reddit' && !pc.reddit_session) {
-      skippedPlatforms.push({ platform: 'reddit', reason: 'Cookie 未配置' });
+      skippedPlatforms.push({ platform: 'reddit', reason: t('cookie_not_configured_short') });
       continue;
     }
     cookies.push(pc);
   }
-  if (!cookies.length) return toast('所有平台 Cookie 均未配置', 'error');
+  if (!cookies.length) return toast(t('all_cookie_not_configured'), 'error');
 
   const btn = document.getElementById('multi-search-btn');
   document.getElementById('multi-search-result').innerHTML = '';
@@ -2552,7 +3082,7 @@ async function startBatchSearch(keywords) {
   const _timer = setInterval(() => {
     const elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const m = Math.floor(elapsed / 60), s = elapsed % 60;
-    btn.innerHTML = `<span class="loading"></span> 批量搜索 ${keywords.length} 个关键词... (${m}:${String(s).padStart(2,'0')})`;
+    btn.innerHTML = `<span class="loading"></span> ${t('batch_searching', {n: keywords.length, t: m + ':' + String(s).padStart(2,'0')})}`;
   }, 1000);
   // 运行中点击按钮 → 取消任务
   btn.onclick = () => controller.abort();
@@ -2574,7 +3104,7 @@ async function startBatchSearch(keywords) {
       let kwSummary = '';
       if (stats.keyword_results) {
         kwSummary = stats.keyword_results.map(kr =>
-          `<span class="keyword-result">「${esc(kr.keyword)}」: ${kr.post_count} 帖</span>`
+          `<span class="keyword-result">「${esc(kr.keyword)}」: ${kr.post_count} ${t('stat_scraped')}</span>`
         ).join('');
       }
 
@@ -2592,45 +3122,45 @@ async function startBatchSearch(keywords) {
       if (skippedPlatforms.length > 0) {
         const skippedLabels = skippedPlatforms.map(s => {
           const label = s.platform === 'twitter' ? 'Twitter / X' : 'Reddit';
-          return label + '（' + s.reason + '）';
-        }).join('、');
+          return label + ' (' + t('cookie_not_configured_short') + ')';
+        }).join(', ');
         skippedHtml = '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px">'
           + '<span style="font-size:16px;flex-shrink:0">\u26A0</span>'
-          + '<div><strong>以下平台已跳过：</strong>' + esc(skippedLabels)
-          + '<div style="margin-top:4px;font-size:11px;color:#B45309">请在页面顶部「Cookie 认证」中配置对应平台的 Cookie 后再试</div>'
+          + '<div><strong>' + t('skipped_platforms') + '</strong>' + esc(skippedLabels)
+          + '<div style="margin-top:4px;font-size:11px;color:#B45309">' + t('configure_cookie_first') + '</div>'
           + '</div></div>';
       }
 
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">批量搜索结果</h4>
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4>
         ${skippedHtml}
         <div class="stats-success">
-          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">总帖子数</div></div>
-          <div class="result-stat"><div class="num">${stats.total_rows}</div><div class="lbl">总行数（含评论）</div></div>
-          <div class="result-stat"><div class="num">${keywords.length}</div><div class="lbl">关键词数</div></div>
+          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('stat_total_posts')}</div></div>
+          <div class="result-stat"><div class="num">${stats.total_rows}</div><div class="lbl">${t('stat_total_rows')}</div></div>
+          <div class="result-stat"><div class="num">${keywords.length}</div><div class="lbl">${t('stat_keyword_count')}</div></div>
         </div>
         ${kwSummary ? `<div style="margin:8px 0;font-size:13px;display:flex;flex-wrap:wrap;gap:8px">${kwSummary}</div>` : ''}
         <div style="margin:16px 0;display:flex;align-items:center;gap:12px">
-          ${stats.csv_data ? `<button class="btn-download" onclick="downloadCsv('${stats.csv_data}','${stats.csv_filename || 'batch.csv'}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>下载 CSV 文件</button>` : ''}
-          <span class="text-sm text-muted">如需提取黑词，请下载后前往「数据导入」页面手动上传分析。</span>
+          ${stats.csv_data ? `<button class="btn-download" onclick="downloadCsv('${stats.csv_data}','${stats.csv_filename || 'batch.csv'}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${t('btn_download_csv')}</button>` : ''}
+          <span class="text-sm text-muted">${t('scrape_hint')}</span>
         </div>
         ${_resultPosts.length ? '<div id="batch-posts-container"></div>' : ''}
         ${errorsHtml}
       `;
       if (_resultPosts.length) renderResultPosts();
     } else {
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">批量搜索结果</h4><p class="text-muted">批量搜索失败：${stats.error || '未知错误'}</p>`;
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-muted">${t('search_failed')}: ${esc(stats.error || t('unknown_error'))}</p>`;
     }
   } catch (e) {
-    document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">批量搜索结果</h4><p class="text-error">请求失败: ${esc(e.message)}</p>`;
+    document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-error">${t('request_failed')}: ${esc(e.message)}</p>`;
   } finally {
     clearInterval(_timer);
     _batchController = null;
     btn.onclick = startMultiSearch;
-    btn.textContent = '开始搜索';
+    btn.textContent = t('btn_search');
     // 显示总耗时
     const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
-    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">耗时 ${_em}分${String(_es).padStart(2,'0')}秒</div>`;
+    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
     const _resultDiv = document.getElementById('multi-search-result');
     if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
   }
@@ -2639,10 +3169,11 @@ async function startBatchSearch(keywords) {
 function downloadCsv(b64Data, filename) {
   // 优先使用 PyWebView 原生保存（最可靠）
   if (window.pywebview && window.pywebview.api && window.pywebview.api.save_file) {
-    window.pywebview.api.save_file(b64Data, filename).then(path => {
-      toast('文件已保存到: ' + path, 'success');
+    const _folder = localStorage.getItem('download_folder') || '';
+    window.pywebview.api.save_file(b64Data, filename, _folder).then(path => {
+      toast(t('file_saved_to', {path}), 'success');
     }).catch(e => {
-      toast('保存失败: ' + e, 'error');
+      toast(t('save_failed', {error: e}), 'error');
     });
     return;
   }
@@ -2652,7 +3183,7 @@ function downloadCsv(b64Data, filename) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ csv_data: b64Data, filename: filename })
   }).then(r => {
-    if (!r.ok) throw new Error('下载失败');
+    if (!r.ok) throw new Error(t('download_failed'));
     return r.blob();
   }).then(blob => {
     const a = document.createElement('a');
@@ -2662,7 +3193,7 @@ function downloadCsv(b64Data, filename) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
-  }).catch(e => toast(e.message, 'error'));
+  }).catch(e => toast(t('download_failed'), 'error'));
 }
 
 // ── Lightbox ──
@@ -2679,7 +3210,7 @@ function togglePostContent(btn, id) {
   var el = document.getElementById(id);
   if (!el) return;
   var expanded = el.classList.toggle('expanded');
-  btn.textContent = expanded ? '收起' : '展开';
+  btn.textContent = expanded ? t('collapse') : t('expand');
 }
 
 // ── 模型 API 配置 ──
@@ -2689,8 +3220,8 @@ function saveModelSettings() {
   const modelName = document.getElementById('model-name').value.trim();
   const backup = document.getElementById('model-backup').value.trim();
 
-  if (!baseUrl) return toast('请填写 API 地址', 'error');
-  if (!apiKey) return toast('请填写 API 密钥', 'error');
+  if (!baseUrl) return toast(t('fill_api_url'), 'error');
+  if (!apiKey) return toast(t('fill_api_key'), 'error');
 
   localStorage.setItem('model_base_url', baseUrl);
   localStorage.setItem('model_api_key', apiKey);
@@ -2699,7 +3230,7 @@ function saveModelSettings() {
 
   updateModelSummary();
   document.getElementById('model-config-card').classList.add('collapsed');
-  toast('模型配置已保存', 'success');
+  toast(t('model_saved'), 'success');
 }
 
 function clearModelSettings() {
@@ -2712,7 +3243,7 @@ function clearModelSettings() {
   document.getElementById('model-name').value = '';
   document.getElementById('model-backup').value = '';
   updateModelSummary();
-  toast('模型配置已清除', 'success');
+  toast(t('model_cleared'), 'success');
 }
 
 function loadModelSettings() {
@@ -2728,16 +3259,18 @@ function updateModelSummary() {
   const hasKey = localStorage.getItem('model_api_key');
   const hasUrl = localStorage.getItem('model_base_url');
   if (hasKey && hasUrl) {
-    const model = localStorage.getItem('model_name') || '默认模型';
-    el.innerHTML = '<span style="color:var(--success)">已配置：' + esc(model) + '</span>';
+    const model = localStorage.getItem('model_name') || t('default_model');
+    el.innerHTML = '<span style="color:var(--success)">' + t('model_configured', {model: esc(model)}) + '</span>';
     // 有配置时自动折叠
     document.getElementById('model-config-card').classList.add('collapsed');
   } else {
-    el.textContent = '未配置';
+    el.textContent = t('model_not_configured');
   }
 }
 
 // ── Init ──
+loadTheme();
+applyI18n();
 loadStats();
 loadAllCookies();
 loadModelSettings();
@@ -2790,8 +3323,8 @@ function dismissUpdate() {
 <!-- Update Banner -->
 <div id="update-banner" class="update-banner">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-  <span>新版本 <strong id="update-version">v0.0.0</strong> 已发布</span>
-  <a href="#" id="update-download-link" target="_blank">立即下载</a>
+  <span><span data-i18n="new_version">新版本</span> <strong id="update-version">v0.0.0</strong> <span data-i18n="released">已发布</span></span>
+  <a href="#" id="update-download-link" target="_blank" data-i18n="download_now">立即下载</a>
   <button class="update-banner-close" onclick="dismissUpdate()">&times;</button>
 </div>
 
