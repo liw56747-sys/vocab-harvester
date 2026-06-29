@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import platform
+import sys
 import threading
 import urllib.request
 import urllib.error
@@ -37,9 +39,17 @@ def bump_version(current: str, part: str = "patch") -> str:
     return f"{major}.{minor}.{patch}"
 
 
+def get_platform() -> str:
+    """返回当前平台标识：windows / macos / linux"""
+    if sys.platform == "darwin":
+        return "macos"
+    elif sys.platform == "win32":
+        return "windows"
+    return "linux"
+
+
 # ── 更新检查 ──────────────────────────────────────────
 
-# GitHub Releases API 地址（改成你的仓库）
 _GITHUB_API = "https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest"
 _update_info: dict | None = None
 
@@ -61,9 +71,19 @@ def check_for_update_async(callback=None):
 
             if latest and _version_gt(latest, current):
                 assets = data.get("assets", [])
+                plat = get_platform()
+
+                # 根据平台匹配安装包后缀
+                if plat == "macos":
+                    suffix = ".dmg"
+                elif plat == "windows":
+                    suffix = "-setup.exe"
+                else:
+                    suffix = ".tar.gz"
+
                 download_url = ""
                 for asset in assets:
-                    if asset["name"].endswith("-setup.exe"):
+                    if asset["name"].endswith(suffix):
                         download_url = asset["browser_download_url"]
                         break
 
@@ -73,8 +93,9 @@ def check_for_update_async(callback=None):
                     "download_url": download_url,
                     "release_notes": data.get("body", ""),
                     "release_page": data.get("html_url", ""),
+                    "platform": plat,
                 }
-                logger.info(f"Update available: {current} -> {latest}")
+                logger.info(f"Update available: {current} -> {latest} ({plat})")
             else:
                 _update_info = {"up_to_date": True}
                 logger.info(f"Up to date: {current}")

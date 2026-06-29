@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from src.common.config import load_settings
 from src.common.database import init_db, close_db
 from src.common.models import CrawlQuery, ParsedPost, Platform, VocabStatus
-from src.common.version import get_version, check_for_update_async, get_update_info, download_update
+from src.common.version import get_version, get_platform, check_for_update_async, get_update_info, download_update
 from src.orchestrator.pipeline import Pipeline
 from src.vocabulary.manager import VocabManager
 
@@ -1071,8 +1071,8 @@ async def batch_search(req: BatchSearchRequest):
 
 @app.get("/api/version")
 async def api_version():
-    """当前版本号"""
-    return {"version": get_version()}
+    """当前版本号和平台"""
+    return {"version": get_version(), "platform": get_platform()}
 
 
 @app.post("/api/check-update")
