@@ -219,7 +219,7 @@ def main():
     webview.start(
         debug=False,
         private_mode=False,
-        user_data_dir=str(webview_data),
+        storage_path=str(webview_data),
     )
     _log("application exited")
 
