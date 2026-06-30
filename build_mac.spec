@@ -119,3 +119,10 @@ coll = COLLECT(
     upx_exclude=[],
     name='vocab-harvester',
 )
+
+app = BUNDLE(
+    coll,
+    name='vocab-harvester.app',
+    icon=os.path.join(project_dir, 'icon.icns'),
+    bundle_identifier='com.vocabharvester.app',
+)
