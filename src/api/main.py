@@ -292,6 +292,13 @@ async def import_data(
     model_base_url: str = Form(default=""),
     model_name: str = Form(default=""),
     model_backup: str = Form(default=""),
+    model_backup_base_url: str = Form(default=""),
+    model_backup_api_key: str = Form(default=""),
+    model_backup_name: str = Form(default=""),
+    import_mode: str = Form(default="manual"),
+    type_post: str = Form(default="true"),
+    type_comment: str = Form(default="true"),
+    include_author: str = Form(default="false"),
 ):
     """导入数据文件（JSON/CSV），走工作流提取关键词"""
     filename = file.filename or "upload"
@@ -314,6 +321,7 @@ async def import_data(
             for i, item in enumerate(data):
                 if isinstance(item, str):
                     item = {"content": item}
+                post_type = item.get("type", "post")
                 posts.append(ParsedPost(
                     platform=item.get("platform", platform),
                     post_id=str(item.get("id", item.get("post_id", str(uuid.uuid4())[:12]))),
@@ -322,12 +330,14 @@ async def import_data(
                     published_at=_parse_date(item.get("published_at", item.get("created_at", item.get("date", "")))),
                     metrics=item.get("metrics", {}),
                     tags=item.get("tags", []),
+                    raw_data={"type": post_type},
                 ))
 
         elif ext == "csv":
             text = content.decode("utf-8-sig")
             reader = csv.DictReader(io.StringIO(text))
             for i, row in enumerate(reader):
+                post_type = row.get("type", "post")
                 posts.append(ParsedPost(
                     platform=row.get("platform", platform),
                     post_id=str(row.get("id", row.get("post_id", str(uuid.uuid4())[:12]))),
@@ -336,6 +346,7 @@ async def import_data(
                     published_at=_parse_date(row.get("published_at", row.get("created_at", row.get("date", "")))),
                     metrics={},
                     tags=[],
+                    raw_data={"type": post_type},
                 ))
 
     except Exception as e:
@@ -344,23 +355,46 @@ async def import_data(
     if not posts:
         raise HTTPException(400, "文件中没有找到有效数据")
 
+    # 按 type 筛选
+    want_post = type_post.lower() == "true"
+    want_comment = type_comment.lower() == "true"
+    filtered_posts = []
+    for p in posts:
+        ptype = p.raw_data.get("type", "post")
+        if ptype == "post" and want_post:
+            filtered_posts.append(p)
+        elif ptype == "comment" and want_comment:
+            filtered_posts.append(p)
+        elif ptype not in ("post", "comment"):
+            filtered_posts.append(p)  # 未知类型保留
+    posts = filtered_posts
+
     # 过滤掉空内容
     posts = [p for p in posts if p.content.strip()]
     if not posts:
         raise HTTPException(400, "文件中没有有效的帖子内容")
 
-    # 送入工作流处理
-    if model_api_key and model_base_url:
+    # 如果不包含 author，清空 author 字段
+    if include_author.lower() != "true":
+        for p in posts:
+            p.author = ""
+
+    # 手动模式：仅存储，不进行 AI 分析
+    if import_mode.lower() == "manual" or not (model_api_key and model_base_url):
+        pipeline = Pipeline.from_config()
+        logger.info(f"导入模式: {import_mode}，使用默认适配器（仅存储）")
+    else:
+        # 自动模式：使用模型配置进行 AI 分析
         pipeline = Pipeline.from_config_with_model(
             base_url=model_base_url,
             api_key=model_api_key,
             model=model_name,
-            backup_model=model_backup,
+            backup_model=model_backup_name or model_backup,
+            backup_base_url=model_backup_base_url or model_base_url,
+            backup_api_key=model_backup_api_key or model_api_key,
         )
-        logger.info(f"使用前端模型配置: {model_base_url}, model={model_name}")
-    else:
-        pipeline = Pipeline.from_config()
-        logger.info("未提供模型配置，使用默认适配器（Mock）")
+        logger.info(f"自动模式: {model_base_url}, model={model_name}")
+
     stats = await pipeline.process_posts(posts, source=f"import:{filename}")
 
     return stats
