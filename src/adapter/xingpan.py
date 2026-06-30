@@ -39,6 +39,8 @@ class XingpanConfig:
     api_key: str = ""
     model: str = "glm-4-plus"
     backup_model: str = "glm-4-flash"
+    backup_base_url: str = ""
+    backup_api_key: str = ""
     temperature: float = 0.3
     max_tokens: int = 6000
     timeout: int = 300
@@ -215,6 +217,7 @@ class XingpanAdapter(WorkflowAdapter):
     def __init__(self, config: XingpanConfig | None = None):
         self.config = config or XingpanConfig.from_settings()
         self._client: AsyncOpenAI | None = None
+        self._backup_client: AsyncOpenAI | None = None
         self._pending_results: dict[str, WorkflowResult] = {}
 
     def _get_client(self) -> AsyncOpenAI:
@@ -225,6 +228,17 @@ class XingpanAdapter(WorkflowAdapter):
                 timeout=self.config.timeout,
             )
         return self._client
+
+    def _get_backup_client(self) -> AsyncOpenAI:
+        if self._backup_client is None:
+            backup_url = self.config.backup_base_url or self.config.base_url
+            backup_key = self.config.backup_api_key or self.config.api_key
+            self._backup_client = AsyncOpenAI(
+                base_url=backup_url,
+                api_key=backup_key,
+                timeout=self.config.timeout,
+            )
+        return self._backup_client
 
     async def submit(self, posts: list[ParsedPost]) -> str:
         """
@@ -313,7 +327,8 @@ class XingpanAdapter(WorkflowAdapter):
             if self.config.backup_model and self.config.backup_model != self.config.model:
                 logger.info(f"尝试备用模型: {self.config.backup_model}")
                 try:
-                    response = await client.chat.completions.create(
+                    backup_client = self._get_backup_client()
+                    response = await backup_client.chat.completions.create(
                         model=self.config.backup_model,
                         messages=[
                             {"role": "system", "content": _SYSTEM_PROMPT},
