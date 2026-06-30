@@ -36,6 +36,8 @@ async def lifespan(app: FastAPI):
     settings = load_settings()
     db_path = Path(settings.app.data_dir) / "vocab.db"
     await init_db(db_path)
+    # 启动时自动检查更新（后台线程，不阻塞启动）
+    check_for_update_async()
     yield
     # 关闭共享浏览器实例
     from src.crawlers.browser_manager import BrowserManager
