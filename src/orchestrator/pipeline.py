@@ -62,6 +62,8 @@ class Pipeline:
         api_key: str,
         model: str,
         backup_model: str = "",
+        backup_base_url: str = "",
+        backup_api_key: str = "",
     ) -> Pipeline:
         """根据前端传入的模型配置创建流水线（用于导入时的 LLM 分析）"""
         from src.adapter.xingpan import XingpanAdapter, XingpanConfig
@@ -71,6 +73,8 @@ class Pipeline:
             api_key=api_key,
             model=model or "glm-4-plus",
             backup_model=backup_model,
+            backup_base_url=backup_base_url or base_url,
+            backup_api_key=backup_api_key or api_key,
         )
         adapter = XingpanAdapter(config=config)
         return cls(adapter=adapter)
