@@ -313,6 +313,33 @@ class TwitterCookieFetcher:
         self.block_resources = block_resources
         logger.info(f"TwitterCookieFetcher 初始化, proxy={self.proxy}, block_resources={block_resources}")
 
+    def _strip_media_urls(self, tweets: list[dict]) -> None:
+        """加速模式时清除媒体 URL（图片/视频链接），因为页面已屏蔽加载这些资源"""
+        if not self.block_resources:
+            return
+        for t in tweets:
+            t["has_media"] = False
+            t["media_type"] = "none"
+            t["media_urls"] = ""
+            # 也清除评论中的媒体
+            replies_data = t.get("replies_data", "[]")
+            if isinstance(replies_data, str):
+                try:
+                    import json as _json
+                    replies = _json.loads(replies_data)
+                    for r in replies:
+                        r["has_media"] = False
+                        r["media_type"] = "none"
+                        r["media_urls"] = ""
+                    t["replies_data"] = _json.dumps(replies, ensure_ascii=False)
+                except Exception:
+                    pass
+            elif isinstance(replies_data, list):
+                for r in replies_data:
+                    r["has_media"] = False
+                    r["media_type"] = "none"
+                    r["media_urls"] = ""
+
     # ── 配置持久化 ──────────────────────────────────────────
 
     def _load_proxy(self) -> str | None:
@@ -467,6 +494,7 @@ class TwitterCookieFetcher:
         if not all_tweets:
             return [], ""
 
+        self._strip_media_urls(all_tweets)
         csv_string = self._generate_csv_string(all_tweets)
         return all_tweets, csv_string
 
@@ -517,6 +545,7 @@ class TwitterCookieFetcher:
         if not tweets:
             return [], ""
 
+        self._strip_media_urls(tweets)
         csv_string = self._generate_csv_string(tweets)
         return tweets, csv_string
 
@@ -947,7 +976,7 @@ class TwitterCookieFetcher:
         return results;
     }"""
 
-    async def _scrape_replies_page(self, page, tweet_url: str, max_replies: int = 500) -> list[dict]:
+    async def _scrape_replies_page(self, page, tweet_url: str, max_replies: int = 5000) -> list[dict]:
         """
         在给定页面上抓取推文回复（渐进式滚动+去重）。
         由 _parallel_scrape_replies 调用，每个并发任务使用独立 page。
