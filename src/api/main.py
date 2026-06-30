@@ -1132,6 +1132,94 @@ async def api_update_info():
     return info
 
 
+# ── Chromium 安装状态 ──────────────────────────────────────
+_chromium_install_state = {
+    "status": "unknown",  # not_needed | installed | installing | error
+    "progress": "",
+    "error": "",
+}
+
+
+@app.get("/api/chromium-status")
+async def api_chromium_status():
+    """返回 Chromium 浏览器的安装状态"""
+    import app as _app_module
+    if not getattr(_app_module, "_NEEDS_CHROMIUM_INSTALL", False):
+        if _chromium_install_state["status"] == "installed":
+            return {"status": "installed"}
+        return {"status": "not_needed"}
+    return {
+        "status": _chromium_install_state["status"],
+        "progress": _chromium_install_state["progress"],
+        "error": _chromium_install_state["error"],
+    }
+
+
+@app.post("/api/install-chromium")
+async def api_install_chromium():
+    """在后台线程中安装 Playwright Chromium（macOS 首次启动）"""
+    import app as _app_module
+
+    if not getattr(_app_module, "_NEEDS_CHROMIUM_INSTALL", False):
+        return {"status": "not_needed"}
+
+    if _chromium_install_state["status"] == "installing":
+        return {"status": "installing", "progress": _chromium_install_state["progress"]}
+
+    if _chromium_install_state["status"] == "installed":
+        return {"status": "installed"}
+
+    _chromium_install_state["status"] = "installing"
+    _chromium_install_state["progress"] = "starting"
+    _chromium_install_state["error"] = ""
+
+    def _do_install():
+        import subprocess
+        _app_module._log("Starting Chromium installation...")
+        _chromium_install_state["progress"] = "downloading"
+
+        commands = [
+            ["python3", "-m", "playwright", "install", "chromium"],
+            ["playwright", "install", "chromium"],
+        ]
+
+        for cmd in commands:
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=300,
+                )
+                if result.returncode == 0:
+                    _chromium_install_state["status"] = "installed"
+                    _chromium_install_state["progress"] = "complete"
+                    _app_module._NEEDS_CHROMIUM_INSTALL = False
+                    _app_module._log("Chromium installation succeeded")
+                    return
+                else:
+                    _app_module._log(f"Command failed: {' '.join(cmd)}: {result.stderr}")
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                _app_module._log(f"Command timed out: {' '.join(cmd)}")
+                continue
+            except Exception as e:
+                _app_module._log(f"Install error: {e}")
+
+        _chromium_install_state["status"] = "error"
+        _chromium_install_state["error"] = "Installation failed. Please run 'playwright install chromium' in Terminal."
+        _app_module._log("Chromium installation failed")
+
+    import threading
+    t = threading.Thread(target=_do_install, daemon=True)
+    t.start()
+
+    return {"status": "installing", "progress": "starting"}
+
+
 @app.post("/api/choose-folder")
 async def choose_folder():
     """打开原生文件夹选择对话框，返回用户选择的路径"""
