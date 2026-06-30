@@ -211,6 +211,106 @@ body {
   cursor: pointer; font-size: 18px; padding: 0 4px; margin-left: 8px;
 }
 .update-banner-close:hover { color: #fff; }
+
+/* ── Chromium Install Overlay ── */
+.chromium-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+.chromium-overlay.show { display: flex; }
+.chromium-overlay-card {
+  background: var(--surface, #fff);
+  border-radius: 20px;
+  padding: 48px 56px;
+  text-align: center;
+  max-width: 440px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  animation: overlayFadeIn 0.4s ease;
+}
+@keyframes overlayFadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.chromium-overlay-icon {
+  width: 64px; height: 64px;
+  margin: 0 auto 20px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+  display: flex; align-items: center; justify-content: center;
+}
+.chromium-overlay-icon svg { width: 36px; height: 36px; color: #fff; }
+.chromium-overlay-title {
+  font-size: 20px; font-weight: 700;
+  color: var(--text-primary, #0F172A);
+  margin-bottom: 8px;
+}
+.chromium-overlay-desc {
+  font-size: 13px; color: var(--text-secondary, #475569);
+  margin-bottom: 28px; line-height: 1.6;
+}
+.chromium-overlay-progress {
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; font-size: 14px; font-weight: 500;
+  color: var(--primary, #4F46E5);
+  margin-bottom: 16px;
+}
+.chromium-spinner {
+  width: 20px; height: 20px;
+  border: 2.5px solid var(--primary-light, #EEF2FF);
+  border-top-color: var(--primary, #4F46E5);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.chromium-overlay-check {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--success, #059669);
+  display: flex; align-items: center; justify-content: center;
+  animation: popIn 0.3s ease;
+}
+@keyframes popIn {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+.chromium-overlay-check svg { width: 12px; height: 12px; color: #fff; }
+.chromium-overlay-error {
+  color: var(--danger, #DC2626);
+  font-size: 13px;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.chromium-overlay-error code {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #0F172A;
+  color: #E2E8F0;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Consolas', monospace;
+  user-select: all;
+}
+.chromium-overlay-btn {
+  margin-top: 20px;
+  padding: 10px 28px;
+  background: var(--primary, #4F46E5);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.chromium-overlay-btn:hover { background: var(--primary-hover, #4338CA); }
 .main.has-banner { padding-top: 72px; }
 
 /* ── Main Content ── */
@@ -1883,6 +1983,11 @@ const I18N = {
     update_available: '发现新版本 {version}', update_check_failed: '检查更新失败',
     // Update banner
     new_version: '新版本', released: '已发布', download_now: '立即下载',
+    // Chromium install overlay
+    chromium_title: '首次启动设置', chromium_desc: '正在自动安装浏览器组件，安装完成后即可使用数据抓取功能。',
+    chromium_downloading: '正在下载浏览器组件...', chromium_installing: '正在安装...',
+    chromium_complete: '安装完成，正在启动应用...', chromium_failed: '自动安装失败，请在终端中手动执行以下命令：',
+    chromium_retry: '安装完成后刷新页面即可使用。', chromium_refresh: '刷新页面',
     // Dynamic / toast
     request_failed: '请求失败', task_cancelled: '任务已取消',
     select_file_toast: '请选择文件', importing: '导入中...',
@@ -2062,6 +2167,12 @@ const I18N = {
     checking_update: 'Checking for updates...', no_update: 'You are on the latest version',
     update_available: 'New version {version} available', update_check_failed: 'Update check failed',
     new_version: 'New version', released: 'released', download_now: 'Download Now',
+    // Chromium install overlay
+    chromium_title: 'First Launch Setup', chromium_desc: 'Installing browser component automatically. Data scraping features will be available after installation.',
+    chromium_downloading: 'Downloading browser component...', chromium_installing: 'Installing...',
+    chromium_complete: 'Installation complete, launching app...', chromium_failed: 'Automatic installation failed. Please run the following command in Terminal:',
+    chromium_retry: 'Refresh the page after installation to continue.', chromium_refresh: 'Refresh Page',
+    // Dynamic / toast
     request_failed: 'Request failed', task_cancelled: 'Task cancelled',
     select_file_toast: 'Please select a file', importing: 'Importing...',
     import_complete: 'Import Complete', import_posts: 'Imported posts (showing first {n})',
@@ -3398,6 +3509,54 @@ loadModelSettings();
   } catch (_) {}
 })();
 
+// ── Chromium Install Overlay ──
+(async () => {
+  const overlay = document.getElementById('chromium-overlay');
+  const progressText = document.getElementById('chromium-progress-text');
+  const spinner = document.getElementById('chromium-spinner');
+  const progressDiv = document.getElementById('chromium-progress');
+  const successDiv = document.getElementById('chromium-success');
+  const errorDiv = document.getElementById('chromium-error');
+
+  try {
+    const r = await fetch('/api/chromium-status');
+    if (!r.ok) return;
+    const status = await r.json();
+    if (status.status === 'not_needed' || status.status === 'installed') return;
+
+    // Show overlay
+    overlay.classList.add('show');
+
+    // Trigger installation
+    const trigger = await fetch('/api/install-chromium', { method: 'POST' });
+    if (!trigger.ok) throw new Error('trigger failed');
+
+    // Poll for completion
+    const poll = setInterval(async () => {
+      try {
+        const sr = await fetch('/api/chromium-status');
+        if (!sr.ok) return;
+        const s = await sr.json();
+
+        if (s.status === 'installing') {
+          progressText.textContent = s.progress === 'downloading'
+            ? t('chromium_downloading')
+            : t('chromium_installing');
+        } else if (s.status === 'installed') {
+          clearInterval(poll);
+          progressDiv.style.display = 'none';
+          successDiv.style.display = 'block';
+          setTimeout(() => overlay.classList.remove('show'), 2000);
+        } else if (s.status === 'error') {
+          clearInterval(poll);
+          progressDiv.style.display = 'none';
+          errorDiv.style.display = 'block';
+        }
+      } catch (_) {}
+    }, 2000);
+  } catch (_) {}
+})();
+
 // Manual update check from Settings About section
 async function manualCheckUpdate() {
   const label = document.getElementById('about-version-label');
@@ -3473,6 +3632,35 @@ function dismissUpdate() {
   <span><span data-i18n="new_version">新版本</span> <strong id="update-version">v0.0.0</strong> <span data-i18n="released">已发布</span></span>
   <a href="#" id="update-download-link" target="_blank" data-i18n="download_now">立即下载</a>
   <button class="update-banner-close" onclick="dismissUpdate()">&times;</button>
+</div>
+
+<!-- Chromium Install Overlay -->
+<div id="chromium-overlay" class="chromium-overlay">
+  <div class="chromium-overlay-card">
+    <div class="chromium-overlay-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+    </div>
+    <div class="chromium-overlay-title" id="chromium-title" data-i18n="chromium_title">首次启动设置</div>
+    <div class="chromium-overlay-desc" id="chromium-desc" data-i18n="chromium_desc">正在自动安装浏览器组件，安装完成后即可使用数据抓取功能。</div>
+    <div class="chromium-overlay-progress" id="chromium-progress">
+      <div class="chromium-spinner" id="chromium-spinner"></div>
+      <span id="chromium-progress-text" data-i18n="chromium_downloading">正在下载浏览器组件...</span>
+    </div>
+    <div id="chromium-success" style="display:none">
+      <div class="chromium-overlay-progress">
+        <div class="chromium-overlay-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span data-i18n="chromium_complete">安装完成，正在启动应用...</span>
+      </div>
+    </div>
+    <div id="chromium-error" style="display:none">
+      <div class="chromium-overlay-error">
+        <span data-i18n="chromium_failed">自动安装失败，请在终端中手动执行以下命令：</span>
+        <code id="chromium-error-cmd">playwright install chromium</code>
+        <p style="margin-top:12px" data-i18n="chromium_retry">安装完成后刷新页面即可使用。</p>
+      </div>
+      <button class="chromium-overlay-btn" onclick="location.reload()" data-i18n="chromium_refresh">刷新页面</button>
+    </div>
+  </div>
 </div>
 
 </body>
