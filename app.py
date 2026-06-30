@@ -110,6 +110,46 @@ def _find_free_port(start: int = 8000, end: int = 8100) -> int:
     return 0
 
 
+def _kill_existing_instance(port: int = 8000):
+    """安装新版本前杀死旧实例，确保端口释放"""
+    if not _port_is_listening(port):
+        return
+
+    _log(f"existing instance detected on port {port}, attempting to terminate")
+    try:
+        if sys.platform == "win32":
+            import subprocess
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "vocab-harvester.exe"],
+                capture_output=True, timeout=10,
+            )
+        else:
+            import signal
+            pid_str = ""
+            try:
+                import subprocess
+                r = subprocess.run(
+                    ["lsof", "-ti", f"tcp:{port}"],
+                    capture_output=True, text=True, encoding="utf-8", timeout=5,
+                )
+                pid_str = r.stdout.strip()
+            except Exception:
+                pass
+            if pid_str:
+                current_pid = str(os.getpid())
+                for line in pid_str.split("\n"):
+                    pid = line.strip()
+                    if pid and pid != current_pid:
+                        try:
+                            os.kill(int(pid), signal.SIGTERM)
+                            _log(f"sent SIGTERM to PID {pid}")
+                        except Exception as e:
+                            _log(f"failed to kill PID {pid}: {e}")
+        time.sleep(2)
+    except Exception as e:
+        _log(f"failed to kill existing instance: {e}")
+
+
 def _start_server(port: int):
     """在守护线程中启动 uvicorn"""
     global _SERVER_ERROR, PORT, URL
@@ -233,6 +273,9 @@ def main():
         _log("update check started in background")
     except Exception as e:
         _log(f"update check init failed: {e}")
+
+    # 杀死旧实例（更新安装时旧进程可能还在运行）
+    _kill_existing_instance()
 
     # 自动找空闲端口（优先复用上次的）
     PORT = _find_free_port()
