@@ -1457,29 +1457,51 @@ kbd {
         </div>
         <div class="card-body" style="margin-top:16px">
           <div class="card-desc" style="margin-bottom:12px" data-i18n="model_desc">配置大模型 API 用于导入数据时的智能分析（黑词提取）。支持所有 OpenAI 兼容接口。未配置时仅导入存储，不进行分析。</div>
-          <div class="form-group">
-            <label data-i18n="api_url">API 地址</label>
-            <input type="text" id="model-base-url" placeholder="例如 https://open.bigmodel.cn/api/paas/v4" style="width:100%">
-          </div>
-          <div class="form-group">
-            <label data-i18n="api_key">API 密钥</label>
-            <div style="display:flex;gap:8px;align-items:center">
-              <input type="password" id="model-api-key" placeholder="输入 API Key" style="flex:1">
-              <button class="btn btn-secondary btn-sm" onclick="toggleSecret('model-api-key', this)" style="padding:4px 8px;flex-shrink:0">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              </button>
+
+          <!-- Main Model -->
+          <div style="margin-bottom:16px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:8px" data-i18n="main_model">主模型</div>
+            <div class="form-group">
+              <label data-i18n="api_url">API 地址</label>
+              <input type="text" id="model-base-url" placeholder="例如 https://open.bigmodel.cn/api/paas/v4" style="width:100%">
             </div>
-          </div>
-          <div style="display:flex;gap:16px">
-            <div class="form-group" style="flex:1">
+            <div class="form-group">
+              <label data-i18n="api_key">API 密钥</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="password" id="model-api-key" placeholder="输入 API Key" style="flex:1">
+                <button class="btn btn-secondary btn-sm" onclick="toggleSecret('model-api-key', this)" style="padding:4px 8px;flex-shrink:0">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="form-group">
               <label data-i18n="model_name">模型名称</label>
               <input type="text" id="model-name" placeholder="例如 glm-4-plus">
             </div>
-            <div class="form-group" style="flex:1">
-              <label data-i18n="model_backup">备用模型</label>
-              <input type="text" id="model-backup" placeholder="例如 glm-4-flash">
+          </div>
+
+          <!-- Backup Model -->
+          <div style="margin-bottom:16px;padding-top:12px;border-top:1px solid var(--border)">
+            <div style="font-weight:600;font-size:13px;margin-bottom:8px" data-i18n="backup_model">备用模型</div>
+            <div class="form-group">
+              <label data-i18n="api_url">API 地址</label>
+              <input type="text" id="model-backup-base-url" placeholder="例如 https://open.bigmodel.cn/api/paas/v4" style="width:100%">
+            </div>
+            <div class="form-group">
+              <label data-i18n="api_key">API 密钥</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="password" id="model-backup-api-key" placeholder="输入 API Key" style="flex:1">
+                <button class="btn btn-secondary btn-sm" onclick="toggleSecret('model-backup-api-key', this)" style="padding:4px 8px;flex-shrink:0">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label data-i18n="model_name">模型名称</label>
+              <input type="text" id="model-backup-name" placeholder="例如 glm-4-flash">
             </div>
           </div>
+
           <div style="display:flex;gap:8px;margin-top:12px">
             <button class="btn btn-primary btn-sm" id="model-save-btn" onclick="saveModelSettings()" data-i18n="btn_save_config">保存配置</button>
             <button class="btn btn-secondary btn-sm" id="model-clear-btn" onclick="clearModelSettings()" data-i18n="btn_clear">清除</button>
@@ -1492,17 +1514,43 @@ kbd {
         <div class="card-title" data-i18n="upload_file_title">上传文件</div>
         <div class="card-desc" data-i18n="upload_file_desc">支持 JSON 和 CSV 格式，文件应包含帖子内容。</div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label data-i18n="data_source">数据来源</label>
-            <select id="import-platform">
-              <option value="weibo" data-i18n="platform_weibo">微博</option>
-              <option value="xiaohongshu" data-i18n="platform_xhs">小红书</option>
-              <option value="twitter" data-i18n="platform_twitter">Twitter</option>
-              <option value="douyin" data-i18n="platform_douyin">抖音</option>
-              <option value="unknown" data-i18n="platform_other">其他</option>
-            </select>
+        <!-- Mode Selection -->
+        <div class="form-group">
+          <label data-i18n="mode_selection">模式选择</label>
+          <div class="settings-options" style="margin-top:4px">
+            <label class="settings-radio">
+              <input type="radio" name="import-mode" value="manual" onchange="toggleImportMode()" checked>
+              <span data-i18n="mode_manual">手动</span>
+            </label>
+            <label class="settings-radio">
+              <input type="radio" name="import-mode" value="auto" onchange="toggleImportMode()">
+              <span data-i18n="mode_auto">自动</span>
+            </label>
           </div>
+          <div class="settings-hint" id="import-mode-hint" data-i18n="mode_manual_hint">手动模式：仅导入存储，不进行 AI 分析</div>
+        </div>
+
+        <!-- Type & Author Filters -->
+        <div class="form-group" style="margin-top:8px">
+          <label data-i18n="data_filter">数据筛选</label>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">
+            <span style="font-size:13px;color:var(--text-secondary)" data-i18n="filter_type">类型 (type):</span>
+            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
+              <input type="checkbox" id="import-type-post" checked> <span>post</span>
+            </label>
+            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
+              <input type="checkbox" id="import-type-comment" checked> <span>comment</span>
+            </label>
+            <span style="font-size:13px;color:var(--text-secondary);margin-left:8px">author:</span>
+            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
+              <input type="checkbox" id="import-author"> <span data-i18n="include_author">包含</span>
+            </label>
+            <span style="font-size:12px;color:var(--text-secondary);margin-left:4px" data-i18n="content_required">(content 必选)</span>
+          </div>
+        </div>
+
+        <!-- File Selection -->
+        <div class="form-row" style="margin-top:12px">
           <div class="form-group">
             <label data-i18n="select_file">选择文件</label>
             <input type="file" id="import-file" accept=".json,.csv" style="padding:6px">
@@ -1694,6 +1742,18 @@ kbd {
         </div>
         <div class="settings-hint" data-i18n="settings_download_hint">导出的 CSV、JSON、TXT 文件将保存到此位置</div>
       </div>
+
+      <!-- About -->
+      <div class="card">
+        <div class="card-title" data-i18n="settings_about">关于</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span id="about-version-label" data-i18n="version_label" style="cursor:pointer;color:var(--primary);text-decoration:underline;text-underline-offset:3px" onclick="manualCheckUpdate()">版本号</span>
+            <span id="about-version-number" style="font-family:monospace;font-size:14px;color:var(--text-secondary)">—</span>
+          </div>
+          <div id="about-update-status" style="font-size:12px;color:var(--text-secondary);display:none"></div>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -1770,10 +1830,16 @@ const I18N = {
     api_key: 'API 密钥', api_key_placeholder: '输入 API Key',
     model_name: '模型名称', model_name_placeholder: '例如 glm-4-plus',
     model_backup: '备用模型', model_backup_placeholder: '例如 glm-4-flash',
+    main_model: '主模型', backup_model: '备用模型',
     btn_save_config: '保存配置', btn_clear: '清除',
     upload_file_title: '上传文件',
     upload_file_desc: '支持 JSON 和 CSV 格式，文件应包含帖子内容。',
     data_source: '数据来源',
+    mode_selection: '模式选择', mode_auto: '自动', mode_manual: '手动',
+    mode_auto_hint: '自动模式：根据筛选条件自动进行 AI 分析',
+    mode_manual_hint: '手动模式：仅导入存储，不进行 AI 分析',
+    data_filter: '数据筛选', filter_type: '类型 (type):',
+    include_author: '包含', content_required: '(content 必选)',
     platform_weibo: '微博', platform_xhs: '小红书', platform_twitter: 'Twitter',
     platform_douyin: '抖音', platform_other: '其他',
     select_file: '选择文件', btn_import: '导入并分析',
@@ -1812,6 +1878,9 @@ const I18N = {
     settings_download_dir: '文件保存位置',
     btn_browse: '选择文件夹',
     settings_download_hint: '导出的 CSV、JSON、TXT 文件将保存到此位置',
+    settings_about: '关于', version_label: '版本号', version_update: '版本更新',
+    checking_update: '检查更新中...', no_update: '当前已是最新版本',
+    update_available: '发现新版本 {version}', update_check_failed: '检查更新失败',
     // Update banner
     new_version: '新版本', released: '已发布', download_now: '立即下载',
     // Dynamic / toast
@@ -1944,10 +2013,16 @@ const I18N = {
     api_key: 'API Key', api_key_placeholder: 'Enter API Key',
     model_name: 'Model Name', model_name_placeholder: 'e.g. glm-4-plus',
     model_backup: 'Backup Model', model_backup_placeholder: 'e.g. glm-4-flash',
+    main_model: 'Main Model', backup_model: 'Backup Model',
     btn_save_config: 'Save Config', btn_clear: 'Clear',
     upload_file_title: 'Upload File',
     upload_file_desc: 'Supports JSON and CSV formats. Files should contain post content.',
     data_source: 'Data Source',
+    mode_selection: 'Mode', mode_auto: 'Auto', mode_manual: 'Manual',
+    mode_auto_hint: 'Auto mode: Automatically run AI analysis based on filters',
+    mode_manual_hint: 'Manual mode: Import and store only, no AI analysis',
+    data_filter: 'Data Filter', filter_type: 'Type:',
+    include_author: 'Include', content_required: '(content required)',
     platform_weibo: 'Weibo', platform_xhs: 'Xiaohongshu', platform_twitter: 'Twitter',
     platform_douyin: 'Douyin', platform_other: 'Other',
     select_file: 'Select File', btn_import: 'Import & Analyze',
@@ -1983,6 +2058,9 @@ const I18N = {
     settings_download_dir: 'File Save Location',
     btn_browse: 'Browse',
     settings_download_hint: 'Exported CSV, JSON, TXT files will be saved here',
+    settings_about: 'About', version_label: 'Version', version_update: 'Update Available',
+    checking_update: 'Checking for updates...', no_update: 'You are on the latest version',
+    update_available: 'New version {version} available', update_check_failed: 'Update check failed',
     new_version: 'New version', released: 'released', download_now: 'Download Now',
     request_failed: 'Request failed', task_cancelled: 'Task cancelled',
     select_file_toast: 'Please select a file', importing: 'Importing...',
@@ -2214,12 +2292,29 @@ async function loadStats() {
 }
 
 // ── Import ──
+function toggleImportMode() {
+  const mode = document.querySelector('input[name="import-mode"]:checked').value;
+  const hint = document.getElementById('import-mode-hint');
+  if (mode === 'auto') {
+    hint.textContent = t('mode_auto_hint');
+    hint.setAttribute('data-i18n', 'mode_auto_hint');
+  } else {
+    hint.textContent = t('mode_manual_hint');
+    hint.setAttribute('data-i18n', 'mode_manual_hint');
+  }
+}
+
 async function startImport() {
   const fileInput = document.getElementById('import-file');
-  const platform = document.getElementById('import-platform').value;
+  const mode = document.querySelector('input[name="import-mode"]:checked').value;
   const file = fileInput.files[0];
 
   if (!file) return toast(t('select_file_toast'), 'error');
+
+  // Collect type/author filter
+  const typePost = document.getElementById('import-type-post').checked;
+  const typeComment = document.getElementById('import-type-comment').checked;
+  const includeAuthor = document.getElementById('import-author').checked;
 
   const btn = document.getElementById('import-btn');
   btn.disabled = true;
@@ -2229,6 +2324,10 @@ async function startImport() {
   try {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('import_mode', mode);
+    formData.append('type_post', typePost ? 'true' : 'false');
+    formData.append('type_comment', typeComment ? 'true' : 'false');
+    formData.append('include_author', includeAuthor ? 'true' : 'false');
 
     // 附加模型 API 配置（如有）
     const _mKey = localStorage.getItem('model_api_key') || '';
@@ -2237,10 +2336,12 @@ async function startImport() {
       formData.append('model_api_key', _mKey);
       formData.append('model_base_url', _mUrl);
       formData.append('model_name', localStorage.getItem('model_name') || '');
-      formData.append('model_backup', localStorage.getItem('model_backup') || '');
+      formData.append('model_backup_base_url', localStorage.getItem('model_backup_base_url') || '');
+      formData.append('model_backup_api_key', localStorage.getItem('model_backup_api_key') || '');
+      formData.append('model_backup_name', localStorage.getItem('model_backup_name') || '');
     }
 
-    const res = await fetch(`/api/import?platform=${platform}`, {
+    const res = await fetch('/api/import', {
       method: 'POST',
       body: formData,
     });
@@ -3218,7 +3319,9 @@ function saveModelSettings() {
   const baseUrl = document.getElementById('model-base-url').value.trim();
   const apiKey = document.getElementById('model-api-key').value.trim();
   const modelName = document.getElementById('model-name').value.trim();
-  const backup = document.getElementById('model-backup').value.trim();
+  const backupBaseUrl = document.getElementById('model-backup-base-url').value.trim();
+  const backupApiKey = document.getElementById('model-backup-api-key').value.trim();
+  const backupModelName = document.getElementById('model-backup-name').value.trim();
 
   if (!baseUrl) return toast(t('fill_api_url'), 'error');
   if (!apiKey) return toast(t('fill_api_key'), 'error');
@@ -3226,7 +3329,9 @@ function saveModelSettings() {
   localStorage.setItem('model_base_url', baseUrl);
   localStorage.setItem('model_api_key', apiKey);
   localStorage.setItem('model_name', modelName);
-  localStorage.setItem('model_backup', backup);
+  localStorage.setItem('model_backup_base_url', backupBaseUrl);
+  localStorage.setItem('model_backup_api_key', backupApiKey);
+  localStorage.setItem('model_backup_name', backupModelName);
 
   updateModelSummary();
   document.getElementById('model-config-card').classList.add('collapsed');
@@ -3237,11 +3342,15 @@ function clearModelSettings() {
   localStorage.removeItem('model_base_url');
   localStorage.removeItem('model_api_key');
   localStorage.removeItem('model_name');
-  localStorage.removeItem('model_backup');
+  localStorage.removeItem('model_backup_base_url');
+  localStorage.removeItem('model_backup_api_key');
+  localStorage.removeItem('model_backup_name');
   document.getElementById('model-base-url').value = '';
   document.getElementById('model-api-key').value = '';
   document.getElementById('model-name').value = '';
-  document.getElementById('model-backup').value = '';
+  document.getElementById('model-backup-base-url').value = '';
+  document.getElementById('model-backup-api-key').value = '';
+  document.getElementById('model-backup-name').value = '';
   updateModelSummary();
   toast(t('model_cleared'), 'success');
 }
@@ -3250,7 +3359,9 @@ function loadModelSettings() {
   document.getElementById('model-base-url').value = localStorage.getItem('model_base_url') || '';
   document.getElementById('model-api-key').value = localStorage.getItem('model_api_key') || '';
   document.getElementById('model-name').value = localStorage.getItem('model_name') || '';
-  document.getElementById('model-backup').value = localStorage.getItem('model_backup') || '';
+  document.getElementById('model-backup-base-url').value = localStorage.getItem('model_backup_base_url') || '';
+  document.getElementById('model-backup-api-key').value = localStorage.getItem('model_backup_api_key') || '';
+  document.getElementById('model-backup-name').value = localStorage.getItem('model_backup_name') || '';
   updateModelSummary();
 }
 
@@ -3275,16 +3386,52 @@ loadStats();
 loadAllCookies();
 loadModelSettings();
 
-// Load version into sidebar
+// Load version into sidebar and About section
 (async () => {
   try {
     const r = await fetch('/api/version');
     if (r.ok) {
       const d = await r.json();
       document.getElementById('app-version').textContent = 'v' + d.version;
+      document.getElementById('about-version-number').textContent = 'v' + d.version;
     }
   } catch (_) {}
 })();
+
+// Manual update check from Settings About section
+async function manualCheckUpdate() {
+  const label = document.getElementById('about-version-label');
+  const statusEl = document.getElementById('about-update-status');
+  label.textContent = t('checking_update');
+  label.style.pointerEvents = 'none';
+  statusEl.style.display = 'block';
+  statusEl.textContent = t('checking_update');
+
+  try {
+    const r = await fetch('/api/check-update', { method: 'POST' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const info = await r.json();
+    if (info && info.latest_version) {
+      label.textContent = t('version_update');
+      label.setAttribute('data-i18n', 'version_update');
+      label.style.color = 'var(--warning, #e67e22)';
+      statusEl.innerHTML = t('update_available', { version: 'v' + info.latest_version }) +
+        ' — <a href="' + (info.download_url || info.release_page || '#') + '" target="_blank" style="color:var(--primary)">' + t('download_now') + '</a>';
+    } else {
+      label.textContent = t('version_label');
+      label.setAttribute('data-i18n', 'version_label');
+      label.style.color = 'var(--primary)';
+      statusEl.textContent = t('no_update');
+    }
+  } catch (e) {
+    label.textContent = t('version_label');
+    label.setAttribute('data-i18n', 'version_label');
+    label.style.color = 'var(--primary)';
+    statusEl.textContent = t('update_check_failed');
+  } finally {
+    label.style.pointerEvents = '';
+  }
+}
 
 // Poll for update info (check on startup, then every 4 hours)
 let _updateDismissed = false;
