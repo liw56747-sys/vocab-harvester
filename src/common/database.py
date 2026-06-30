@@ -65,8 +65,11 @@ MIGRATE_COLUMNS = [
 
 
 async def init_db(db_path: str | Path = "./data/vocab.db") -> aiosqlite.Connection:
-    """初始化数据库连接并建表"""
+    """初始化数据库连接并建表（幂等：已有连接时直接返回）"""
     global _db_path, _connection
+
+    if _connection is not None:
+        return _connection
 
     _db_path = Path(db_path)
     _db_path.parent.mkdir(parents=True, exist_ok=True)
