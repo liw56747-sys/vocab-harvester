@@ -77,11 +77,27 @@ if str(_BUNDLED_DIR) not in sys.path:
 PORT = 8000
 URL = ""
 
+# 服务器线程错误捕获（让主线程能看到 uvicorn 的具体报错）
+_SERVER_ERROR = None
+
 # 端口持久化文件（保持端口不变，让 localStorage 跨次启动有效）
 _PORT_FILE = _EXE_DIR / ".port"
 
 
-def _port_is_open(port: int, timeout: float = 0.2) -> bool:
+def _can_bind_to_port(port: int) -> bool:
+    """尝试绑定端口来检测是否可用（比 connect 更可靠）"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", port))
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+def _port_is_listening(port: int, timeout: float = 0.3) -> bool:
+    """检查端口是否已有服务在监听"""
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=timeout):
             return True
@@ -89,25 +105,27 @@ def _port_is_open(port: int, timeout: float = 0.2) -> bool:
         return False
 
 
-def _find_free_port(start: int = 8000, end: int = 8020) -> int:
-    """优先复用上次的端口（持久化 localStorage），否则从 start 开始找空闲端口"""
+def _find_free_port(start: int = 8000, end: int = 8100) -> int:
+    """优先复用上次的端口（持久化 localStorage），否则用 bind 检测找空闲端口"""
     # 尝试上次的端口
     try:
         if _PORT_FILE.exists():
             saved = int(_PORT_FILE.read_text(encoding="utf-8").strip())
-            if start <= saved < end and not _port_is_open(saved):
+            if start <= saved < end and _can_bind_to_port(saved):
                 return saved
     except (ValueError, OSError):
         pass
-    # 找不到就扫描
+    # 扫描范围内的端口
     for port in range(start, end):
-        if not _port_is_open(port):
+        if _can_bind_to_port(port):
             return port
-    return start  # 都不空闲就用默认端口，让 uvicorn 报错
+    # 都不可用就用 port=0 让操作系统分配
+    return 0
 
 
 def _start_server(port: int):
     """在守护线程中启动 uvicorn"""
+    global _SERVER_ERROR, PORT, URL
     try:
         _log(f"server thread starting, port={port}")
         _log(f"_BUNDLED_DIR={_BUNDLED_DIR}")
@@ -134,24 +152,80 @@ def _start_server(port: int):
         asyncio.run(init_db(db_path))
         _log("database initialized")
 
-        uvicorn.run(
-            fastapi_app,
-            host="127.0.0.1",
-            port=port,
-            reload=False,
-            log_level="warning",
-            log_config=None,
-        )
+        # 尝试启动 uvicorn，如果端口绑定失败则尝试备选端口
+        actual_port = port
+        try:
+            config = uvicorn.Config(
+                fastapi_app,
+                host="127.0.0.1",
+                port=port,
+                reload=False,
+                log_level="warning",
+                log_config=None,
+            )
+            server = uvicorn.Server(config)
+            _log(f"uvicorn config created, port={port}")
+
+            # 在事件循环中运行，以便捕获绑定错误
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(server.serve())
+            finally:
+                loop.close()
+
+        except (OSError, Exception) as bind_err:
+            _log(f"port bind/start failed: {bind_err}")
+            # 尝试扫描其他端口
+            for alt_port in range(8000, 8100):
+                if alt_port == port:
+                    continue
+                if not _can_bind_to_port(alt_port):
+                    continue
+                _log(f"trying alternative port: {alt_port}")
+                try:
+                    actual_port = alt_port
+                    PORT = alt_port
+                    URL = f"http://127.0.0.1:{alt_port}"
+                    config = uvicorn.Config(
+                        fastapi_app,
+                        host="127.0.0.1",
+                        port=alt_port,
+                        reload=False,
+                        log_level="warning",
+                        log_config=None,
+                    )
+                    server = uvicorn.Server(config)
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(server.serve())
+                    finally:
+                        loop.close()
+                    break
+                except (OSError, Exception) as alt_err:
+                    _log(f"alt port {alt_port} also failed: {alt_err}")
+                    continue
+            else:
+                _SERVER_ERROR = f"所有端口 (8000-8099) 均不可用: {bind_err}"
+                _log(_SERVER_ERROR)
+                return
+
+        _log(f"uvicorn exited normally (was on port {actual_port})")
+
     except Exception as e:
+        _SERVER_ERROR = str(e)
         _log(f"FATAL: server thread crashed: {e}")
         _log(traceback.format_exc())
 
 
-def _wait_for_server(port: int, max_wait: int = 15) -> bool:
-    """轮询等待服务器就绪"""
+def _wait_for_server(port: int, max_wait: int = 20) -> bool:
+    """轮询等待服务器就绪，同时检查线程是否已崩溃"""
     start = time.time()
     while time.time() - start < max_wait:
-        if _port_is_open(port):
+        if _SERVER_ERROR:
+            return False
+        if _port_is_listening(port):
             return True
         time.sleep(0.3)
     return False
@@ -194,13 +268,14 @@ def main():
         log_text = ""
         if _LOG_FILE.exists():
             try:
-                log_text = _LOG_FILE.read_text(encoding="utf-8")[-500:]
+                log_text = _LOG_FILE.read_text(encoding="utf-8")[-800:]
             except Exception:
                 pass
         import webview
-        html = f"<h2>服务器启动失败</h2><p>端口 {PORT} 无法使用。</p>"
+        error_detail = _SERVER_ERROR or f"端口 {PORT} 无法使用"
+        html = f"<h2>服务器启动失败</h2><p>{error_detail}</p>"
         if log_text:
-            html += f"<h3>诊断日志：</h3><pre style='font-size:11px;background:#f5f5f5;padding:8px;overflow:auto'>{log_text}</pre>"
+            html += f"<h3>诊断日志：</h3><pre style='font-size:11px;background:#f5f5f5;padding:8px;overflow:auto;max-height:300px'>{log_text}</pre>"
         webview.create_window("错误", html=html)
         webview.start()
         sys.exit(1)
