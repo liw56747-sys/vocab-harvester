@@ -120,6 +120,18 @@ Name: "{{autodesktop}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}";
 
 [Run]
 Filename: "{{app}}\\{{#MyAppExeName}}"; Description: "{{cm:LaunchProgram,{{#StringChange(MyAppName, '&', '&&')}}}}"; WorkingDir: "{{app}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // 安装前强制结束旧版 vocab-harvester 进程，确保端口释放
+  Exec('taskkill', '/F /IM vocab-harvester.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // 等待端口释放
+  Sleep(2000);
+  Result := True;
+end;
 '''
 
 
