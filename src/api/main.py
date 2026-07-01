@@ -121,6 +121,17 @@ class ExportRequest(BaseModel):
 
 # ── API 路由 ─────────────────────────────────────────────
 
+# 【新增】异步任务状态存储池
+_BACKGROUND_TASKS = {}
+
+@app.get("/api/task-status")
+async def get_task_status(task_id: str):
+    """供前端轮询异步任务状态的接口"""
+    if task_id not in _BACKGROUND_TASKS:
+        return {"status": "error", "error": "任务不存在或已失效"}
+    return _BACKGROUND_TASKS[task_id]
+
+
 @app.get("/")
 async def index():
     """返回前端页面"""
@@ -418,9 +429,10 @@ def _parse_date(val) -> datetime:
 
 @app.post("/api/twitter-fetch")
 async def twitter_fetch(req: TwitterUrlFetchRequest):
-    """通过 Playwright 浏览器自动化从用户主页 URL 抓取推文，返回 CSV 数据供前端下载（不自动走工作流）"""
+    """通过 Playwright 异步浏览器自动化从用户主页 URL 抓取推文，升级为异步任务池"""
     import base64
     import traceback as tb
+    import uuid
     from src.crawlers.twitter_url import TwitterCookieFetcher, extract_username
 
     if not req.urls:
@@ -428,7 +440,6 @@ async def twitter_fetch(req: TwitterUrlFetchRequest):
 
     fetcher = TwitterCookieFetcher(proxy=req.proxy or None, block_resources=req.block_resources)
 
-    # 优先使用请求体中的 Cookie（每用户独立），回退到服务端配置
     if req.ct0 and req.auth_token:
         cookies = {"ct0": req.ct0.strip(), "auth_token": req.auth_token.strip()}
     else:
@@ -437,7 +448,6 @@ async def twitter_fetch(req: TwitterUrlFetchRequest):
     if not cookies:
         raise HTTPException(400, "未配置 Cookie，请在页面中填写你的 Twitter Cookie")
 
-    # 从 URL 列表中提取用户名
     usernames: list[str] = []
     for url in req.urls:
         name = extract_username(url.strip())
@@ -447,57 +457,63 @@ async def twitter_fetch(req: TwitterUrlFetchRequest):
     if not usernames:
         raise HTTPException(400, "未能从输入中提取到有效的用户名")
 
-    try:
-        tweets, csv_string = await fetcher.fetch_user_tweets(usernames, count=req.count, include_replies=req.include_replies, cookies=cookies)
-    except Exception as e:
-        tb.print_exc()
-        raise HTTPException(500, f"抓取失败: {type(e).__name__}: {str(e)}")
+    task_id = str(uuid.uuid4())
+    _BACKGROUND_TASKS[task_id] = {"status": "running", "result": None}
 
-    if not tweets:
-        return {
-            "status": "empty",
-            "total_posts": 0,
-            "sampled_posts": [],
-            "csv_data": "",
-            "error": "未抓取到任何推文（可能用户不存在、账号受限或 cookie 已过期）",
-        }
+    async def _run():
+        try:
+            tweets, csv_string = await fetcher.fetch_user_tweets(usernames, count=req.count, include_replies=req.include_replies, cookies=cookies)
+            
+            if not tweets:
+                _BACKGROUND_TASKS[task_id] = {
+                    "status": "success",
+                    "result": {
+                        "status": "empty",
+                        "total_posts": 0,
+                        "sampled_posts": [],
+                        "csv_data": "",
+                        "error": "未抓取到任何推文（可能用户不存在、账号受限或 cookie 已过期）",
+                    }
+                }
+                return
 
-    # 构造返回数据（帖子预览）
-    sampled = []
-    for t in tweets[:50]:
-        sampled.append({
-            "platform": "twitter",
-            "post_id": t["tweet_id"],
-            "author": t["author"],
-            "content": t["content"][:200] if len(t["content"]) > 200 else t["content"],
-            "published_at": t["created_at"],
-            "metrics": {
-                "likes": t["likes"],
-                "retweets": t["retweets"],
-                "replies": t["replies"],
-            },
-            "has_media": t.get("has_media", False),
-            "media_type": t.get("media_type", "none"),
-            "media_urls": t.get("media_urls", ""),
-            "replies_count": t.get("replies_count", 0),
-        })
+            sampled = []
+            for t in tweets[:50]:
+                sampled.append({
+                    "platform": "twitter",
+                    "post_id": t["tweet_id"],
+                    "author": t["author"],
+                    "content": t["content"][:200] if len(t["content"]) > 200 else t["content"],
+                    "published_at": t["created_at"],
+                    "metrics": {"likes": t["likes"], "retweets": t["retweets"], "replies": t["replies"]},
+                    "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"),
+                    "media_urls": t.get("media_urls", ""), "replies_count": t.get("replies_count", 0),
+                })
 
-    # CSV 内容 base64 编码，前端解码后触发下载
-    csv_b64 = base64.b64encode(csv_string.encode("utf-8-sig")).decode("ascii")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            csv_b64 = base64.b64encode(csv_string.encode("utf-8-sig")).decode("ascii")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    return {
-        "status": "success",
-        "total_posts": len(tweets),
-        "sampled_posts": sampled,
-        "csv_data": csv_b64,
-        "csv_filename": f"tweets_{timestamp}.csv",
-    }
+            _BACKGROUND_TASKS[task_id] = {
+                "status": "success",
+                "result": {
+                    "status": "success",
+                    "total_posts": len(tweets),
+                    "sampled_posts": sampled,
+                    "csv_data": csv_b64,
+                    "csv_filename": f"tweets_{timestamp}.csv",
+                }
+            }
+        except Exception as e:
+            tb.print_exc()
+            _BACKGROUND_TASKS[task_id] = {"status": "error", "error": str(e)}
+
+    asyncio.create_task(_run())
+    return {"status": "started", "task_id": task_id}
 
 
 @app.post("/api/twitter-search")
 async def twitter_search(req: TwitterSearchRequest):
-    """通过关键词搜索 Twitter 推文（实时搜索，按最新排序），返回 CSV 数据供前端下载"""
+    """通过关键词搜索 Twitter 推文"""
     import base64
     import traceback as tb
     from src.crawlers.twitter_url import TwitterCookieFetcher
@@ -507,7 +523,6 @@ async def twitter_search(req: TwitterSearchRequest):
 
     fetcher = TwitterCookieFetcher(proxy=req.proxy or None, block_resources=req.block_resources)
 
-    # 优先使用请求体中的 Cookie（每用户独立），回退到服务端配置
     if req.ct0 and req.auth_token:
         cookies = {"ct0": req.ct0.strip(), "auth_token": req.auth_token.strip()}
     else:
@@ -551,7 +566,6 @@ async def twitter_search(req: TwitterSearchRequest):
             "replies_count": t.get("replies_count", 0),
         })
 
-    # CSV 内容 base64 编码，前端解码后触发下载
     csv_b64 = base64.b64encode(csv_string.encode("utf-8-sig")).decode("ascii")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -566,7 +580,7 @@ async def twitter_search(req: TwitterSearchRequest):
 
 @app.post("/api/twitter-login")
 async def twitter_login(req: TwitterLoginRequest):
-    """保存浏览器导出的 Twitter cookie（ct0 + auth_token）"""
+    """保存浏览器导出的 Twitter cookie"""
     from src.crawlers.twitter_url import TwitterCookieFetcher
 
     proxy = req.proxy.strip() if req.proxy else None
@@ -581,7 +595,6 @@ async def twitter_login(req: TwitterLoginRequest):
 
 @app.get("/api/twitter-login-status")
 async def twitter_login_status():
-    """检查 Twitter 是否已登录（cookie 是否存在）"""
     from src.crawlers.twitter_url import TwitterCookieFetcher
     fetcher = TwitterCookieFetcher()
     return {"logged_in": fetcher.is_logged_in()}
@@ -590,55 +603,50 @@ async def twitter_login_status():
 # ── 统一多平台搜索 ────────────────────────────────────────
 
 class PlatformCookieConfig(BaseModel):
-    """每个平台的 Cookie 配置"""
-    platform: str                  # twitter | reddit
-    ct0: str | None = None         # Twitter: ct0
-    auth_token: str | None = None  # Twitter: auth_token
-    reddit_session: str | None = None  # Reddit: reddit_session cookie
-    reddit_token: str | None = None    # Reddit: reddit_token (可选)
-    edgebucket: str | None = None      # Reddit: edgebucket
-    redesign_optout: str | None = None # Reddit: redesign_optout
-    extra_cookies: dict[str, str] | None = None  # 其他额外 Cookie
-    proxy: str | None = None       # 代理地址
+    platform: str                  
+    ct0: str | None = None         
+    auth_token: str | None = None  
+    reddit_session: str | None = None  
+    reddit_token: str | None = None    
+    edgebucket: str | None = None      
+    redesign_optout: str | None = None 
+    extra_cookies: dict[str, str] | None = None  
+    proxy: str | None = None       
 
 
 class MultiPlatformSearchRequest(BaseModel):
     keyword: str
     count: int = 50
-    platforms: list[str] = ["twitter"]   # 要搜索的平台列表
-    sort_by: str = "top"                 # Twitter: top | live
+    platforms: list[str] = ["twitter"]   
+    sort_by: str = "top"                 
     include_replies: bool = False
-    block_resources: bool = False        # 是否屏蔽图片/CSS 加速加载
-    cookies: list[PlatformCookieConfig] = []  # 各平台 Cookie
+    block_resources: bool = False        
+    cookies: list[PlatformCookieConfig] = []  
 
 
 @app.post("/api/search")
 async def multi_platform_search(req: MultiPlatformSearchRequest):
-    """统一多平台搜索：并行搜索多个平台，合并结果返回"""
+    """统一多平台搜索：升级为异步后台触发，返回 task_id 供前端轮询"""
     import base64
     import traceback as tb
+    import uuid
+    import io
+    import csv
 
     if not req.keyword.strip():
         raise HTTPException(400, "请输入搜索关键词")
-
     if not req.platforms:
         raise HTTPException(400, "请至少选择一个搜索平台")
 
-    # 构建平台 -> cookie 映射
     cookie_map: dict[str, dict] = {}
     for cfg in req.cookies:
         cookie_map[cfg.platform] = {
-            "ct0": cfg.ct0 or "",
-            "auth_token": cfg.auth_token or "",
-            "reddit_session": cfg.reddit_session or "",
-            "reddit_token": cfg.reddit_token or "",
-            "edgebucket": cfg.edgebucket or "",
-            "redesign_optout": cfg.redesign_optout or "",
-            "extra_cookies": cfg.extra_cookies or {},
-            "proxy": cfg.proxy or "",
+            "ct0": cfg.ct0 or "", "auth_token": cfg.auth_token or "",
+            "reddit_session": cfg.reddit_session or "", "reddit_token": cfg.reddit_token or "",
+            "edgebucket": cfg.edgebucket or "", "redesign_optout": cfg.redesign_optout or "",
+            "extra_cookies": cfg.extra_cookies or {}, "proxy": cfg.proxy or "",
         }
 
-    # 并行搜索各平台
     tasks = []
     platform_names = []
     skipped_platforms: list[dict] = []
@@ -669,171 +677,134 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                 continue
             from src.crawlers.reddit_crawler import RedditCookieFetcher
             fetcher = RedditCookieFetcher(proxy=proxy)
-            cookies = {}
-            for key in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout"):
-                if pc.get(key):
-                    cookies[key] = pc[key]
-            # Merge any extra cookies
+            cookies = {k: pc[k] for k in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout") if pc.get(k)}
             if pc.get("extra_cookies"):
                 cookies.update(pc["extra_cookies"])
             tasks.append(fetcher.search_posts(
                 req.keyword.strip(), count=req.count, cookies=cookies,
-                include_replies=req.include_replies,
-                sort="hot" if req.sort_by == "top" else "new",
+                include_replies=req.include_replies, sort="hot" if req.sort_by == "top" else "new",
             ))
             platform_names.append("reddit")
 
     if not tasks:
         raise HTTPException(400, "所选平台均未配置 Cookie，请先填写对应平台的 Cookie")
 
-    # 并行执行所有搜索
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    task_id = str(uuid.uuid4())
+    _BACKGROUND_TASKS[task_id] = {"status": "running", "result": None}
 
-    # 合并结果
-    all_posts: list[dict] = []
-    errors: list[str] = []
-    platform_counts: dict[str, int] = {}
+    async def _run():
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            all_posts: list[dict] = []
+            errors: list[str] = []
+            platform_counts: dict[str, int] = {}
 
-    for plat, result in zip(platform_names, results):
-        if isinstance(result, Exception):
-            errors.append(f"{plat}: {result}")
-            logger.error(f"搜索 {plat} 失败: {result}")
+            for plat, result in zip(platform_names, results):
+                if isinstance(result, Exception):
+                    errors.append(f"{plat}: {result}")
+                    logger.error(f"搜索 {plat} 失败: {result}")
+                    tb.print_exc()
+                    continue
+                posts, csv_string = result
+                platform_counts[plat] = sum(1 for p in posts if p.get("type", "post") != "comment")
+                for p in posts:
+                    p["platform"] = plat
+                all_posts.extend(posts)
+
+            if not all_posts:
+                error_msg = "、".join(errors) if errors else "所有平台均未返回结果"
+                _BACKGROUND_TASKS[task_id] = {
+                    "status": "success",
+                    "result": {
+                        "status": "empty", "total_posts": 0, "sampled_posts": [], "csv_data": "",
+                        "csv_filename": "", "error": f"搜索无结果。{error_msg}",
+                        "platform_counts": platform_counts, "skipped_platforms": skipped_platforms,
+                    }
+                }
+                return
+
+            sampled = []
+            for t in all_posts:
+                if t.get("type") == "comment":
+                    continue
+                platform = t.get("platform", "unknown")
+                if platform == "twitter":
+                    sampled.append({
+                        "platform": "twitter", "post_id": t.get("tweet_id", ""),
+                        "author": t.get("author_name", "") or t.get("author", ""),
+                        "content": t.get("content", "")[:200], "published_at": t.get("created_at", ""),
+                        "metrics": {"likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)},
+                        "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"),
+                        "media_urls": t.get("media_urls", ""), "replies_count": t.get("replies_count", 0),
+                    })
+                elif platform == "reddit":
+                    sampled.append({
+                        "platform": "reddit", "post_id": t.get("post_id", ""),
+                        "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", ""))[:200].strip(),
+                        "published_at": t.get("created_at", ""), "metrics": {"score": t.get("score", 0), "comments": t.get("num_comments", 0)},
+                        "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"),
+                        "media_urls": t.get("media_urls", ""), "replies_count": t.get("comments_fetched", 0),
+                    })
+                if len(sampled) >= 500: break
+
+            csv_buf = io.StringIO()
+            csv_buf.write("\ufeff")
+            all_csv_fields = [
+                "platform", "type", "post_id", "parent_id", "author", "commenter",
+                "content", "created_at", "url", "likes", "retweets", "replies", "score", "num_comments",
+                "has_media", "media_type", "media_urls",
+            ]
+            writer = csv.DictWriter(csv_buf, fieldnames=all_csv_fields, extrasaction="ignore")
+            writer.writeheader()
+            for t in all_posts:
+                plat, row_type = t.get("platform", ""), t.get("type", "post")
+                if plat == "twitter":
+                    row = dict(t)
+                    row["post_id"] = t.get("tweet_id", "")
+                    row.setdefault("parent_id", "")
+                    row.setdefault("commenter", "")
+                    row["author"] = t.get("author_name", "") or t.get("author", "")
+                    writer.writerow(row)
+                    replies_raw = t.get("replies_data", "[]")
+                    if replies_raw and replies_raw != "[]":
+                        try:
+                            import json as _json
+                            replies = _json.loads(replies_raw) if isinstance(replies_raw, str) else replies_raw
+                            for reply in replies:
+                                display_name = reply.get("display_name", "")
+                                writer.writerow({
+                                    "platform": "twitter", "type": "comment", "post_id": reply.get("tweet_id", ""),
+                                    "parent_id": t.get("tweet_id", ""), "author": display_name, "commenter": display_name,
+                                    "content": reply.get("content", ""), "created_at": reply.get("created_at", ""),
+                                    "has_media": reply.get("has_media", False), "media_type": reply.get("media_type", "none"),
+                                    "media_urls": reply.get("media_urls", ""),
+                                })
+                        except Exception: pass
+                elif plat == "reddit":
+                    row = dict(t)
+                    if row_type == "post": row["content"] = (t.get("title", "") + "\n" + t.get("content", "")).strip()
+                    writer.writerow(row)
+                else:
+                    writer.writerow(t)
+
+            csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            _BACKGROUND_TASKS[task_id] = {
+                "status": "success",
+                "result": {
+                    "status": "success", "total_posts": sum(1 for p in all_posts if p.get("type", "post") != "comment"),
+                    "total_rows": len(all_posts), "sampled_posts": sampled, "csv_data": csv_b64,
+                    "csv_filename": f"multi_search_{timestamp}.csv", "platform_counts": platform_counts,
+                    "skipped_platforms": skipped_platforms, "errors": errors,
+                }
+            }
+        except Exception as e:
             tb.print_exc()
-            continue
+            _BACKGROUND_TASKS[task_id] = {"status": "error", "error": str(e)}
 
-        posts, csv_string = result
-        # 只统计帖子行数（Reddit 返回的列表包含评论行）
-        platform_counts[plat] = sum(1 for p in posts if p.get("type", "post") != "comment")
-        for p in posts:
-            p["platform"] = plat
-        all_posts.extend(posts)
-
-    if not all_posts:
-        error_msg = "、".join(errors) if errors else "所有平台均未返回结果"
-        return {
-            "status": "empty",
-            "total_posts": 0,
-            "sampled_posts": [],
-            "csv_data": "",
-            "csv_filename": "",
-            "error": f"搜索无结果。{error_msg}",
-            "platform_counts": platform_counts,
-            "skipped_platforms": skipped_platforms,
-        }
-
-    # 构造返回数据（只显示 post，不显示 comment，最多 60 条）
-    sampled = []
-    for t in all_posts:
-        if t.get("type") == "comment":
-            continue
-        platform = t.get("platform", "unknown")
-        if platform == "twitter":
-            sampled.append({
-                "platform": "twitter",
-                "post_id": t.get("tweet_id", ""),
-                "author": t.get("author_name", "") or t.get("author", ""),
-                "content": t.get("content", "")[:200],
-                "published_at": t.get("created_at", ""),
-                "metrics": {
-                    "likes": t.get("likes", 0),
-                    "retweets": t.get("retweets", 0),
-                    "replies": t.get("replies", 0),
-                },
-                "has_media": t.get("has_media", False),
-                "media_type": t.get("media_type", "none"),
-                "media_urls": t.get("media_urls", ""),
-                "replies_count": t.get("replies_count", 0),
-            })
-        elif platform == "reddit":
-            sampled.append({
-                "platform": "reddit",
-                "post_id": t.get("post_id", ""),
-                "author": t.get("author", ""),
-                "content": (t.get("title", "") + "\n" + t.get("content", ""))[:200].strip(),
-                "published_at": t.get("created_at", ""),
-                "metrics": {
-                    "score": t.get("score", 0),
-                    "comments": t.get("num_comments", 0),
-                },
-                "has_media": t.get("has_media", False),
-                "media_type": t.get("media_type", "none"),
-                "media_urls": t.get("media_urls", ""),
-                "replies_count": t.get("comments_fetched", 0),
-            })
-
-        if len(sampled) >= 500:
-            break
-
-    # 生成合并 CSV（含评论/回复行）
-    csv_buf = io.StringIO()
-    csv_buf.write("\ufeff")
-    all_csv_fields = [
-        "platform", "type", "post_id", "parent_id", "author", "commenter",
-        "content", "created_at", "url",
-        "likes", "retweets", "replies", "score", "num_comments",
-        "has_media", "media_type", "media_urls",
-    ]
-    writer = csv.DictWriter(csv_buf, fieldnames=all_csv_fields, extrasaction="ignore")
-    writer.writeheader()
-    for t in all_posts:
-        platform = t.get("platform", "")
-        row_type = t.get("type", "post")
-
-        if platform == "twitter":
-            # 写入推文行
-            row = dict(t)
-            row["post_id"] = t.get("tweet_id", "")
-            row.setdefault("parent_id", "")
-            row.setdefault("commenter", "")
-            # author 列使用显示名称
-            row["author"] = t.get("author_name", "") or t.get("author", "")
-            writer.writerow(row)
-            # 展开 replies_data 为评论行
-            replies_raw = t.get("replies_data", "[]")
-            if replies_raw and replies_raw != "[]":
-                try:
-                    import json as _json
-                    replies = _json.loads(replies_raw) if isinstance(replies_raw, str) else replies_raw
-                    for reply in replies:
-                        display_name = reply.get("display_name", "")
-                        writer.writerow({
-                            "platform": "twitter",
-                            "type": "comment",
-                            "post_id": reply.get("tweet_id", ""),
-                            "parent_id": t.get("tweet_id", ""),
-                            "author": display_name,
-                            "commenter": display_name,
-                            "content": reply.get("content", ""),
-                            "created_at": reply.get("created_at", ""),
-                            "has_media": reply.get("has_media", False),
-                            "media_type": reply.get("media_type", "none"),
-                            "media_urls": reply.get("media_urls", ""),
-                        })
-                except Exception:
-                    pass
-        elif platform == "reddit":
-            # Reddit posts 列表已包含 comment 行
-            row = dict(t)
-            if row_type == "post":
-                row["content"] = (t.get("title", "") + "\n" + t.get("content", "")).strip()
-            writer.writerow(row)
-        else:
-            writer.writerow(t)
-
-    csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    return {
-        "status": "success",
-        "total_posts": sum(1 for p in all_posts if p.get("type", "post") != "comment"),
-        "total_rows": len(all_posts),
-        "sampled_posts": sampled,
-        "csv_data": csv_b64,
-        "csv_filename": f"multi_search_{timestamp}.csv",
-        "platform_counts": platform_counts,
-        "skipped_platforms": skipped_platforms,
-        "errors": errors,
-    }
+    asyncio.create_task(_run())
+    return {"status": "started", "task_id": task_id}
 
 
 class BatchSearchRequest(BaseModel):
@@ -842,267 +813,190 @@ class BatchSearchRequest(BaseModel):
     platforms: list[str] = ["twitter"]
     sort_by: str = "top"
     include_replies: bool = False
-    block_resources: bool = False        # 是否屏蔽图片/CSS 加速加载
+    block_resources: bool = False
     cookies: list[PlatformCookieConfig] = []
 
 
 @app.post("/api/batch-search")
 async def batch_search(req: BatchSearchRequest):
-    """批量关键词搜索：逐关键词串行搜索，合并所有结果返回一个 CSV"""
+    """批量关键词搜索：升级为异步后台触发，返回 task_id 供前端轮询"""
     import base64
     import traceback as tb
     import json as _json
+    import uuid
+    import io
+    import csv
 
     if not req.keywords:
         raise HTTPException(400, "请提供至少一个关键词")
     if len(req.keywords) > 10:
         raise HTTPException(400, f"关键词数量过多（{len(req.keywords)} 个），单次最多 10 个")
 
-    # 构建 cookie_map（与 /api/search 相同逻辑）
     cookie_map: dict[str, dict] = {}
     for cfg in req.cookies:
         cookie_map[cfg.platform] = {
-            "ct0": cfg.ct0 or "",
-            "auth_token": cfg.auth_token or "",
-            "reddit_session": cfg.reddit_session or "",
-            "reddit_token": cfg.reddit_token or "",
-            "edgebucket": cfg.edgebucket or "",
-            "redesign_optout": cfg.redesign_optout or "",
-            "extra_cookies": cfg.extra_cookies or {},
-            "proxy": cfg.proxy or "",
+            "ct0": cfg.ct0 or "", "auth_token": cfg.auth_token or "",
+            "reddit_session": cfg.reddit_session or "", "reddit_token": cfg.reddit_token or "",
+            "edgebucket": cfg.edgebucket or "", "redesign_optout": cfg.redesign_optout or "",
+            "extra_cookies": cfg.extra_cookies or {}, "proxy": cfg.proxy or "",
         }
 
-    all_rows: list[dict] = []
-    keyword_results: list[dict] = []   # 每轮的结果统计
-    errors: list[str] = []
-    platform_counts: dict[str, int] = {}
-    skipped_platforms: list[dict] = []
+    task_id = str(uuid.uuid4())
+    _BACKGROUND_TASKS[task_id] = {"status": "running", "result": None}
 
-    # 先检查哪些平台 cookie 未配置
-    for platform in req.platforms:
-        pc = cookie_map.get(platform, {})
-        if platform == "twitter":
-            if not pc.get("ct0") or not pc.get("auth_token"):
-                skipped_platforms.append({"platform": "twitter", "reason": "Cookie 未配置"})
-        elif platform == "reddit":
-            if not pc.get("reddit_session"):
-                skipped_platforms.append({"platform": "reddit", "reason": "Cookie 未配置"})
-
-    total_keywords = len(req.keywords)
-
-    # ── 并发关键词搜索（Semaphore 限制 3 个并发） ──
-    sem = asyncio.Semaphore(3)
-
-    async def _search_one_keyword(kw: str, idx: int):
-        """搜索单个关键词的所有平台，返回 (rows, kw_result, kw_errors)"""
-        async with sem:
-            logger.info(f"[批量搜索 {idx+1}/{total_keywords}] 关键词: {kw}")
-
-            tasks = []
-            plat_names = []
+    async def _run():
+        try:
+            all_rows: list[dict] = []
+            keyword_results: list[dict] = []
+            errors: list[str] = []
+            platform_counts: dict[str, int] = {}
+            skipped_platforms: list[dict] = []
 
             for platform in req.platforms:
                 pc = cookie_map.get(platform, {})
-                proxy = pc.get("proxy") or None
-                if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
-                    proxy = f"http://{proxy}"
+                if platform == "twitter" and (not pc.get("ct0") or not pc.get("auth_token")):
+                    skipped_platforms.append({"platform": "twitter", "reason": "Cookie 未配置"})
+                elif platform == "reddit" and not pc.get("reddit_session"):
+                    skipped_platforms.append({"platform": "reddit", "reason": "Cookie 未配置"})
 
-                if platform == "twitter":
-                    if not pc.get("ct0") or not pc.get("auth_token"):
-                        continue
-                    from src.crawlers.twitter_url import TwitterCookieFetcher
-                    fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=req.block_resources)
-                    cookies = {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}
-                    tasks.append(fetcher.search_tweets(
-                        kw, count=req.count, include_replies=req.include_replies,
-                        cookies=cookies, sort_by=req.sort_by,
-                    ))
-                    plat_names.append("twitter")
+            total_keywords = len(req.keywords)
+            sem = asyncio.Semaphore(3)
 
-                elif platform == "reddit":
-                    if not pc.get("reddit_session"):
-                        continue
-                    from src.crawlers.reddit_crawler import RedditCookieFetcher
-                    fetcher = RedditCookieFetcher(proxy=proxy)
-                    cookies = {}
-                    for key in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout"):
-                        if pc.get(key):
-                            cookies[key] = pc[key]
-                    if pc.get("extra_cookies"):
-                        cookies.update(pc["extra_cookies"])
-                    tasks.append(fetcher.search_posts(
-                        kw, count=req.count, cookies=cookies,
-                        include_replies=req.include_replies,
-                        sort="hot" if req.sort_by == "top" else "new",
-                    ))
-                    plat_names.append("reddit")
+            async def _search_one_keyword(kw: str, idx: int):
+                async with sem:
+                    logger.info(f"[批量搜索 {idx+1}/{total_keywords}] 关键词: {kw}")
+                    tasks = []
+                    plat_names = []
 
-            if not tasks:
-                return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 无可用平台 Cookie"]
+                    for platform in req.platforms:
+                        pc = cookie_map.get(platform, {})
+                        proxy = pc.get("proxy") or None
+                        if proxy and not proxy.startswith(("http://", "https://", "socks5://")): proxy = f"http://{proxy}"
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+                        if platform == "twitter" and pc.get("ct0") and pc.get("auth_token"):
+                            from src.crawlers.twitter_url import TwitterCookieFetcher
+                            fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=req.block_resources)
+                            cookies = {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}
+                            tasks.append(fetcher.search_tweets(kw, count=req.count, include_replies=req.include_replies, cookies=cookies, sort_by=req.sort_by))
+                            plat_names.append("twitter")
 
-            kw_rows = []
-            kw_errors = []
-            kw_post_count = 0
-            for plat, result in zip(plat_names, results):
+                        elif platform == "reddit" and pc.get("reddit_session"):
+                            from src.crawlers.reddit_crawler import RedditCookieFetcher
+                            fetcher = RedditCookieFetcher(proxy=proxy)
+                            cookies = {k: pc[k] for k in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout") if pc.get(k)}
+                            if pc.get("extra_cookies"): cookies.update(pc["extra_cookies"])
+                            tasks.append(fetcher.search_posts(kw, count=req.count, cookies=cookies, include_replies=req.include_replies, sort="hot" if req.sort_by == "top" else "new"))
+                            plat_names.append("reddit")
+
+                    if not tasks: return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 无可用平台 Cookie"]
+
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    kw_rows, kw_errors, kw_post_count = [], [], 0
+                    for plat, result in zip(plat_names, results):
+                        if isinstance(result, Exception):
+                            kw_errors.append(f"「{kw}」{plat}: {result}")
+                            continue
+                        posts, csv_string = result
+                        for p in posts:
+                            p["platform"] = plat
+                            p["keyword"] = kw
+                        kw_rows.extend(posts)
+                        kw_post_count += sum(1 for p in posts if p.get("type", "post") != "comment")
+
+                    return kw_rows, {"keyword": kw, "post_count": kw_post_count, "total_rows": len([x for x in results if not isinstance(x, Exception) and x[0]]) if results else 0}, kw_errors
+
+            valid_keywords = [(kw.strip(), i) for i, kw in enumerate(req.keywords) if kw.strip()]
+            all_kw_results = await asyncio.gather(*[_search_one_keyword(kw, idx) for kw, idx in valid_keywords], return_exceptions=True)
+
+            for result in all_kw_results:
                 if isinstance(result, Exception):
-                    kw_errors.append(f"「{kw}」{plat}: {result}")
+                    errors.append(str(result))
                     continue
-                posts, csv_string = result
-                for p in posts:
-                    p["platform"] = plat
-                    p["keyword"] = kw
-                kw_rows.extend(posts)
-                kw_post_count += sum(1 for p in posts if p.get("type", "post") != "comment")
+                kw_rows, kw_result, kw_errors = result
+                all_rows.extend(kw_rows)
+                keyword_results.append(kw_result)
+                errors.extend(kw_errors)
+                for p in kw_rows:
+                    plat = p.get("platform", "")
+                    if p.get("type", "post") != "comment":
+                        platform_counts[plat] = platform_counts.get(plat, 0) + 1
 
-            kw_result = {
-                "keyword": kw,
-                "post_count": kw_post_count,
-                "total_rows": len([x for x in results if not isinstance(x, Exception) and x[0]]) if results else 0,
+            if not all_rows:
+                error_msg = "、".join(errors) if errors else "所有关键词均未返回结果"
+                _BACKGROUND_TASKS[task_id] = {"status": "success", "result": {"status": "empty", "total_posts": 0, "total_rows": 0, "keyword_results": keyword_results, "sampled_posts": [], "csv_data": "", "csv_filename": "", "error": f"批量搜索无结果。{error_msg}", "skipped_platforms": skipped_platforms}}
+                return
+
+            sampled = []
+            for t in all_rows:
+                if t.get("type") == "comment": continue
+                plat = t.get("platform", "unknown")
+                if plat == "twitter":
+                    sampled.append({
+                        "platform": "twitter", "post_id": t.get("tweet_id", ""), "author": t.get("author_name", "") or t.get("author", ""),
+                        "content": t.get("content", "")[:200], "published_at": t.get("created_at", ""), "keyword": t.get("keyword", ""),
+                        "metrics": {"likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)},
+                        "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"), "media_urls": t.get("media_urls", ""), "replies_count": t.get("replies_count", 0),
+                    })
+                elif plat == "reddit":
+                    sampled.append({
+                        "platform": "reddit", "post_id": t.get("post_id", ""), "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", ""))[:200].strip(),
+                        "published_at": t.get("created_at", ""), "keyword": t.get("keyword", ""),
+                        "metrics": {"score": t.get("score", 0), "comments": t.get("num_comments", 0)},
+                        "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"), "media_urls": t.get("media_urls", ""), "replies_count": t.get("comments_fetched", 0),
+                    })
+                if len(sampled) >= 500: break
+
+            csv_buf = io.StringIO()
+            csv_buf.write("\ufeff")
+            all_csv_fields = ["keyword", "platform", "type", "post_id", "parent_id", "author", "commenter", "content", "created_at", "url", "likes", "retweets", "replies", "score", "num_comments", "has_media", "media_type", "media_urls"]
+            writer = csv.DictWriter(csv_buf, fieldnames=all_csv_fields, extrasaction="ignore")
+            writer.writeheader()
+            for t in all_rows:
+                plat, row_type = t.get("platform", ""), t.get("type", "post")
+                if plat == "twitter":
+                    row = dict(t)
+                    row["post_id"] = t.get("tweet_id", "")
+                    row.setdefault("parent_id", "")
+                    row.setdefault("commenter", "")
+                    row["author"] = t.get("author_name", "") or t.get("author", "")
+                    writer.writerow(row)
+                    replies_raw = t.get("replies_data", "[]")
+                    if replies_raw and replies_raw != "[]":
+                        try:
+                            replies = _json.loads(replies_raw) if isinstance(replies_raw, str) else replies_raw
+                            for reply in replies:
+                                display_name = reply.get("display_name", "")
+                                writer.writerow({
+                                    "keyword": t.get("keyword", ""), "platform": "twitter", "type": "comment", "post_id": reply.get("tweet_id", ""),
+                                    "parent_id": t.get("tweet_id", ""), "author": display_name, "commenter": display_name, "content": reply.get("content", ""), "created_at": reply.get("created_at", ""),
+                                    "has_media": reply.get("has_media", False), "media_type": reply.get("media_type", "none"), "media_urls": reply.get("media_urls", ""),
+                                })
+                        except Exception: pass
+                elif plat == "reddit":
+                    row = dict(t)
+                    if row_type == "post": row["content"] = (t.get("title", "") + "\n" + t.get("content", "")).strip()
+                    writer.writerow(row)
+                else:
+                    writer.writerow(t)
+
+            csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            _BACKGROUND_TASKS[task_id] = {
+                "status": "success",
+                "result": {
+                    "status": "success", "total_posts": sum(1 for p in all_rows if p.get("type", "post") != "comment"),
+                    "total_rows": len(all_rows), "keyword_results": keyword_results, "sampled_posts": sampled,
+                    "csv_data": csv_b64, "csv_filename": f"batch_search_{timestamp}.csv",
+                    "skipped_platforms": skipped_platforms, "errors": errors,
+                }
             }
-            return kw_rows, kw_result, kw_errors
+        except Exception as e:
+            tb.print_exc()
+            _BACKGROUND_TASKS[task_id] = {"status": "error", "error": str(e)}
 
-    # 并发执行所有关键词搜索
-    valid_keywords = [(kw.strip(), i) for i, kw in enumerate(req.keywords) if kw.strip()]
-    all_kw_results = await asyncio.gather(
-        *[_search_one_keyword(kw, idx) for kw, idx in valid_keywords],
-        return_exceptions=True,
-    )
-
-    # 合并结果
-    for result in all_kw_results:
-        if isinstance(result, Exception):
-            errors.append(str(result))
-            continue
-        kw_rows, kw_result, kw_errors = result
-        all_rows.extend(kw_rows)
-        keyword_results.append(kw_result)
-        errors.extend(kw_errors)
-        # 合并 platform_counts
-        for p in kw_rows:
-            plat = p.get("platform", "")
-            if p.get("type", "post") != "comment":
-                platform_counts[plat] = platform_counts.get(plat, 0) + 1
-
-    if not all_rows:
-        error_msg = "、".join(errors) if errors else "所有关键词均未返回结果"
-        return {
-            "status": "empty",
-            "total_posts": 0,
-            "total_rows": 0,
-            "keyword_results": keyword_results,
-            "sampled_posts": [],
-            "csv_data": "",
-            "csv_filename": "",
-            "error": f"批量搜索无结果。{error_msg}",
-            "skipped_platforms": skipped_platforms,
-        }
-
-    # 构造返回预览（抽样显示）
-    sampled = []
-    for t in all_rows:
-        if t.get("type") == "comment":
-            continue
-        platform = t.get("platform", "unknown")
-        if platform == "twitter":
-            sampled.append({
-                "platform": "twitter",
-                "post_id": t.get("tweet_id", ""),
-                "author": t.get("author_name", "") or t.get("author", ""),
-                "content": t.get("content", "")[:200],
-                "published_at": t.get("created_at", ""),
-                "keyword": t.get("keyword", ""),
-                "metrics": {"likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)},
-                "has_media": t.get("has_media", False),
-                "media_type": t.get("media_type", "none"),
-                "media_urls": t.get("media_urls", ""),
-                "replies_count": t.get("replies_count", 0),
-            })
-        elif platform == "reddit":
-            sampled.append({
-                "platform": "reddit",
-                "post_id": t.get("post_id", ""),
-                "author": t.get("author", ""),
-                "content": (t.get("title", "") + "\n" + t.get("content", ""))[:200].strip(),
-                "published_at": t.get("created_at", ""),
-                "keyword": t.get("keyword", ""),
-                "metrics": {"score": t.get("score", 0), "comments": t.get("num_comments", 0)},
-                "has_media": t.get("has_media", False),
-                "media_type": t.get("media_type", "none"),
-                "media_urls": t.get("media_urls", ""),
-                "replies_count": t.get("comments_fetched", 0),
-            })
-        if len(sampled) >= 500:
-            break
-
-    # 生成合并 CSV（含评论行）
-    csv_buf = io.StringIO()
-    csv_buf.write("\ufeff")
-    all_csv_fields = [
-        "keyword", "platform", "type", "post_id", "parent_id", "author", "commenter",
-        "content", "created_at", "url",
-        "likes", "retweets", "replies", "score", "num_comments",
-        "has_media", "media_type", "media_urls",
-    ]
-    writer = csv.DictWriter(csv_buf, fieldnames=all_csv_fields, extrasaction="ignore")
-    writer.writeheader()
-    for t in all_rows:
-        platform = t.get("platform", "")
-        row_type = t.get("type", "post")
-
-        if platform == "twitter":
-            row = dict(t)
-            row["post_id"] = t.get("tweet_id", "")
-            row.setdefault("parent_id", "")
-            row.setdefault("commenter", "")
-            # author 列使用显示名称
-            row["author"] = t.get("author_name", "") or t.get("author", "")
-            writer.writerow(row)
-            replies_raw = t.get("replies_data", "[]")
-            if replies_raw and replies_raw != "[]":
-                try:
-                    replies = _json.loads(replies_raw) if isinstance(replies_raw, str) else replies_raw
-                    for reply in replies:
-                        display_name = reply.get("display_name", "")
-                        writer.writerow({
-                            "keyword": t.get("keyword", ""),
-                            "platform": "twitter",
-                            "type": "comment",
-                            "post_id": reply.get("tweet_id", ""),
-                            "parent_id": t.get("tweet_id", ""),
-                            "author": display_name,
-                            "commenter": display_name,
-                            "content": reply.get("content", ""),
-                            "created_at": reply.get("created_at", ""),
-                            "has_media": reply.get("has_media", False),
-                            "media_type": reply.get("media_type", "none"),
-                            "media_urls": reply.get("media_urls", ""),
-                        })
-                except Exception:
-                    pass
-        elif platform == "reddit":
-            row = dict(t)
-            if row_type == "post":
-                row["content"] = (t.get("title", "") + "\n" + t.get("content", "")).strip()
-            writer.writerow(row)
-        else:
-            writer.writerow(t)
-
-    csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    return {
-        "status": "success",
-        "total_posts": sum(1 for p in all_rows if p.get("type", "post") != "comment"),
-        "total_rows": len(all_rows),
-        "keyword_results": keyword_results,
-        "sampled_posts": sampled,
-        "csv_data": csv_b64,
-        "csv_filename": f"batch_search_{timestamp}.csv",
-        "skipped_platforms": skipped_platforms,
-        "errors": errors,
-    }
+    asyncio.create_task(_run())
+    return {"status": "started", "task_id": task_id}
 
 
 @app.get("/api/version")
@@ -1113,9 +1007,8 @@ async def api_version():
 
 @app.post("/api/check-update")
 async def api_check_update():
-    """触发后台更新检查，返回当前结果（可能尚未完成）"""
+    """触发后台更新检查"""
     check_for_update_async()
-    # 等待最多 10 秒
     import time
     for _ in range(20):
         info = get_update_info()
@@ -1127,16 +1020,14 @@ async def api_check_update():
 
 @app.get("/api/update-info")
 async def api_update_info():
-    """获取已有的更新检查结果（不触发新检查）"""
     info = get_update_info()
     if info is None:
         return {"status": "not_checked", "message": "尚未检查更新"}
     return info
 
 
-# ── Chromium 安装状态 ──────────────────────────────────────
 _chromium_install_state = {
-    "status": "unknown",  # not_needed | installed | installing | error
+    "status": "unknown",  
     "progress": "",
     "error": "",
 }
@@ -1144,7 +1035,6 @@ _chromium_install_state = {
 
 @app.get("/api/chromium-status")
 async def api_chromium_status():
-    """返回 Chromium 浏览器的安装状态"""
     import app as _app_module
     if not getattr(_app_module, "_NEEDS_CHROMIUM_INSTALL", False):
         if _chromium_install_state["status"] == "installed":
@@ -1159,7 +1049,6 @@ async def api_chromium_status():
 
 @app.post("/api/install-chromium")
 async def api_install_chromium():
-    """在后台线程中安装 Playwright Chromium（macOS 首次启动）"""
     import app as _app_module
 
     if not getattr(_app_module, "_NEEDS_CHROMIUM_INSTALL", False):
@@ -1188,12 +1077,7 @@ async def api_install_chromium():
         for cmd in commands:
             try:
                 result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=300,
+                    cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300
                 )
                 if result.returncode == 0:
                     _chromium_install_state["status"] = "installed"
@@ -1224,20 +1108,16 @@ async def api_install_chromium():
 
 @app.post("/api/choose-folder")
 async def choose_folder():
-    """打开原生文件夹选择对话框，返回用户选择的路径"""
     import tkinter as tk
     from tkinter import filedialog
-
     root = tk.Tk()
-    root.withdraw()  # 隐藏主窗口
-    root.attributes("-topmost", True)  # 确保对话框在最前面
+    root.withdraw()
+    root.attributes("-topmost", True)
     selected_path = filedialog.askdirectory(title="选择文件夹")
     root.destroy()
-
     return {"path": selected_path or ""}
 
 
 @app.get("/api/platforms")
 async def get_platforms():
-    """获取可用平台列表"""
     return [p.value for p in Platform]
