@@ -2782,7 +2782,7 @@ function setSortBy(val) {
 }
 
 // ==========================================
-// 🚀 以下是完全替换为轮询机制的抓取核心函数
+// 🚀 以下是完全替换为防堵塞安全轮询的核心函数
 // ==========================================
 
 async function startTwitterFetch() {
@@ -2792,13 +2792,11 @@ async function startTwitterFetch() {
   const includeReplies = document.getElementById('twitter-include-replies').checked;
 
   if (!urls.length) return toast(t('paste_user_links'), 'error');
-
   const cookies = getPlatformCookies('twitter');
   if (!cookies.ct0 || !cookies.auth_token) return toast(t('configure_tw_cookie'), 'error');
 
   const btn = document.getElementById('twitter-fetch-btn');
   document.getElementById('twitter-result').innerHTML = '';
-
   btn.disabled = true;
   const _startTime = Date.now();
 
@@ -2839,7 +2837,6 @@ async function startTwitterFetch() {
           }).join('')}
         </div>`;
       }
-
       const isError = stats.status === 'empty';
       div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4>
       <div class="crawl-result ${isError ? 'error' : ''}">
@@ -2864,9 +2861,10 @@ async function startTwitterFetch() {
     });
     
     const taskId = initRes.task_id;
-    if(_fetchController) clearInterval(_fetchController);
+    let isPolling = true;
 
-    _fetchController = setInterval(async () => {
+    const poll = async () => {
+      if (!isPolling) return;
       const elapsed = Math.floor((Date.now() - _startTime) / 1000);
       const m = Math.floor(elapsed / 60), s = elapsed % 60;
       btn.innerHTML = `<span class="loading"></span> ${t('scraping', {t: m + ':' + String(s).padStart(2,'0')})}`;
@@ -2874,16 +2872,15 @@ async function startTwitterFetch() {
       try {
         const statusRes = await api(`/api/task-status?task_id=${taskId}`);
         if (statusRes.status === 'success') {
-          clearInterval(_fetchController);
-          renderFinalResult(statusRes.result);
-          finishUI();
+          isPolling = false; renderFinalResult(statusRes.result); finishUI();
         } else if (statusRes.status === 'error') {
-          clearInterval(_fetchController);
-          document.getElementById('twitter-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('scrape_failed')}</strong>: ${esc(statusRes.error)}</div>`;
-          finishUI();
+          isPolling = false; document.getElementById('twitter-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('scrape_failed')}</strong>: ${esc(statusRes.error)}</div>`; finishUI();
+        } else {
+          setTimeout(poll, 3000);
         }
-      } catch (pollErr) { console.warn("Polling error (ignored):", pollErr); }
-    }, 3000);
+      } catch (pollErr) { console.warn("Polling error (ignored):", pollErr); setTimeout(poll, 3000); }
+    };
+    setTimeout(poll, 3000);
 
   } catch (e) {
     document.getElementById('twitter-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
@@ -2904,12 +2901,8 @@ async function startMultiSearch() {
   const skippedPlatforms = [];
   for (const p of platforms) {
     const pc = getPlatformCookies(p);
-    if (p === 'twitter' && (!pc.ct0 || !pc.auth_token)) {
-      skippedPlatforms.push({ platform: 'twitter', reason: t('cookie_not_configured_short') }); continue;
-    }
-    if (p === 'reddit' && !pc.reddit_session) {
-      skippedPlatforms.push({ platform: 'reddit', reason: t('cookie_not_configured_short') }); continue;
-    }
+    if (p === 'twitter' && (!pc.ct0 || !pc.auth_token)) { skippedPlatforms.push({ platform: 'twitter', reason: t('cookie_not_configured_short') }); continue; }
+    if (p === 'reddit' && !pc.reddit_session) { skippedPlatforms.push({ platform: 'reddit', reason: t('cookie_not_configured_short') }); continue; }
     cookies.push(pc);
   }
 
@@ -2981,9 +2974,10 @@ async function startMultiSearch() {
     });
     
     const taskId = initRes.task_id;
-    if(_searchController) clearInterval(_searchController);
+    let isPolling = true;
 
-    _searchController = setInterval(async () => {
+    const poll = async () => {
+      if (!isPolling) return;
       const elapsed = Math.floor((Date.now() - _startTime) / 1000);
       const m = Math.floor(elapsed / 60), s = elapsed % 60;
       btn.innerHTML = `<span class="loading"></span> ${t('searching', {t: m + ':' + String(s).padStart(2,'0')})}`;
@@ -2991,16 +2985,15 @@ async function startMultiSearch() {
       try {
         const statusRes = await api(`/api/task-status?task_id=${taskId}`);
         if (statusRes.status === 'success') {
-          clearInterval(_searchController);
-          renderFinalResult(statusRes.result);
-          finishUI();
+          isPolling = false; renderFinalResult(statusRes.result); finishUI();
         } else if (statusRes.status === 'error') {
-          clearInterval(_searchController);
-          document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('search_failed')}</strong>: ${esc(statusRes.error)}</div>`;
-          finishUI();
+          isPolling = false; document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('search_failed')}</strong>: ${esc(statusRes.error)}</div>`; finishUI();
+        } else {
+          setTimeout(poll, 3000);
         }
-      } catch (pollErr) { console.warn("Polling error (ignored):", pollErr); }
-    }, 3000);
+      } catch (pollErr) { console.warn("Polling error (ignored):", pollErr); setTimeout(poll, 3000); }
+    };
+    setTimeout(poll, 3000);
 
   } catch (e) {
     document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
@@ -3014,7 +3007,6 @@ async function startBatchSearch(keywords) {
   const includeReplies = document.getElementById('search-include-replies').checked;
 
   if (!platforms.length) return toast(t('select_platform'), 'error');
-
   if (keywords.length > 10) return toast(t('too_many_keywords'), 'error');
   if (keywords.length > 3 && includeReplies) {
     const est = keywords.length * (includeReplies ? 10 : 3);
@@ -3095,9 +3087,10 @@ async function startBatchSearch(keywords) {
     });
     
     const taskId = initRes.task_id;
-    if(_batchController) clearInterval(_batchController);
+    let isPolling = true;
 
-    _batchController = setInterval(async () => {
+    const poll = async () => {
+      if (!isPolling) return;
       const elapsed = Math.floor((Date.now() - _startTime) / 1000);
       const m = Math.floor(elapsed / 60), s = elapsed % 60;
       btn.innerHTML = `<span class="loading"></span> ${t('batch_searching', {n: keywords.length, t: m + ':' + String(s).padStart(2,'0')})}`;
@@ -3105,16 +3098,15 @@ async function startBatchSearch(keywords) {
       try {
         const statusRes = await api(`/api/task-status?task_id=${taskId}`);
         if (statusRes.status === 'success') {
-          clearInterval(_batchController);
-          renderFinalResult(statusRes.result);
-          finishUI();
+          isPolling = false; renderFinalResult(statusRes.result); finishUI();
         } else if (statusRes.status === 'error') {
-          clearInterval(_batchController);
-          document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-error">${t('request_failed')}: ${esc(statusRes.error)}</p>`;
-          finishUI();
+          isPolling = false; document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-error">${t('request_failed')}: ${esc(statusRes.error)}</p>`; finishUI();
+        } else {
+          setTimeout(poll, 3000);
         }
-      } catch (pollErr) { console.warn("Polling err:", pollErr); }
-    }, 3000);
+      } catch (pollErr) { console.warn("Polling err:", pollErr); setTimeout(poll, 3000); }
+    };
+    setTimeout(poll, 3000);
 
   } catch (e) {
     document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-error">${t('request_failed')}: ${esc(e.message)}</p>`;
