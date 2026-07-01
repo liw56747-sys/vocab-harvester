@@ -1222,7 +1222,6 @@ kbd {
 </head>
 <body>
 <div class="app">
-  <!-- ═══ Sidebar ═══ -->
   <aside class="sidebar">
     <div class="sidebar-brand">
       <h1>
@@ -1262,10 +1261,8 @@ kbd {
     <div class="sidebar-footer">Vocab Harvester <span id="app-version">v1.0</span></div>
   </aside>
 
-  <!-- ═══ Main Content ═══ -->
   <div class="main">
 
-    <!-- ─── Dashboard ─── -->
     <div id="page-dashboard" class="page active">
       <div class="page-header">
         <div class="page-title" data-i18n="dashboard_title">仪表盘</div>
@@ -1291,14 +1288,12 @@ kbd {
       </div>
     </div>
 
-    <!-- ─── Twitter ─── -->
     <div id="page-twitter" class="page">
       <div class="page-header">
         <div class="page-title" data-i18n="scrape_title">多平台数据抓取</div>
         <div class="page-desc" data-i18n="scrape_desc">通过浏览器 Cookie 认证，从 Twitter/X、Reddit 等平台搜索并抓取数据</div>
       </div>
 
-      <!-- Cookie 配置 -->
       <div class="card collapsible-card" id="twitter-login-card">
         <div class="card-header-toggle" onclick="toggleCookieCard()">
           <div>
@@ -1314,13 +1309,11 @@ kbd {
             <strong style="color:var(--danger)">国内用户需同时填写代理地址</strong>。
           </div>
 
-          <!-- 平台 Tab -->
           <div class="cookie-tabs">
             <button class="cookie-tab active" onclick="switchCookieTab('twitter')">Twitter / X</button>
             <button class="cookie-tab" onclick="switchCookieTab('reddit')">Reddit</button>
           </div>
 
-          <!-- Twitter Cookie -->
           <div id="cookie-panel-twitter" class="cookie-panel">
             <details style="margin-bottom:12px">
               <summary data-i18n="how_get_tw">如何获取 Twitter Cookie</summary>
@@ -1365,7 +1358,6 @@ kbd {
             <div id="tw-cookie-status" style="margin-top:8px;font-size:12px"></div>
           </div>
 
-          <!-- Reddit Cookie -->
           <div id="cookie-panel-reddit" class="cookie-panel" style="display:none">
             <details style="margin-bottom:12px">
               <summary data-i18n="how_get_rd">如何获取 Reddit Cookie</summary>
@@ -1407,10 +1399,8 @@ kbd {
         </div>
       </div>
 
-      <!-- 并列卡片容器 -->
       <div class="scrape-cards-grid">
 
-      <!-- URL 抓取 -->
       <div class="card collapsible-card" id="user-scrape-card">
         <div class="card-header-toggle" onclick="toggleCard('user-scrape-card')">
           <div class="card-title" style="margin:0" data-i18n="user_scrape_title">用户主页抓取</div>
@@ -1449,7 +1439,6 @@ kbd {
         </div>
       </div>
 
-      <!-- 关键词搜索（多平台） -->
       <div class="card collapsible-card" id="keyword-search-card">
         <div class="card-header-toggle" onclick="toggleCard('keyword-search-card')">
           <div class="card-title" style="margin:0" data-i18n="keyword_search_title">关键词搜索</div>
@@ -1532,21 +1521,16 @@ kbd {
         </div>
       </div>
 
-      </div><!-- /scrape-cards-grid -->
-
-      <!-- 搜索结果（全宽，在卡片下方） -->
-      <div id="twitter-result"></div>
+      </div><div id="twitter-result"></div>
       <div id="multi-search-result"></div>
     </div>
 
-    <!-- ─── Import ─── -->
     <div id="page-import" class="page">
       <div class="page-header">
         <div class="page-title" data-i18n="import_title">数据导入</div>
         <div class="page-desc" data-i18n="import_desc">上传数据文件，系统自动调用工作流提取关键词并写入词库</div>
       </div>
 
-      <!-- 模型 API 配置 -->
       <div class="card collapsible-card" id="model-config-card">
         <div class="card-header-toggle" onclick="toggleCard('model-config-card')">
           <div>
@@ -1558,7 +1542,6 @@ kbd {
         <div class="card-body" style="margin-top:16px">
           <div class="card-desc" style="margin-bottom:12px" data-i18n="model_desc">配置大模型 API 用于导入数据时的智能分析（黑词提取）。支持所有 OpenAI 兼容接口。未配置时仅导入存储，不进行分析。</div>
 
-          <!-- Main Model -->
           <div style="margin-bottom:16px">
             <div style="font-weight:600;font-size:13px;margin-bottom:8px" data-i18n="main_model">主模型</div>
             <div class="form-group">
@@ -1580,7 +1563,6 @@ kbd {
             </div>
           </div>
 
-          <!-- Backup Model -->
           <div style="margin-bottom:16px;padding-top:12px;border-top:1px solid var(--border)">
             <div style="font-weight:600;font-size:13px;margin-bottom:8px" data-i18n="backup_model">备用模型</div>
             <div class="form-group">
@@ -1614,7 +1596,6 @@ kbd {
         <div class="card-title" data-i18n="upload_file_title">上传文件</div>
         <div class="card-desc" data-i18n="upload_file_desc">支持 JSON 和 CSV 格式，文件应包含帖子内容。</div>
 
-        <!-- Mode Selection -->
         <div class="form-group">
           <label data-i18n="mode_selection">模式选择</label>
           <div class="settings-options" style="margin-top:4px">
@@ -1630,7 +1611,6 @@ kbd {
           <div class="settings-hint" id="import-mode-hint" data-i18n="mode_manual_hint">手动模式：仅导入存储，不进行 AI 分析</div>
         </div>
 
-        <!-- Type & Author Filters -->
         <div class="form-group" style="margin-top:8px">
           <label data-i18n="data_filter">数据筛选</label>
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">
@@ -1649,7 +1629,6 @@ kbd {
           </div>
         </div>
 
-        <!-- File Selection -->
         <div class="form-row" style="margin-top:12px">
           <div class="form-group">
             <label data-i18n="select_file">选择文件</label>
@@ -1679,7 +1658,6 @@ kbd {
       </div>
     </div>
 
-    <!-- ─── Vocabulary ─── -->
     <div id="page-vocabulary" class="page">
       <div class="page-header">
         <div class="page-title" data-i18n="vocab_title">词库管理</div>
@@ -1743,7 +1721,6 @@ kbd {
       </div>
     </div>
 
-    <!-- ─── Export ─── -->
     <div id="page-export" class="page">
       <div class="page-header">
         <div class="page-title" data-i18n="export_title">导出词库</div>
@@ -1796,14 +1773,12 @@ kbd {
       </div>
     </div>
 
-    <!-- ─── Settings ─── -->
     <div id="page-settings" class="page">
       <div class="page-header">
         <div class="page-title" data-i18n="settings_title">设置</div>
         <div class="page-desc" data-i18n="settings_desc">语言、主题和文件保存位置</div>
       </div>
 
-      <!-- Language -->
       <div class="card">
         <div class="card-title" data-i18n="settings_language">语言 / Language</div>
         <div class="settings-options">
@@ -1818,7 +1793,6 @@ kbd {
         </div>
       </div>
 
-      <!-- Theme -->
       <div class="card">
         <div class="card-title" data-i18n="settings_theme">外观主题</div>
         <div class="settings-options">
@@ -1833,7 +1807,6 @@ kbd {
         </div>
       </div>
 
-      <!-- Download Folder -->
       <div class="card">
         <div class="card-title" data-i18n="settings_download_dir">文件保存位置</div>
         <div class="settings-download-row">
@@ -1843,7 +1816,6 @@ kbd {
         <div class="settings-hint" data-i18n="settings_download_hint">导出的 CSV、JSON、TXT 文件将保存到此位置</div>
       </div>
 
-      <!-- About -->
       <div class="card">
         <div class="card-title" data-i18n="settings_about">关于</div>
         <div style="display:flex;flex-direction:column;gap:8px">
@@ -2809,6 +2781,10 @@ function setSortBy(val) {
   document.getElementById('sort-live').classList.toggle('active', val === 'live');
 }
 
+// ==========================================
+// 🚀 以下是完全替换为轮询机制的抓取核心函数
+// ==========================================
+
 async function startTwitterFetch() {
   const textarea = document.getElementById('twitter-urls');
   const urls = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
@@ -2823,28 +2799,21 @@ async function startTwitterFetch() {
   const btn = document.getElementById('twitter-fetch-btn');
   document.getElementById('twitter-result').innerHTML = '';
 
-  // 手动取消控制器
-  const controller = new AbortController();
-  _fetchController = controller;
+  btn.disabled = true;
   const _startTime = Date.now();
-  const _timer = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - _startTime) / 1000);
-    const m = Math.floor(elapsed / 60), s = elapsed % 60;
-    btn.innerHTML = `<span class="loading"></span> ${t('scraping', {t: m + ':' + String(s).padStart(2,'0')})}`;
-  }, 1000);
-  // 运行中点击按钮 → 取消任务
-  btn.onclick = () => controller.abort();
 
-  try {
-    const stats = await api('/api/twitter-fetch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls, count, include_replies: includeReplies, ct0: cookies.ct0, auth_token: cookies.auth_token, proxy: cookies.proxy || null, block_resources: document.getElementById('block-resources-toggle').checked }),
-      signal: controller.signal,
-    });
+  const finishUI = () => {
+    btn.disabled = false;
+    btn.innerHTML = t('btn_scrape');
+    const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
+    const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
+    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
+    const _resultDiv = document.getElementById('twitter-result');
+    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+  };
 
+  const renderFinalResult = (stats) => {
     const div = document.getElementById('twitter-result');
-
     if (stats.status === 'success' || stats.status === 'empty') {
       let postsHtml = '';
       if (stats.sampled_posts && stats.sampled_posts.length > 0) {
@@ -2853,17 +2822,11 @@ async function startTwitterFetch() {
           ${stats.sampled_posts.map((post, idx) => {
             let mediaHtml = '';
             if (post.has_media) {
-              const badge = post.media_type === 'image' ? '&#128247; ' + t('images')
-                          : post.media_type === 'video' ? '&#127909; ' + t('videos')
-                          : post.media_type === 'mixed' ? '&#128247;&#127909; ' + t('images') + '+' + t('videos')
-                          : '&#128206; ' + t('media');
+              const badge = post.media_type === 'image' ? '&#128247; ' + t('images') : post.media_type === 'video' ? '&#127909; ' + t('videos') : post.media_type === 'mixed' ? '&#128247;&#127909; ' + t('images') + '+' + t('videos') : '&#128206; ' + t('media');
               const urls = (post.media_urls || '').split(';').filter(Boolean);
               const thumbsHtml = urls.map((u, i) => {
                 const isVideo = post.media_type === 'video' || (post.media_type === 'mixed' && i === urls.length - 1);
-                return '<div class="media-thumb-wrap" onclick="openMediaLightbox(\'' + esc(u) + '\')">'
-                  + '<img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="' + t('media') + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">'
-                  + (isVideo ? '<div class="media-play-icon">&#9654;</div>' : '')
-                  + '</div>';
+                return '<div class="media-thumb-wrap" onclick="openMediaLightbox(\'' + esc(u) + '\')"><img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="' + t('media') + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">' + (isVideo ? '<div class="media-play-icon">&#9654;</div>' : '') + '</div>';
               }).join('');
               mediaHtml = '<div class="post-media"><span style="margin-right:8px">' + badge + '</span><div class="media-thumb-grid">' + thumbsHtml + '</div></div>';
             }
@@ -2871,26 +2834,9 @@ async function startTwitterFetch() {
             const _raw = post.content || '';
             const _isLong = _raw.length >= 200;
             const _displayText = _isLong ? _raw.slice(0, 200) + '…' : _raw;
-            const _toggleBtn = (!_isLong && _raw.length > 80)
-              ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">' + t('expand') + '</button>' : '';
-            return `
-            <div class="post-card">
-              <div class="post-header">
-                <span class="post-platform">${esc(post.platform)}</span>
-                <span class="post-author">${esc(post.author)}</span>
-              </div>
-              <div class="post-content${_isLong ? ' long-truncated' : ''}" id="${_cid}">${esc(_displayText)}</div>
-              ${_toggleBtn}
-              ${mediaHtml}
-              <div class="post-meta">
-                <span>${t('likes')} ${(post.metrics?.likes || 0).toLocaleString()}</span>
-                <span>${t('retweets')} ${(post.metrics?.retweets || 0).toLocaleString()}</span>
-                <span>${t('replies')} ${(post.metrics?.replies || 0).toLocaleString()}</span>
-                <span>${post.published_at?.slice(0, 16).replace('T', ' ') || ''}</span>
-                ${post.replies_count > 0 ? `<span style="color:var(--primary);font-weight:600">${t('replies_collected', {n: post.replies_count})}</span>` : ''}
-              </div>
-            </div>
-          `}).join('')}
+            const _toggleBtn = (!_isLong && _raw.length > 80) ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">' + t('expand') + '</button>' : '';
+            return `<div class="post-card"><div class="post-header"><span class="post-platform">${esc(post.platform)}</span><span class="post-author">${esc(post.author)}</span></div><div class="post-content${_isLong ? ' long-truncated' : ''}" id="${_cid}">${esc(_displayText)}</div>${_toggleBtn}${mediaHtml}<div class="post-meta"><span>${t('likes')} ${(post.metrics?.likes || 0).toLocaleString()}</span><span>${t('retweets')} ${(post.metrics?.retweets || 0).toLocaleString()}</span><span>${t('replies')} ${(post.metrics?.replies || 0).toLocaleString()}</span><span>${post.published_at?.slice(0, 16).replace('T', ' ') || ''}</span>${post.replies_count > 0 ? `<span style="color:var(--primary);font-weight:600">${t('replies_collected', {n: post.replies_count})}</span>` : ''}</div></div>`
+          }).join('')}
         </div>`;
       }
 
@@ -2902,33 +2848,46 @@ async function startTwitterFetch() {
         <div class="result-stats">
           <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('stat_scraped')}</div></div>
         </div>
-        ${stats.csv_data ? `<div style="margin-top:16px">
-          <button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'tweets.csv')}')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            ${t('btn_download_csv')}
-          </button>
-          <div class="text-muted mt-8">${t('scrape_hint')}</div>
-        </div>` : ''}
+        ${stats.csv_data ? `<div style="margin-top:16px"><button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'tweets.csv')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_csv')}</button><div class="text-muted mt-8">${t('scrape_hint')}</div></div>` : ''}
         ${postsHtml}
       </div>`;
       if (!isError) toast(t('tw_scrape_done'), 'success');
     } else {
       div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('scrape_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
     }
+  };
+
+  try {
+    const initRes = await api('/api/twitter-fetch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls, count, include_replies: includeReplies, ct0: cookies.ct0, auth_token: cookies.auth_token, proxy: cookies.proxy || null, block_resources: document.getElementById('block-resources-toggle').checked })
+    });
+    
+    const taskId = initRes.task_id;
+    if(_fetchController) clearInterval(_fetchController);
+
+    _fetchController = setInterval(async () => {
+      const elapsed = Math.floor((Date.now() - _startTime) / 1000);
+      const m = Math.floor(elapsed / 60), s = elapsed % 60;
+      btn.innerHTML = `<span class="loading"></span> ${t('scraping', {t: m + ':' + String(s).padStart(2,'0')})}`;
+
+      try {
+        const statusRes = await api(`/api/task-status?task_id=${taskId}`);
+        if (statusRes.status === 'success') {
+          clearInterval(_fetchController);
+          renderFinalResult(statusRes.result);
+          finishUI();
+        } else if (statusRes.status === 'error') {
+          clearInterval(_fetchController);
+          document.getElementById('twitter-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('scrape_failed')}</strong>: ${esc(statusRes.error)}</div>`;
+          finishUI();
+        }
+      } catch (pollErr) { console.warn("Polling error (ignored):", pollErr); }
+    }, 3000);
+
   } catch (e) {
-    document.getElementById('twitter-result').innerHTML =
-      `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
-  } finally {
-    clearInterval(_timer);
-    _fetchController = null;
-    btn.onclick = startTwitterFetch;
-    btn.innerHTML = t('btn_scrape');
-    // 显示总耗时
-    const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
-    const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
-    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
-    const _resultDiv = document.getElementById('twitter-result');
-    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+    document.getElementById('twitter-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
+    finishUI();
   }
 }
 
@@ -2941,25 +2900,21 @@ async function startMultiSearch() {
   if (!keyword) return toast(t('enter_keyword'), 'error');
   if (!platforms.length) return toast(t('select_platform'), 'error');
 
-  // Collect cookies for selected platforms
   const cookies = [];
   const skippedPlatforms = [];
   for (const p of platforms) {
     const pc = getPlatformCookies(p);
     if (p === 'twitter' && (!pc.ct0 || !pc.auth_token)) {
-      skippedPlatforms.push({ platform: 'twitter', reason: t('cookie_not_configured_short') });
-      continue;
+      skippedPlatforms.push({ platform: 'twitter', reason: t('cookie_not_configured_short') }); continue;
     }
     if (p === 'reddit' && !pc.reddit_session) {
-      skippedPlatforms.push({ platform: 'reddit', reason: t('cookie_not_configured_short') });
-      continue;
+      skippedPlatforms.push({ platform: 'reddit', reason: t('cookie_not_configured_short') }); continue;
     }
     cookies.push(pc);
   }
 
   if (!cookies.length) {
     toast(t('no_platform_cookie'), 'error');
-    // Scroll to cookie section to help user configure
     const cookieCard = document.querySelector('.cookie-tabs');
     if (cookieCard) cookieCard.scrollIntoView({ behavior: 'smooth' });
     return;
@@ -2967,144 +2922,235 @@ async function startMultiSearch() {
 
   const btn = document.getElementById('multi-search-btn');
   document.getElementById('multi-search-result').innerHTML = '';
-
-  // 手动取消控制器
-  const controller = new AbortController();
-  _searchController = controller;
+  btn.disabled = true;
   const _startTime = Date.now();
-  const _timer = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - _startTime) / 1000);
-    const m = Math.floor(elapsed / 60), s = elapsed % 60;
-    btn.innerHTML = `<span class="loading"></span> ${t('searching', {t: m + ':' + String(s).padStart(2,'0')})}`;
-  }, 1000);
-  // 运行中点击按钮 → 取消任务
-  btn.onclick = () => controller.abort();
 
-  try {
-    const stats = await api('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        keyword, count, platforms, sort_by: currentSortBy,
-        include_replies: includeReplies, cookies,
-        block_resources: document.getElementById('block-resources-toggle').checked,
-      }),
-      signal: controller.signal,
-    });
-
-    const div = document.getElementById('multi-search-result');
-
-    if (stats.status === 'success' || stats.status === 'empty') {
-      // 存储帖子数据供分页使用
-      _resultPosts = stats.sampled_posts || [];
-      _resultPageIdx = 0;
-      _resultContainerId = 'result-posts-container';
-
-      // Platform counts
-      let countsHtml = '';
-      if (stats.platform_counts) {
-        countsHtml = Object.entries(stats.platform_counts).map(([p, c]) => {
-          const label = p === 'twitter' ? 'Twitter' : p === 'reddit' ? 'Reddit' : p;
-          return `<div class="result-stat"><div class="num">${c}</div><div class="lbl">${label}</div></div>`;
-        }).join('');
-      }
-
-      const isError = stats.status === 'empty';
-
-      // 显示被跳过的平台警告
-      let skippedHtml = '';
-      if (skippedPlatforms.length > 0) {
-        const skippedLabels = skippedPlatforms.map(s => {
-          const label = s.platform === 'twitter' ? 'Twitter / X' : 'Reddit';
-          return label + ' (' + t('cookie_not_configured_short') + ')';
-        }).join(', ');
-        skippedHtml = '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px">'
-          + '<span style="font-size:16px;flex-shrink:0">\u26A0</span>'
-          + '<div><strong>' + t('skipped_platforms') + '</strong>' + esc(skippedLabels)
-          + '<div style="margin-top:4px;font-size:11px;color:#B45309">' + t('configure_cookie_first') + '</div>'
-          + '</div></div>';
-      }
-
-      div.innerHTML = '<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">' + t('search_result') + '</h4>'
-        + '<div class="crawl-result ' + (isError ? 'error' : '') + '">'
-        + '<strong>' + (isError ? t('no_search_result') : t('search_complete')) + '</strong>'
-        + (stats.error ? '<div style="font-size:12px;color:var(--danger);margin-top:4px">' + esc(stats.error) + '</div>' : '')
-        + (stats.errors && stats.errors.length ? '<div class="error-box" style="margin-top:8px">' + stats.errors.map(e => '<p>' + esc(e) + '</p>').join('') + '</div>' : '')
-        + skippedHtml
-        + '<div class="result-stats">'
-        + '<div class="result-stat"><div class="num">' + stats.total_posts + '</div><div class="lbl">' + t('total_results') + '</div></div>'
-        + countsHtml
-        + '</div>'
-        + (stats.csv_data ? '<div style="margin-top:16px"><button class="btn btn-download" onclick="downloadCsv(\'' + stats.csv_data + '\',\'' + esc(stats.csv_filename || 'multi_search.csv') + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ' + t('btn_download_csv') + '</button><div class="text-muted mt-8">' + t('scrape_hint') + '</div></div>' : '')
-        + (_resultPosts.length ? '<div id="result-posts-container"></div>' : '')
-        + '</div>';
-      if (_resultPosts.length) renderResultPosts();
-      if (!isError) toast(t('multi_search_done'), 'success');
-    } else {
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('search_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
-    }
-  } catch (e) {
-    document.getElementById('multi-search-result').innerHTML =
-      `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
-  } finally {
-    clearInterval(_timer);
-    _searchController = null;
-    btn.onclick = startMultiSearch;
+  const finishUI = () => {
+    btn.disabled = false;
     btn.innerHTML = t('btn_search');
-    // 显示总耗时
     const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
     const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
     const _resultDiv = document.getElementById('multi-search-result');
     if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+  };
+
+  const renderFinalResult = (stats) => {
+    const div = document.getElementById('multi-search-result');
+    if (stats.status === 'success' || stats.status === 'empty') {
+      _resultPosts = stats.sampled_posts || [];
+      _resultPageIdx = 0;
+      _resultContainerId = 'result-posts-container';
+
+      let countsHtml = '';
+      if (stats.platform_counts) {
+        countsHtml = Object.entries(stats.platform_counts).map(([p, c]) => `<div class="result-stat"><div class="num">${c}</div><div class="lbl">${p === 'twitter' ? 'Twitter' : 'Reddit'}</div></div>`).join('');
+      }
+
+      const isError = stats.status === 'empty';
+      let skippedHtml = '';
+      if (skippedPlatforms.length > 0) {
+        const skippedLabels = skippedPlatforms.map(s => (s.platform === 'twitter' ? 'Twitter / X' : 'Reddit') + ' (' + t('cookie_not_configured_short') + ')').join(', ');
+        skippedHtml = `<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px"><span style="font-size:16px;flex-shrink:0">\u26A0</span><div><strong>${t('skipped_platforms')}</strong>${esc(skippedLabels)}<div style="margin-top:4px;font-size:11px;color:#B45309">${t('configure_cookie_first')}</div></div></div>`;
+      }
+
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4>
+        <div class="crawl-result ${isError ? 'error' : ''}">
+        <strong>${isError ? t('no_search_result') : t('search_complete')}</strong>
+        ${stats.error ? `<div style="font-size:12px;color:var(--danger);margin-top:4px">${esc(stats.error)}</div>` : ''}
+        ${stats.errors && stats.errors.length ? `<div class="error-box" style="margin-top:8px">${stats.errors.map(e => `<p>${esc(e)}</p>`).join('')}</div>` : ''}
+        ${skippedHtml}
+        <div class="result-stats">
+          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('total_results')}</div></div>
+          ${countsHtml}
+        </div>
+        ${stats.csv_data ? `<div style="margin-top:16px"><button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'multi_search.csv')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_csv')}</button><div class="text-muted mt-8">${t('scrape_hint')}</div></div>` : ''}
+        ${_resultPosts.length ? '<div id="result-posts-container"></div>' : ''}
+        </div>`;
+      if (_resultPosts.length) renderResultPosts();
+      if (!isError) toast(t('multi_search_done'), 'success');
+    } else {
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('search_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
+    }
+  };
+
+  try {
+    const initRes = await api('/api/search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('block-resources-toggle').checked })
+    });
+    
+    const taskId = initRes.task_id;
+    if(_searchController) clearInterval(_searchController);
+
+    _searchController = setInterval(async () => {
+      const elapsed = Math.floor((Date.now() - _startTime) / 1000);
+      const m = Math.floor(elapsed / 60), s = elapsed % 60;
+      btn.innerHTML = `<span class="loading"></span> ${t('searching', {t: m + ':' + String(s).padStart(2,'0')})}`;
+
+      try {
+        const statusRes = await api(`/api/task-status?task_id=${taskId}`);
+        if (statusRes.status === 'success') {
+          clearInterval(_searchController);
+          renderFinalResult(statusRes.result);
+          finishUI();
+        } else if (statusRes.status === 'error') {
+          clearInterval(_searchController);
+          document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('search_failed')}</strong>: ${esc(statusRes.error)}</div>`;
+          finishUI();
+        }
+      } catch (pollErr) { console.warn("Polling error (ignored):", pollErr); }
+    }, 3000);
+
+  } catch (e) {
+    document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
+    finishUI();
   }
 }
 
-// ── Export ──
-async function doExport(format) {
-  const status = document.getElementById('export-status').value;
-  let url = `/api/vocabulary/export?format=${format}`;
-  if (status) url += `&status=${status}`;
+async function startBatchSearch(keywords) {
+  const platforms = getSelectedPlatforms();
+  const count = parseInt(document.getElementById('search-count').value) || 50;
+  const includeReplies = document.getElementById('search-include-replies').checked;
+
+  if (!platforms.length) return toast(t('select_platform'), 'error');
+
+  if (keywords.length > 10) return toast(t('too_many_keywords'), 'error');
+  if (keywords.length > 3 && includeReplies) {
+    const est = keywords.length * (includeReplies ? 10 : 3);
+    if (!confirm(t('batch_search_n', {n: keywords.length}) + (includeReplies ? ' ' + t('with_replies') : '') + '\n' + t('estimated_time', {n: est}) + '\n\n' + t('confirm_continue'))) return;
+  }
+
+  const cookies = [];
+  const skippedPlatforms = [];
+  for (const p of platforms) {
+    const pc = getPlatformCookies(p);
+    if (p === 'twitter' && (!pc.ct0 || !pc.auth_token)) { skippedPlatforms.push({ platform: 'twitter', reason: t('cookie_not_configured_short') }); continue; }
+    if (p === 'reddit' && !pc.reddit_session) { skippedPlatforms.push({ platform: 'reddit', reason: t('cookie_not_configured_short') }); continue; }
+    cookies.push(pc);
+  }
+  if (!cookies.length) return toast(t('all_cookie_not_configured'), 'error');
+
+  const btn = document.getElementById('multi-search-btn');
+  document.getElementById('multi-search-result').innerHTML = '';
+  btn.disabled = true;
+  const _startTime = Date.now();
+
+  const finishUI = () => {
+    btn.disabled = false;
+    btn.textContent = t('btn_search');
+    const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
+    const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
+    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
+    const _resultDiv = document.getElementById('multi-search-result');
+    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+  };
+
+  const renderFinalResult = (stats) => {
+    const div = document.getElementById('multi-search-result');
+    if (stats.status === 'success' || stats.status === 'empty') {
+      let kwSummary = '';
+      if (stats.keyword_results) {
+        kwSummary = stats.keyword_results.map(kr => `<span class="keyword-result">「${esc(kr.keyword)}」: ${kr.post_count} ${t('stat_scraped')}</span>`).join('');
+      }
+
+      _resultPosts = stats.sampled_posts || [];
+      _resultPageIdx = 0;
+      _resultContainerId = 'batch-posts-container';
+
+      let errorsHtml = '';
+      if (stats.errors && stats.errors.length) { errorsHtml = `<div class="error-box">${stats.errors.map(e => `<p>${esc(e)}</p>`).join('')}</div>`; }
+
+      let skippedHtml = '';
+      if (skippedPlatforms.length > 0) {
+        const skippedLabels = skippedPlatforms.map(s => (s.platform === 'twitter' ? 'Twitter / X' : 'Reddit') + ' (' + t('cookie_not_configured_short') + ')').join(', ');
+        skippedHtml = `<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px"><span style="font-size:16px;flex-shrink:0">\u26A0</span><div><strong>${t('skipped_platforms')}</strong>${esc(skippedLabels)}<div style="margin-top:4px;font-size:11px;color:#B45309">${t('configure_cookie_first')}</div></div></div>`;
+      }
+
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4>
+        ${skippedHtml}
+        <div class="stats-success">
+          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('stat_total_posts')}</div></div>
+          <div class="result-stat"><div class="num">${stats.total_rows}</div><div class="lbl">${t('stat_total_rows')}</div></div>
+          <div class="result-stat"><div class="num">${keywords.length}</div><div class="lbl">${t('stat_keyword_count')}</div></div>
+        </div>
+        ${kwSummary ? `<div style="margin:8px 0;font-size:13px;display:flex;flex-wrap:wrap;gap:8px">${kwSummary}</div>` : ''}
+        <div style="margin:16px 0;display:flex;align-items:center;gap:12px">
+          ${stats.csv_data ? `<button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${stats.csv_filename || 'batch.csv'}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:6px;vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${t('btn_download_csv')}</button>` : ''}
+          <span class="text-sm text-muted">${t('scrape_hint')}</span>
+        </div>
+        ${_resultPosts.length ? '<div id="batch-posts-container"></div>' : ''}
+        ${errorsHtml}
+      `;
+      if (_resultPosts.length) renderResultPosts();
+    } else {
+      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-muted">${t('search_failed')}: ${esc(stats.error || t('unknown_error'))}</p>`;
+    }
+  };
 
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(t('export_failed'));
+    const initRes = await api('/api/batch-search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('block-resources-toggle').checked })
+    });
+    
+    const taskId = initRes.task_id;
+    if(_batchController) clearInterval(_batchController);
 
-    let content, filename;
-    if (format === 'json') {
-      const data = await res.json();
-      content = JSON.stringify(data, null, 2);
-      filename = `vocab_${Date.now()}.json`;
-    } else {
-      content = await res.text();
-      filename = `vocab_${Date.now()}.${format}`;
-    }
+    _batchController = setInterval(async () => {
+      const elapsed = Math.floor((Date.now() - _startTime) / 1000);
+      const m = Math.floor(elapsed / 60), s = elapsed % 60;
+      btn.innerHTML = `<span class="loading"></span> ${t('batch_searching', {n: keywords.length, t: m + ':' + String(s).padStart(2,'0')})}`;
 
-    // 优先使用 PyWebView 原生保存
-    if (window.pywebview && window.pywebview.api && window.pywebview.api.save_file) {
-      const b64 = btoa(unescape(encodeURIComponent(content)));
-      const _folder = localStorage.getItem('download_folder') || '';
-      const path = await window.pywebview.api.save_file(b64, filename, _folder);
+      try {
+        const statusRes = await api(`/api/task-status?task_id=${taskId}`);
+        if (statusRes.status === 'success') {
+          clearInterval(_batchController);
+          renderFinalResult(statusRes.result);
+          finishUI();
+        } else if (statusRes.status === 'error') {
+          clearInterval(_batchController);
+          document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-error">${t('request_failed')}: ${esc(statusRes.error)}</p>`;
+          finishUI();
+        }
+      } catch (pollErr) { console.warn("Polling err:", pollErr); }
+    }, 3000);
+
+  } catch (e) {
+    document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-error">${t('request_failed')}: ${esc(e.message)}</p>`;
+    finishUI();
+  }
+}
+
+// ── 以下部分保持不变 ──
+function downloadCsv(b64Data, filename) {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.save_file) {
+    const _folder = localStorage.getItem('download_folder') || '';
+    window.pywebview.api.save_file(b64Data, filename, _folder).then(path => {
       toast(t('file_saved_to', {path}), 'success');
-    } else {
-      // 降级：blob URL
-      const type = format === 'json' ? 'application/json' : 'text/plain;charset=utf-8';
-      const blob = new Blob([content], { type });
-      downloadBlob(blob, filename);
-      toast(t('export_success'), 'success');
-    }
-  } catch (e) { toast(e.message, 'error'); }
+    }).catch(e => {
+      toast(t('save_failed', {error: e}), 'error');
+    });
+    return;
+  }
+  fetch('/api/download-csv', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csv_data: b64Data, filename: filename })
+  }).then(r => {
+    if (!r.ok) throw new Error(t('download_failed'));
+    return r.blob();
+  }).then(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }).catch(e => toast(t('download_failed'), 'error'));
 }
 
-function downloadBlob(blob, filename) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-// ── 结果卡片分页 ──
 function renderResultPosts() {
   const container = document.getElementById(_resultContainerId);
   if (!container || !_resultPosts.length) return;
@@ -3182,7 +3228,6 @@ function renderResultPosts() {
   }).join('');
   html += '</div>';
 
-  // 翻页按钮
   if (totalPages > 1) {
     html += `<div class="posts-pager">
       <button class="btn btn-secondary btn-sm" onclick="postsPage(0)" ${_resultPageIdx===0?'disabled':''}>${t('first_page')}</button>
@@ -3197,436 +3242,17 @@ function renderResultPosts() {
 
 function postsPage(idx) { _resultPageIdx = idx; renderResultPosts(); }
 function postsPageSize(val) { _resultPageSize = parseInt(val)||20; _resultPageIdx = 0; renderResultPosts(); }
+function openMediaLightbox(url) { document.getElementById('media-lightbox-img').src = url; document.getElementById('media-lightbox').classList.add('active'); }
+function closeMediaLightbox() { document.getElementById('media-lightbox').classList.remove('active'); }
+function togglePostContent(btn, id) { var el = document.getElementById(id); if (!el) return; var expanded = el.classList.toggle('expanded'); btn.textContent = expanded ? t('collapse') : t('expand'); }
 
-// ── Utils ──
-const EYE_OPEN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-const EYE_CLOSED = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-
-function toggleSecret(inputId, btn) {
-  const input = document.getElementById(inputId);
-  if (input.type === 'password') {
-    input.type = 'text';
-    btn.innerHTML = EYE_CLOSED;
-  } else {
-    input.type = 'password';
-    btn.innerHTML = EYE_OPEN;
-  }
-}
-
-function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
-
-// ── 文件上传 ──
-
-function handleUrlFileUpload(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const text = e.target.result;
-    const lines = text.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
-    const textarea = document.getElementById('twitter-urls');
-    textarea.value = lines.join('\n');
-    document.getElementById('twitter-url-count').textContent = t('n_links', {n: lines.length});
-    toast(t('imported_n_links', {n: lines.length}), 'success');
-  };
-  reader.onerror = function() { toast(t('file_read_failed'), 'error'); };
-  reader.readAsText(file, 'UTF-8');
-  input.value = '';  // 清空以便重新选择同一文件
-}
-
-async function handleKeywordFileUpload(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async function(e) {
-    const text = e.target.result;
-    const keywords = text.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
-    if (!keywords.length) return toast(t('no_keywords_in_file'), 'error');
-    await startBatchSearch(keywords);
-  };
-  reader.onerror = function() { toast(t('file_read_failed'), 'error'); };
-  reader.readAsText(file, 'UTF-8');
-  input.value = '';
-}
-
-async function startBatchSearch(keywords) {
-  const platforms = getSelectedPlatforms();
-  const count = parseInt(document.getElementById('search-count').value) || 50;
-  const includeReplies = document.getElementById('search-include-replies').checked;
-
-  if (!platforms.length) return toast(t('select_platform'), 'error');
-
-  // 关键词数量警告 & 确认
-  if (keywords.length > 10) {
-    return toast(t('too_many_keywords'), 'error');
-  }
-  if (keywords.length > 3 && includeReplies) {
-    const est = keywords.length * (includeReplies ? 10 : 3);
-    if (!confirm(t('batch_search_n', {n: keywords.length}) + (includeReplies ? ' ' + t('with_replies') : '') +
-      '\n' + t('estimated_time', {n: est}) + '\n\n' + t('confirm_continue'))) {
-      return;
-    }
-  }
-
-  const cookies = [];
-  const skippedPlatforms = [];
-  for (const p of platforms) {
-    const pc = getPlatformCookies(p);
-    if (p === 'twitter' && (!pc.ct0 || !pc.auth_token)) {
-      skippedPlatforms.push({ platform: 'twitter', reason: t('cookie_not_configured_short') });
-      continue;
-    }
-    if (p === 'reddit' && !pc.reddit_session) {
-      skippedPlatforms.push({ platform: 'reddit', reason: t('cookie_not_configured_short') });
-      continue;
-    }
-    cookies.push(pc);
-  }
-  if (!cookies.length) return toast(t('all_cookie_not_configured'), 'error');
-
-  const btn = document.getElementById('multi-search-btn');
-  document.getElementById('multi-search-result').innerHTML = '';
-
-  // 手动取消控制器
-  const controller = new AbortController();
-  _batchController = controller;
-  const _startTime = Date.now();
-  const _timer = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - _startTime) / 1000);
-    const m = Math.floor(elapsed / 60), s = elapsed % 60;
-    btn.innerHTML = `<span class="loading"></span> ${t('batch_searching', {n: keywords.length, t: m + ':' + String(s).padStart(2,'0')})}`;
-  }, 1000);
-  // 运行中点击按钮 → 取消任务
-  btn.onclick = () => controller.abort();
-
-  try {
-    const stats = await api('/api/batch-search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        keywords, count, platforms, sort_by: currentSortBy,
-        include_replies: includeReplies, cookies,
-        block_resources: document.getElementById('block-resources-toggle').checked,
-      }),
-      signal: controller.signal,
-    });
-
-    const div = document.getElementById('multi-search-result');
-    if (stats.status === 'success' || stats.status === 'empty') {
-      let kwSummary = '';
-      if (stats.keyword_results) {
-        kwSummary = stats.keyword_results.map(kr =>
-          `<span class="keyword-result">「${esc(kr.keyword)}」: ${kr.post_count} ${t('stat_scraped')}</span>`
-        ).join('');
-      }
-
-      // 存储帖子数据供分页使用
-      _resultPosts = stats.sampled_posts || [];
-      _resultPageIdx = 0;
-      _resultContainerId = 'batch-posts-container';
-
-      let errorsHtml = '';
-      if (stats.errors && stats.errors.length) {
-        errorsHtml = `<div class="error-box">${stats.errors.map(e => `<p>${esc(e)}</p>`).join('')}</div>`;
-      }
-
-      let skippedHtml = '';
-      if (skippedPlatforms.length > 0) {
-        const skippedLabels = skippedPlatforms.map(s => {
-          const label = s.platform === 'twitter' ? 'Twitter / X' : 'Reddit';
-          return label + ' (' + t('cookie_not_configured_short') + ')';
-        }).join(', ');
-        skippedHtml = '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px">'
-          + '<span style="font-size:16px;flex-shrink:0">\u26A0</span>'
-          + '<div><strong>' + t('skipped_platforms') + '</strong>' + esc(skippedLabels)
-          + '<div style="margin-top:4px;font-size:11px;color:#B45309">' + t('configure_cookie_first') + '</div>'
-          + '</div></div>';
-      }
-
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4>
-        ${skippedHtml}
-        <div class="stats-success">
-          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('stat_total_posts')}</div></div>
-          <div class="result-stat"><div class="num">${stats.total_rows}</div><div class="lbl">${t('stat_total_rows')}</div></div>
-          <div class="result-stat"><div class="num">${keywords.length}</div><div class="lbl">${t('stat_keyword_count')}</div></div>
-        </div>
-        ${kwSummary ? `<div style="margin:8px 0;font-size:13px;display:flex;flex-wrap:wrap;gap:8px">${kwSummary}</div>` : ''}
-        <div style="margin:16px 0;display:flex;align-items:center;gap:12px">
-          ${stats.csv_data ? `<button class="btn-download" onclick="downloadCsv('${stats.csv_data}','${stats.csv_filename || 'batch.csv'}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${t('btn_download_csv')}</button>` : ''}
-          <span class="text-sm text-muted">${t('scrape_hint')}</span>
-        </div>
-        ${_resultPosts.length ? '<div id="batch-posts-container"></div>' : ''}
-        ${errorsHtml}
-      `;
-      if (_resultPosts.length) renderResultPosts();
-    } else {
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-muted">${t('search_failed')}: ${esc(stats.error || t('unknown_error'))}</p>`;
-    }
-  } catch (e) {
-    document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-error">${t('request_failed')}: ${esc(e.message)}</p>`;
-  } finally {
-    clearInterval(_timer);
-    _batchController = null;
-    btn.onclick = startMultiSearch;
-    btn.textContent = t('btn_search');
-    // 显示总耗时
-    const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
-    const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
-    const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
-    const _resultDiv = document.getElementById('multi-search-result');
-    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
-  }
-}
-
-function downloadCsv(b64Data, filename) {
-  // 优先使用 PyWebView 原生保存（最可靠）
-  if (window.pywebview && window.pywebview.api && window.pywebview.api.save_file) {
-    const _folder = localStorage.getItem('download_folder') || '';
-    window.pywebview.api.save_file(b64Data, filename, _folder).then(path => {
-      toast(t('file_saved_to', {path}), 'success');
-    }).catch(e => {
-      toast(t('save_failed', {error: e}), 'error');
-    });
-    return;
-  }
-  // 降级：通过后端接口下载
-  fetch('/api/download-csv', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ csv_data: b64Data, filename: filename })
-  }).then(r => {
-    if (!r.ok) throw new Error(t('download_failed'));
-    return r.blob();
-  }).then(blob => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(a.href);
-  }).catch(e => toast(t('download_failed'), 'error'));
-}
-
-// ── Lightbox ──
-function openMediaLightbox(url) {
-  document.getElementById('media-lightbox-img').src = url;
-  document.getElementById('media-lightbox').classList.add('active');
-}
-function closeMediaLightbox() {
-  document.getElementById('media-lightbox').classList.remove('active');
-}
-
-// ── 文本展开/收起 ──
-function togglePostContent(btn, id) {
-  var el = document.getElementById(id);
-  if (!el) return;
-  var expanded = el.classList.toggle('expanded');
-  btn.textContent = expanded ? t('collapse') : t('expand');
-}
-
-// ── 模型 API 配置 ──
-function saveModelSettings() {
-  const baseUrl = document.getElementById('model-base-url').value.trim();
-  const apiKey = document.getElementById('model-api-key').value.trim();
-  const modelName = document.getElementById('model-name').value.trim();
-  const backupBaseUrl = document.getElementById('model-backup-base-url').value.trim();
-  const backupApiKey = document.getElementById('model-backup-api-key').value.trim();
-  const backupModelName = document.getElementById('model-backup-name').value.trim();
-
-  if (!baseUrl) return toast(t('fill_api_url'), 'error');
-  if (!apiKey) return toast(t('fill_api_key'), 'error');
-
-  localStorage.setItem('model_base_url', baseUrl);
-  localStorage.setItem('model_api_key', apiKey);
-  localStorage.setItem('model_name', modelName);
-  localStorage.setItem('model_backup_base_url', backupBaseUrl);
-  localStorage.setItem('model_backup_api_key', backupApiKey);
-  localStorage.setItem('model_backup_name', backupModelName);
-
-  updateModelSummary();
-  document.getElementById('model-config-card').classList.add('collapsed');
-  toast(t('model_saved'), 'success');
-}
-
-function clearModelSettings() {
-  localStorage.removeItem('model_base_url');
-  localStorage.removeItem('model_api_key');
-  localStorage.removeItem('model_name');
-  localStorage.removeItem('model_backup_base_url');
-  localStorage.removeItem('model_backup_api_key');
-  localStorage.removeItem('model_backup_name');
-  document.getElementById('model-base-url').value = '';
-  document.getElementById('model-api-key').value = '';
-  document.getElementById('model-name').value = '';
-  document.getElementById('model-backup-base-url').value = '';
-  document.getElementById('model-backup-api-key').value = '';
-  document.getElementById('model-backup-name').value = '';
-  updateModelSummary();
-  toast(t('model_cleared'), 'success');
-}
-
-function loadModelSettings() {
-  document.getElementById('model-base-url').value = localStorage.getItem('model_base_url') || '';
-  document.getElementById('model-api-key').value = localStorage.getItem('model_api_key') || '';
-  document.getElementById('model-name').value = localStorage.getItem('model_name') || '';
-  document.getElementById('model-backup-base-url').value = localStorage.getItem('model_backup_base_url') || '';
-  document.getElementById('model-backup-api-key').value = localStorage.getItem('model_backup_api_key') || '';
-  document.getElementById('model-backup-name').value = localStorage.getItem('model_backup_name') || '';
-  updateModelSummary();
-}
-
-function updateModelSummary() {
-  const el = document.getElementById('model-config-summary');
-  const hasKey = localStorage.getItem('model_api_key');
-  const hasUrl = localStorage.getItem('model_base_url');
-  if (hasKey && hasUrl) {
-    const model = localStorage.getItem('model_name') || t('default_model');
-    el.innerHTML = '<span style="color:var(--success)">' + t('model_configured', {model: esc(model)}) + '</span>';
-    // 有配置时自动折叠
-    document.getElementById('model-config-card').classList.add('collapsed');
-  } else {
-    el.textContent = t('model_not_configured');
-  }
-}
-
-// ── Init ──
-loadTheme();
-applyI18n();
-loadStats();
-loadAllCookies();
-loadModelSettings();
-
-// Load version into sidebar and About section
-(async () => {
-  try {
-    const r = await fetch('/api/version');
-    if (r.ok) {
-      const d = await r.json();
-      document.getElementById('app-version').textContent = 'v' + d.version;
-      document.getElementById('about-version-number').textContent = 'v' + d.version;
-    }
-  } catch (_) {}
-})();
-
-// ── Chromium Install Overlay ──
-(async () => {
-  const overlay = document.getElementById('chromium-overlay');
-  const progressText = document.getElementById('chromium-progress-text');
-  const spinner = document.getElementById('chromium-spinner');
-  const progressDiv = document.getElementById('chromium-progress');
-  const successDiv = document.getElementById('chromium-success');
-  const errorDiv = document.getElementById('chromium-error');
-
-  try {
-    const r = await fetch('/api/chromium-status');
-    if (!r.ok) return;
-    const status = await r.json();
-    if (status.status === 'not_needed' || status.status === 'installed') return;
-
-    // Show overlay
-    overlay.classList.add('show');
-
-    // Trigger installation
-    const trigger = await fetch('/api/install-chromium', { method: 'POST' });
-    if (!trigger.ok) throw new Error('trigger failed');
-
-    // Poll for completion
-    const poll = setInterval(async () => {
-      try {
-        const sr = await fetch('/api/chromium-status');
-        if (!sr.ok) return;
-        const s = await sr.json();
-
-        if (s.status === 'installing') {
-          progressText.textContent = s.progress === 'downloading'
-            ? t('chromium_downloading')
-            : t('chromium_installing');
-        } else if (s.status === 'installed') {
-          clearInterval(poll);
-          progressDiv.style.display = 'none';
-          successDiv.style.display = 'block';
-          setTimeout(() => overlay.classList.remove('show'), 2000);
-        } else if (s.status === 'error') {
-          clearInterval(poll);
-          progressDiv.style.display = 'none';
-          errorDiv.style.display = 'block';
-        }
-      } catch (_) {}
-    }, 2000);
-  } catch (_) {}
-})();
-
-// Manual update check from Settings About section
-async function manualCheckUpdate() {
-  const label = document.getElementById('about-version-label');
-  const statusEl = document.getElementById('about-update-status');
-  label.textContent = t('checking_update');
-  label.style.pointerEvents = 'none';
-  statusEl.style.display = 'block';
-  statusEl.textContent = t('checking_update');
-
-  try {
-    const r = await fetch('/api/check-update', { method: 'POST' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const info = await r.json();
-    if (info && info.latest_version) {
-      label.textContent = t('version_update');
-      label.setAttribute('data-i18n', 'version_update');
-      label.style.color = 'var(--warning, #e67e22)';
-      statusEl.innerHTML = t('update_available', { version: 'v' + info.latest_version }) +
-        ' — <a href="' + (info.download_url || info.release_page || '#') + '" target="_blank" style="color:var(--primary)">' + t('download_now') + '</a>';
-    } else {
-      label.textContent = t('version_label');
-      label.setAttribute('data-i18n', 'version_label');
-      label.style.color = 'var(--primary)';
-      statusEl.textContent = t('no_update');
-    }
-  } catch (e) {
-    label.textContent = t('version_label');
-    label.setAttribute('data-i18n', 'version_label');
-    label.style.color = 'var(--primary)';
-    statusEl.textContent = t('update_check_failed');
-  } finally {
-    label.style.pointerEvents = '';
-  }
-}
-
-// Poll for update info (check on startup, then every 4 hours)
-let _updateDismissed = false;
-async function checkUpdateBanner() {
-  if (_updateDismissed) return;
-  try {
-    const r = await fetch('/api/update-info');
-    if (!r.ok) return;
-    const info = await r.json();
-    if (info && info.latest_version) {
-      const banner = document.getElementById('update-banner');
-      document.getElementById('update-version').textContent = 'v' + info.latest_version;
-      const link = document.getElementById('update-download-link');
-      link.href = info.download_url || info.release_page || '#';
-      banner.classList.add('show');
-      document.querySelector('.main').classList.add('has-banner');
-    }
-  } catch (_) {}
-}
-checkUpdateBanner();
-setInterval(checkUpdateBanner, 4 * 3600 * 1000);
-
-function dismissUpdate() {
-  _updateDismissed = true;
-  document.getElementById('update-banner').classList.remove('show');
-  document.querySelector('.main').classList.remove('has-banner');
-}
 </script>
 
-<!-- Media Lightbox -->
 <div id="media-lightbox" class="media-lightbox" onclick="closeMediaLightbox()">
   <img id="media-lightbox-img" src="" alt="">
   <div class="media-lightbox-close">&times;</div>
 </div>
 
-<!-- Update Banner -->
 <div id="update-banner" class="update-banner">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
   <span><span data-i18n="new_version">新版本</span> <strong id="update-version">v0.0.0</strong> <span data-i18n="released">已发布</span></span>
@@ -3634,7 +3260,6 @@ function dismissUpdate() {
   <button class="update-banner-close" onclick="dismissUpdate()">&times;</button>
 </div>
 
-<!-- Chromium Install Overlay -->
 <div id="chromium-overlay" class="chromium-overlay">
   <div class="chromium-overlay-card">
     <div class="chromium-overlay-icon">
