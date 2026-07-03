@@ -36,15 +36,25 @@ from src.vocabulary.manager import VocabManager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = load_settings()
-    db_path = Path(settings.app.data_dir) / "vocab.db"
-    await init_db(db_path)
-    # 启动时自动检查更新（后台线程，不阻塞启动）
-    check_for_update_async()
+    try:
+        settings = load_settings()
+        db_path = Path(settings.app.data_dir) / "vocab.db"
+        logger.info(f"Initializing database at: {db_path.resolve()}")
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        await init_db(db_path)
+        logger.info("Database initialized successfully")
+        # 启动时自动检查更新（后台线程，不阻塞启动）
+        check_for_update_async()
+    except Exception as e:
+        logger.error(f"Lifespan startup failed: {e}", exc_info=True)
+        raise
     yield
     # 关闭共享浏览器实例
-    from src.crawlers.browser_manager import BrowserManager
-    await BrowserManager.get().close()
+    try:
+        from src.crawlers.browser_manager import BrowserManager
+        await BrowserManager.get().close()
+    except Exception:
+        pass
     await close_db()
 
 

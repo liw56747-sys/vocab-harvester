@@ -165,7 +165,14 @@ def _start_server(port: int):
         _log(f"server thread starting, port={port}")
         _log(f"_BUNDLED_DIR={_BUNDLED_DIR}")
         _log(f"_EXE_DIR={_EXE_DIR}")
+        _log(f"CWD before chdir: {os.getcwd()}")
         _log(f"sys.path[0]={sys.path[0] if sys.path else '(empty)'}")
+
+        # 关键修复：打包后 CWD 可能不是 exe 所在目录，
+        # 导致 lifespan 中的 Path("./data") 解析到错误位置，
+        # init_db 静默失败，uvicorn 立即退出。
+        os.chdir(_EXE_DIR)
+        _log(f"CWD after chdir: {os.getcwd()}")
 
         import uvicorn
         _log("uvicorn imported")
@@ -204,6 +211,16 @@ def _start_server(port: int):
                 loop.run_until_complete(server.serve())
             finally:
                 loop.close()
+
+            # 检测 uvicorn 是否真正启动成功（lifespan 失败时会静默退出）
+            if not getattr(server, "started", False):
+                err_msg = (
+                    f"uvicorn 未能启动 (port={port})，"
+                    f"可能是 lifespan 初始化失败，请检查日志"
+                )
+                _log(err_msg)
+                _SERVER_ERROR = err_msg
+                return
 
         except (OSError, Exception) as bind_err:
             _log(f"port bind/start failed: {bind_err}")

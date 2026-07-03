@@ -42,3 +42,6 @@ _internal/
 
 # Installer output (binary, managed via Releases)
 installer/*.exe
+
+# Qoder IDE cache
+.qoder/
