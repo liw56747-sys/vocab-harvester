@@ -1,0 +1,17 @@
+[project]
+name = "vocab-harvester"
+version = "0.1.0"
+description = "社交平台词库采集系统"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-m 'not integration and not interactive'"
+markers = [
+    "integration: 需要运行中的 HTTP 服务器（需手动 -m integration）",
+    "interactive: 交互式测试，需要用户输入（需手动 -m interactive）",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

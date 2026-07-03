@@ -1,0 +1,59 @@
+# vocab-harvester 全局配置
+
+app:
+  name: "vocab-harvester"
+  log_level: "INFO"
+  data_dir: "./data"
+
+database:
+  url: "sqlite+aiosqlite:///./data/vocab.db"
+
+# 平台采集配置
+crawlers:
+  weibo:
+    enabled: true
+    app_key: ""
+    app_secret: ""
+    rate_limit: 5          # 每秒最大请求数
+    search_queries: []     # 搜索关键词列表
+
+  xiaohongshu:
+    enabled: false
+    rate_limit: 2
+    search_queries: []
+
+  twitter:
+    enabled: false
+    api_key: ""
+    api_secret: ""
+    bearer_token: ""
+    rate_limit: 10
+    search_queries: []
+
+# 工作流适配器配置
+workflow:
+  adapter: "mock"            # mock | xingpan（模型配置优先从前端 UI 传入）
+  api:
+    base_url: ""
+    api_key: ""
+    workflow_id: ""
+    model: ""
+    backup_model: ""
+    timeout: 300
+    poll_interval: 5
+    batch_size: 10
+  queue:
+    type: ""
+    url: ""
+
+# 词库配置
+vocabulary:
+  auto_approve_threshold: 10   # 词频达到此值自动通过审核
+  max_context_samples: 5       # 每个词保留的最大上下文例句数
+  dedup_similarity: 0.85       # 相似度阈值（0-1），超过则视为同一词
+
+# 调度配置
+scheduler:
+  enabled: false
+  cron: "0 */6 * * *"         # 默认每6小时执行一次
+  default_queries: []

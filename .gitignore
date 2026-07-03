@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.spec.bak
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Project specific
+data/
+*.db
+*.log
+*.png
+.port
+twitter.log
+
+# Secrets - NEVER push credentials
+.twitter_config.json
+.twitter_cookies.json
+.env
+*.env
+
+# PyInstaller output
+_internal/
+
+# Installer output (binary, managed via Releases)
+installer/*.exe
