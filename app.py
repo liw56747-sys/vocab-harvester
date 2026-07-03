@@ -12,6 +12,14 @@ import asyncio
 import traceback
 from pathlib import Path
 
+# 🌟 修复 Bug：强制在全局作用域导入核心模块 🌟
+# 这样可以让 PyInstaller 的静态分析器识别并打包这些依赖，防止运行时报 ModuleNotFoundError
+import src.api.main
+import src.api.routes
+import src.common.config
+import src.common.database
+import src.common.version
+
 
 # ── PyInstaller 路径处理 ──
 # sys._MEIPASS = _internal/ 目录（打包进来的静态资源）
