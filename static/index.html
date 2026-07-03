@@ -2321,13 +2321,50 @@ async function doExport(format) {
   }
 }
 
-function manualCheckUpdate() {
+// ── 版本更新检查 ──
+async function manualCheckUpdate() {
   toast(t('checking_update'), 'info');
-  setTimeout(() => toast(t('no_update'), 'info'), 1000); // 模拟检查完成
+  try {
+    const info = await api('/api/check-update', { method: 'POST' });
+    if (info.latest_version) {
+      showUpdateBanner(info);
+      toast(t('update_available', { version: info.latest_version }), 'success');
+    } else if (info.up_to_date) {
+      toast(t('no_update'), 'info');
+    } else if (info.error) {
+      toast(t('update_check_failed'), 'error');
+    }
+  } catch (e) {
+    toast(t('update_check_failed'), 'error');
+  }
+}
+
+function showUpdateBanner(info) {
+  const banner = document.getElementById('update-banner');
+  const versionEl = document.getElementById('update-version');
+  const linkEl = document.getElementById('update-download-link');
+  if (versionEl) versionEl.textContent = 'v' + info.latest_version;
+  if (linkEl) {
+    linkEl.href = info.download_url || info.release_page || '#';
+    linkEl.target = '_blank';
+  }
+  if (banner) banner.classList.add('show');
 }
 
 function dismissUpdate() {
   document.getElementById('update-banner').classList.remove('show');
+}
+
+// 页面加载后自动检查更新（后端已在启动时调用 check_for_update_async）
+async function autoCheckUpdate() {
+  try {
+    const info = await api('/api/update-info');
+    if (info.latest_version) {
+      showUpdateBanner(info);
+    }
+  } catch (e) {
+    // 静默忽略自动检查失败
+  }
 }
 
 // 页面初始化逻辑
@@ -2346,6 +2383,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (versionEl) {
     document.getElementById('about-version-number').textContent = versionEl.textContent;
   }
+  // 自动检查更新并显示横幅
+  autoCheckUpdate();
 });
 
 
