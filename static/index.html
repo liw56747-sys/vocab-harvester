@@ -2385,10 +2385,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (match) showPage(match[1], firstNav);
     }
   }
-  const versionEl = document.getElementById('app-version');
-  if (versionEl) {
-    document.getElementById('about-version-number').textContent = versionEl.textContent;
-  }
+  // 从后端获取真实版本号
+  fetch('/api/version').then(r => r.json()).then(data => {
+    const versionStr = 'v' + data.version;
+    const appVer = document.getElementById('app-version');
+    if (appVer) appVer.textContent = versionStr;
+    const aboutVer = document.getElementById('about-version-number');
+    if (aboutVer) aboutVer.textContent = versionStr;
+  }).catch(() => {});
   // 自动检查更新并显示横幅
   autoCheckUpdate();
   // 每 4 小时定期检查一次更新

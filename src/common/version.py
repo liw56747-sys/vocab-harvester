@@ -16,10 +16,12 @@ logger = logging.getLogger(__name__)
 # ── 版本号 ──────────────────────────────────────────────
 
 def get_version() -> str:
-    """读取项目版本号（从 VERSION 文件）"""
+    """读取项目版本号（从 VERSION 文件第一行）"""
     version_file = Path(__file__).parent.parent.parent / "VERSION"
     try:
-        return version_file.read_text(encoding="utf-8").strip()
+        text = version_file.read_text(encoding="utf-8").strip()
+        # 只取第一行作为版本号
+        return text.splitlines()[0].strip() if text else "0.0.0"
     except FileNotFoundError:
         return "0.0.0"
 
