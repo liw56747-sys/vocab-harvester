@@ -57,12 +57,65 @@ _update_info: dict | None = None
 
 
 def _get_proxy_url() -> str | None:
-    """自动检测代理地址：环境变量 > 系统配置"""
+    """自动检测代理地址：环境变量 > macOS系统代理 > 常见本地代理端口"""
     import os
+    import subprocess
+
+    # 1. 环境变量
     for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
         val = os.environ.get(var, "").strip()
         if val:
+            logger.debug(f"Proxy from env {var}: {val}")
             return val
+
+    # 2. macOS 系统代理（系统偏好设置 → 网络 → 代理）
+    if sys.platform == "darwin":
+        try:
+            result = subprocess.run(
+                ["scutil", "--proxy"],
+                capture_output=True, text=True, timeout=3,
+            )
+            output = result.stdout
+            # 解析 HTTPSProxy 配置
+            # 格式: HTTPSProxy : {
+            #   HTTPEnable : 1
+            #   HTTPProxy : 127.0.0.1
+            #   HTTPPort : 7890
+            # }
+            if "HTTPEnable : 1" in output:
+                import re
+                host_match = re.search(r"HTTPProxy : (.+)", output)
+                port_match = re.search(r"HTTPPort : (\d+)", output)
+                if host_match and port_match:
+                    host = host_match.group(1).strip()
+                    port = port_match.group(1).strip()
+                    proxy_url = f"http://{host}:{port}"
+                    logger.debug(f"Proxy from macOS system: {proxy_url}")
+                    return proxy_url
+        except Exception as e:
+            logger.debug(f"Failed to read macOS system proxy: {e}")
+
+    # 3. 探测常见本地代理端口（Clash / V2Ray / Shadowsocks 等）
+    import socket
+    common_ports = [
+        ("127.0.0.1", 7890),   # Clash / ClashX
+        ("127.0.0.1", 7891),   # Clash (alternative)
+        ("127.0.0.1", 1087),   # V2Ray / Shadowsocks
+        ("127.0.0.1", 1080),   # SOCKS proxy
+        ("127.0.0.1", 8080),   # Common HTTP proxy
+    ]
+    for host, port in common_ports:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            s.connect((host, port))
+            s.close()
+            proxy_url = f"http://{host}:{port}"
+            logger.debug(f"Proxy detected by port scan: {proxy_url}")
+            return proxy_url
+        except Exception:
+            continue
+
     return None
 
 
