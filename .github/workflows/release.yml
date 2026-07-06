@@ -352,13 +352,18 @@ jobs:
           WIN_EXE="${{ steps.files.outputs.win_exe }}"
           MAC_DMG="${{ steps.files.outputs.mac_dmg }}"
 
-          # Create the release (idempotent: --generate-notes adds auto changelog)
-          gh release create "$TAG" \
-            --title "vocab-harvester v${VERSION}" \
-            --generate-notes \
-            --latest
+          # Check if release already exists (e.g. created by release.sh)
+          if gh release view "$TAG" &>/dev/null; then
+            echo "Release $TAG already exists, uploading assets..."
+          else
+            echo "Creating release $TAG..."
+            gh release create "$TAG" \
+              --title "vocab-harvester v${VERSION}" \
+              --generate-notes \
+              --latest
+          fi
 
-          # Upload assets
+          # Upload assets (clobber overwrites any existing files)
           gh release upload "$TAG" \
             "$WIN_EXE" \
             "$MAC_DMG" \
