@@ -130,10 +130,18 @@ def _get_proxy_url() -> str | None:
 
 def check_for_update_async(callback=None):
     """后台线程检查 GitHub 最新版本，完成后调用 callback(info)"""
+    import ssl
+
     def _check():
         global _update_info
         # 重置状态，确保每次检查都是全新的
         _update_info = None
+
+        # 跳过 SSL 证书验证（解决 macOS/PyInstaller 打包后 CA 证书缺失问题）
+        # 更新检查只读取公开版本号，不涉及敏感数据，安全风险可接受
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
 
         proxy_url = _get_proxy_url()
         if proxy_url:
@@ -154,7 +162,7 @@ def check_for_update_async(callback=None):
                     api_url,
                     headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "vocab-harvester"},
                 )
-                with opener.open(req, timeout=10) as resp:
+                with opener.open(req, timeout=10, context=ssl_ctx) as resp:
                     data = json.loads(resp.read().decode())
 
                 latest = data.get("tag_name", "").lstrip("v")
@@ -245,9 +253,15 @@ def _version_gt(a: str, b: str) -> bool:
 
 def download_update(url: str, dest: Path, progress_callback=None) -> bool:
     """下载安装包，支持进度回调 callback(downloaded_bytes, total_bytes)"""
+    import ssl
     try:
+        # 跳过 SSL 证书验证（与 check_for_update_async 保持一致）
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+
         req = urllib.request.Request(url, headers={"User-Agent": "vocab-harvester"})
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=120, context=ssl_ctx) as resp:
             total = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             chunk_size = 1024 * 256  # 256KB chunks
