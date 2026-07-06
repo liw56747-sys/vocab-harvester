@@ -464,9 +464,12 @@ class TwitterCookieFetcher:
                     finally:
                         await page.close()
 
-            user_results = await asyncio.gather(
-                *[_scrape_one_user(u) for u in usernames],
-                return_exceptions=True,
+            user_results = await asyncio.wait_for(
+                asyncio.gather(
+                    *[_scrape_one_user(u) for u in usernames],
+                    return_exceptions=True,
+                ),
+                timeout=300  # 用户主页抓取最多5分钟
             )
             for r in user_results:
                 if isinstance(r, Exception):
@@ -474,9 +477,17 @@ class TwitterCookieFetcher:
                 elif r:
                     all_tweets.extend(r)
 
-            # 并发抓取评论
+            # 并发抓取评论（添加超时保护）
             if include_replies and all_tweets:
-                await self._parallel_scrape_replies(context, all_tweets)
+                try:
+                    await asyncio.wait_for(
+                        self._parallel_scrape_replies(context, all_tweets),
+                        timeout=180  # 评论抓取最多3分钟
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("用户主页评论抓取超时（3分钟）")
+                except Exception as e:
+                    logger.error(f"用户主页评论抓取失败: {e}")
 
         except Exception as e:
             logger.error(f"用户主页抓取整体失败: {e}")
@@ -521,16 +532,30 @@ class TwitterCookieFetcher:
             if self.block_resources:
                 await apply_resource_blocking(page)
             try:
-                tweets = await self._scrape_search(page, keyword, count, sort_by=sort_by)
+                # 添加整体超时保护（5分钟）
+                tweets = await asyncio.wait_for(
+                    self._scrape_search(page, keyword, count, sort_by=sort_by),
+                    timeout=300
+                )
                 logger.info(f"搜索「{keyword}」: 获取 {len(tweets)} 条推文")
+            except asyncio.TimeoutError:
+                logger.warning(f"搜索「{keyword}」超时（5分钟），已获取 {len(tweets)} 条")
             except Exception as e:
                 logger.error(f"搜索「{keyword}」整体失败: {e}")
             finally:
                 await page.close()
 
-            # 并发抓取评论
+            # 并发抓取评论（添加超时保护）
             if include_replies and tweets:
-                await self._parallel_scrape_replies(context, tweets)
+                try:
+                    await asyncio.wait_for(
+                        self._parallel_scrape_replies(context, tweets),
+                        timeout=180  # 评论抓取最多3分钟
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"搜索「{keyword}」评论抓取超时（3分钟）")
+                except Exception as e:
+                    logger.error(f"搜索「{keyword}」评论抓取失败: {e}")
 
         except Exception as e:
             logger.error(f"搜索「{keyword}」整体失败: {e}")
@@ -764,7 +789,7 @@ class TwitterCookieFetcher:
         # 逐轮滚动 + 提取 + 去重（虚拟滚动：DOM 同时仅保留 ~15-25 条）
         all_tweets: dict[str, dict] = {}
         stall_count = 0
-        max_rounds = max(30, count)
+        max_rounds = min(25, count)  # 限制最多滚动轮数，防止无限循环
         max_stalls = 3
         is_top = (sort_by != "live")
 

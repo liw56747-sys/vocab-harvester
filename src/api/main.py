@@ -588,7 +588,16 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                     _set_task_status(task_id, {"status": "error", "error": "所选平台均未配置 Cookie，请先填写"})
                     return
 
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                # 添加整体超时保护（8分钟）
+                try:
+                    results = await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=480
+                    )
+                except asyncio.TimeoutError:
+                    _set_task_status(task_id, {"status": "error", "error": "搜索超时（8分钟），请减少关键词数量或稍后重试"})
+                    return
+
                 all_posts: list[dict] = []
                 errors: list[str] = []
                 platform_counts: dict[str, int] = {}
@@ -721,7 +730,14 @@ async def batch_search(req: BatchSearchRequest):
                                 plat_names.append("reddit")
 
                         if not tasks: return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 无可用平台 Cookie"]
-                        results = await asyncio.gather(*tasks, return_exceptions=True)
+                        # 单关键词搜索超时保护（3分钟）
+                        try:
+                            results = await asyncio.wait_for(
+                                asyncio.gather(*tasks, return_exceptions=True),
+                                timeout=180
+                            )
+                        except asyncio.TimeoutError:
+                            return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 搜索超时（3分钟）"]
                         kw_rows, kw_errors, kw_post_count = [], [], 0
                         for plat, result in zip(plat_names, results):
                             if isinstance(result, Exception):
@@ -735,7 +751,16 @@ async def batch_search(req: BatchSearchRequest):
                         return kw_rows, {"keyword": kw, "post_count": kw_post_count, "total_rows": len([x for x in results if not isinstance(x, Exception) and x[0]]) if results else 0}, kw_errors
 
                 valid_keywords = [(kw.strip(), i) for i, kw in enumerate(req.keywords) if kw.strip()]
-                all_kw_results = await asyncio.gather(*[_search_one_keyword(kw, idx) for kw, idx in valid_keywords], return_exceptions=True)
+                # 批量搜索整体超时保护（每关键词3分钟，最多10分钟）
+                batch_timeout = min(len(valid_keywords) * 180, 600)
+                try:
+                    all_kw_results = await asyncio.wait_for(
+                        asyncio.gather(*[_search_one_keyword(kw, idx) for kw, idx in valid_keywords], return_exceptions=True),
+                        timeout=batch_timeout
+                    )
+                except asyncio.TimeoutError:
+                    _set_task_status(task_id, {"status": "error", "error": f"批量搜索超时（{batch_timeout//60}分钟）"})
+                    return
 
                 for result in all_kw_results:
                     if isinstance(result, Exception):
