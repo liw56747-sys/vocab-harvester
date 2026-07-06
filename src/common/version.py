@@ -53,6 +53,12 @@ def get_platform() -> str:
 # ── 更新检查 ──────────────────────────────────────────
 
 _GITHUB_API = "https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest"
+# 国内可访问的 GitHub 镜像 API
+_GITHUB_MIRRORS = [
+    "https://ghfast.top/https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest",
+    "https://gh-proxy.com/https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest",
+    "https://mirror.ghproxy.com/https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest",
+]
 _update_info: dict | None = None
 
 
@@ -135,15 +141,17 @@ def check_for_update_async(callback=None):
         else:
             opener = urllib.request.build_opener()
 
-        # 尝试 2 次，提高成功率
+        # 构建尝试列表：原始 API + 镜像
+        apis = [_GITHUB_API] + _GITHUB_MIRRORS
         last_error = None
-        for attempt in range(2):
+
+        for api_url in apis:
             try:
                 req = urllib.request.Request(
-                    _GITHUB_API,
+                    api_url,
                     headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "vocab-harvester"},
                 )
-                with opener.open(req, timeout=15) as resp:
+                with opener.open(req, timeout=10) as resp:
                     data = json.loads(resp.read().decode())
 
                 latest = data.get("tag_name", "").lstrip("v")
@@ -179,16 +187,14 @@ def check_for_update_async(callback=None):
                 else:
                     _update_info = {"up_to_date": True}
                     logger.info(f"Up to date: {current}")
-                return  # 成功，退出重试循环
+                return  # 成功，退出
 
             except Exception as e:
                 last_error = e
-                logger.debug(f"Update check attempt {attempt + 1} failed: {e}")
-                if attempt == 0:
-                    import time
-                    time.sleep(1)  # 等 1 秒后重试
+                logger.debug(f"Update check failed ({api_url}): {e}")
+                continue  # 尝试下一个 API
 
-        # 所有尝试都失败
+        # 所有 API 都失败
         _update_info = {"error": str(last_error)}
 
         if callback and _update_info:
