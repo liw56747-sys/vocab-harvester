@@ -2340,6 +2340,8 @@ async function manualCheckUpdate() {
 }
 
 function showUpdateBanner(info) {
+  // 如果用户已关闭此版本的横幅，不再重复弹出
+  if (localStorage.getItem('update_dismissed_version') === info.latest_version) return;
   const banner = document.getElementById('update-banner');
   const versionEl = document.getElementById('update-version');
   const linkEl = document.getElementById('update-download-link');
@@ -2352,6 +2354,10 @@ function showUpdateBanner(info) {
 }
 
 function dismissUpdate() {
+  const versionEl = document.getElementById('update-version');
+  if (versionEl) {
+    localStorage.setItem('update_dismissed_version', versionEl.textContent.replace('v', ''));
+  }
   document.getElementById('update-banner').classList.remove('show');
 }
 
@@ -2385,6 +2391,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   // 自动检查更新并显示横幅
   autoCheckUpdate();
+  // 每 4 小时定期检查一次更新
+  setInterval(async () => {
+    try {
+      const info = await api('/api/check-update', { method: 'POST' });
+      if (info.latest_version) showUpdateBanner(info);
+    } catch (e) { /* 静默忽略 */ }
+  }, 4 * 60 * 60 * 1000);
 });
 
 
