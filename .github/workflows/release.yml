@@ -356,7 +356,7 @@ jobs:
           gh release create "$TAG" \
             --title "vocab-harvester v${VERSION}" \
             --generate-notes \
-            --draft
+            --latest
 
           # Upload assets
           gh release upload "$TAG" \
