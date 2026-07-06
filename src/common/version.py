@@ -53,11 +53,14 @@ def get_platform() -> str:
 # ── 更新检查 ──────────────────────────────────────────
 
 _GITHUB_API = "https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest"
-# 国内可访问的 GitHub 镜像 API
+# 国内可访问的 GitHub 镜像 API（按优先级排序）
 _GITHUB_MIRRORS = [
-    "https://ghfast.top/https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest",
-    "https://gh-proxy.com/https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest",
-    "https://mirror.ghproxy.com/https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest",
+    # 使用 kkgithub 镜像（国内较稳定）
+    "https://api.kkgithub.com/repos/liw56747-sys/vocab-harvester/releases/latest",
+    # ghproxy 镜像
+    "https://ghgo.xyz/https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest",
+    # 直接尝试 GitHub（有时可以直连）
+    "https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest",
 ]
 _update_info: dict | None = None
 
@@ -141,8 +144,8 @@ def check_for_update_async(callback=None):
         else:
             opener = urllib.request.build_opener()
 
-        # 构建尝试列表：原始 API + 镜像
-        apis = [_GITHUB_API] + _GITHUB_MIRRORS
+        # 构建尝试列表：镜像优先（包含原始 API）
+        apis = _GITHUB_MIRRORS
         last_error = None
 
         for api_url in apis:
