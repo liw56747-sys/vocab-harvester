@@ -56,61 +56,97 @@ _GITHUB_API = "https://api.github.com/repos/liw56747-sys/vocab-harvester/release
 _update_info: dict | None = None
 
 
+def _get_proxy_url() -> str | None:
+    """自动检测代理地址：环境变量 > 系统配置"""
+    import os
+    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        val = os.environ.get(var, "").strip()
+        if val:
+            return val
+    return None
+
+
 def check_for_update_async(callback=None):
     """后台线程检查 GitHub 最新版本，完成后调用 callback(info)"""
     def _check():
         global _update_info
-        try:
-            req = urllib.request.Request(
-                _GITHUB_API,
-                headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "vocab-harvester"},
-            )
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                data = json.loads(resp.read().decode())
+        # 重置状态，确保每次检查都是全新的
+        _update_info = None
 
-            latest = data.get("tag_name", "").lstrip("v")
-            current = get_version()
+        proxy_url = _get_proxy_url()
+        if proxy_url:
+            proxy_handler = urllib.request.ProxyHandler({
+                "https": proxy_url, "http": proxy_url,
+            })
+            opener = urllib.request.build_opener(proxy_handler)
+        else:
+            opener = urllib.request.build_opener()
 
-            if latest and _version_gt(latest, current):
-                assets = data.get("assets", [])
-                plat = get_platform()
+        # 尝试 2 次，提高成功率
+        last_error = None
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(
+                    _GITHUB_API,
+                    headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "vocab-harvester"},
+                )
+                with opener.open(req, timeout=15) as resp:
+                    data = json.loads(resp.read().decode())
 
-                # 根据平台匹配安装包后缀
-                if plat == "macos":
-                    suffix = ".dmg"
-                elif plat == "windows":
-                    suffix = "-setup.exe"
+                latest = data.get("tag_name", "").lstrip("v")
+                current = get_version()
+
+                if latest and _version_gt(latest, current):
+                    assets = data.get("assets", [])
+                    plat = get_platform()
+
+                    # 根据平台匹配安装包后缀
+                    if plat == "macos":
+                        suffix = ".dmg"
+                    elif plat == "windows":
+                        suffix = "-setup.exe"
+                    else:
+                        suffix = ".tar.gz"
+
+                    download_url = ""
+                    for asset in assets:
+                        if asset["name"].endswith(suffix):
+                            download_url = asset["browser_download_url"]
+                            break
+
+                    _update_info = {
+                        "latest_version": latest,
+                        "current_version": current,
+                        "download_url": download_url,
+                        "release_notes": data.get("body", ""),
+                        "release_page": data.get("html_url", ""),
+                        "platform": plat,
+                    }
+                    logger.info(f"Update available: {current} -> {latest} ({plat})")
                 else:
-                    suffix = ".tar.gz"
+                    _update_info = {"up_to_date": True}
+                    logger.info(f"Up to date: {current}")
+                return  # 成功，退出重试循环
 
-                download_url = ""
-                for asset in assets:
-                    if asset["name"].endswith(suffix):
-                        download_url = asset["browser_download_url"]
-                        break
+            except Exception as e:
+                last_error = e
+                logger.debug(f"Update check attempt {attempt + 1} failed: {e}")
+                if attempt == 0:
+                    import time
+                    time.sleep(1)  # 等 1 秒后重试
 
-                _update_info = {
-                    "latest_version": latest,
-                    "current_version": current,
-                    "download_url": download_url,
-                    "release_notes": data.get("body", ""),
-                    "release_page": data.get("html_url", ""),
-                    "platform": plat,
-                }
-                logger.info(f"Update available: {current} -> {latest} ({plat})")
-            else:
-                _update_info = {"up_to_date": True}
-                logger.info(f"Up to date: {current}")
-
-        except Exception as e:
-            logger.debug(f"Update check failed: {e}")
-            _update_info = {"error": str(e)}
+        # 所有尝试都失败
+        _update_info = {"error": str(last_error)}
 
         if callback and _update_info:
             try:
                 callback(_update_info)
             except Exception:
                 pass
+
+    # 立即重置，避免旧的错误结果被 /api/check-update 轮询读到
+    global _update_info
+    _update_info = None
 
     t = threading.Thread(target=_check, daemon=True)
     t.start()

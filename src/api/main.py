@@ -809,7 +809,7 @@ async def api_check_update():
     """触发后台更新检查"""
     check_for_update_async()
     import time
-    for _ in range(20):
+    for _ in range(60):
         info = get_update_info()
         if info is not None:
             return info

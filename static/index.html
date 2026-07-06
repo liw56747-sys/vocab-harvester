@@ -2331,8 +2331,10 @@ async function manualCheckUpdate() {
       toast(t('update_available', { version: info.latest_version }), 'success');
     } else if (info.up_to_date) {
       toast(t('no_update'), 'info');
+    } else if (info.status === 'checking') {
+      toast(t('checking_update'), 'info');
     } else if (info.error) {
-      toast(t('update_check_failed'), 'error');
+      toast(t('update_check_failed') + ': ' + info.error, 'error');
     }
   } catch (e) {
     toast(t('update_check_failed'), 'error');
