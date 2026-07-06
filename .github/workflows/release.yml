@@ -317,12 +317,14 @@ jobs:
       - name: Derive version string
         id: version
         run: |
-          TAG="${{ github.ref_name }}"
+          REF="${{ github.ref_name }}"
           INPUT_VER="${{ inputs.version }}"
           if [ -n "$INPUT_VER" ]; then
             VER="$INPUT_VER"
+            TAG="v${INPUT_VER}"
           else
-            VER="${TAG#v}"
+            VER="${REF#v}"
+            TAG="$REF"
           fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
