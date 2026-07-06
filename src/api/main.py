@@ -825,6 +825,105 @@ async def api_update_info():
     return info
 
 
+# ── 一键更新 ──────────────────────────────────────────────
+
+_update_download_state = {
+    "status": "idle",  # idle / downloading / done / error / installing
+    "progress": 0,     # 0-100
+    "error": "",
+    "file_path": "",
+}
+
+
+@app.post("/api/download-update")
+async def api_download_update():
+    """下载新版本安装包"""
+    global _update_download_state
+    
+    info = get_update_info()
+    if not info or not info.get("download_url"):
+        return {"status": "error", "error": "没有可用的更新"}
+    
+    if _update_download_state["status"] == "downloading":
+        return {"status": "downloading", "progress": _update_download_state["progress"]}
+    
+    download_url = info["download_url"]
+    latest_version = info["latest_version"]
+    plat = get_platform()
+    
+    # 确定文件名和保存路径
+    if plat == "macos":
+        filename = f"vocab-harvester-{latest_version}.dmg"
+    elif plat == "windows":
+        filename = f"vocab-harvester-{latest_version}-setup.exe"
+    else:
+        filename = f"vocab-harvester-{latest_version}.tar.gz"
+    
+    # 保存到用户下载目录
+    import os
+    download_dir = Path.home() / "Downloads"
+    dest_path = download_dir / filename
+    
+    _update_download_state = {"status": "downloading", "progress": 0, "error": "", "file_path": ""}
+    
+    def _do_download():
+        global _update_download_state
+        try:
+            def on_progress(downloaded, total):
+                if total > 0:
+                    _update_download_state["progress"] = int(downloaded * 100 / total)
+            
+            success = download_update(download_url, dest_path, progress_callback=on_progress)
+            if success:
+                _update_download_state["status"] = "done"
+                _update_download_state["progress"] = 100
+                _update_download_state["file_path"] = str(dest_path)
+            else:
+                _update_download_state["status"] = "error"
+                _update_download_state["error"] = "下载失败"
+        except Exception as e:
+            _update_download_state["status"] = "error"
+            _update_download_state["error"] = str(e)
+    
+    # 后台线程下载
+    t = threading.Thread(target=_do_download, daemon=True)
+    t.start()
+    
+    return {"status": "downloading", "progress": 0}
+
+
+@app.get("/api/download-progress")
+async def api_download_progress():
+    """获取下载进度"""
+    return _update_download_state
+
+
+@app.post("/api/install-update")
+async def api_install_update():
+    """安装已下载的安装包"""
+    file_path = _update_download_state.get("file_path", "")
+    if not file_path or not Path(file_path).exists():
+        return {"status": "error", "error": "安装包不存在"}
+    
+    plat = get_platform()
+    try:
+        import subprocess
+        if plat == "macos":
+            # macOS: 打开 DMG
+            subprocess.Popen(["open", file_path])
+            _update_download_state["status"] = "installing"
+            return {"status": "installing", "message": "已打开 DMG，请拖拽应用到 Applications"}
+        elif plat == "windows":
+            # Windows: 运行安装程序
+            subprocess.Popen([file_path], shell=True)
+            _update_download_state["status"] = "installing"
+            return {"status": "installing", "message": "安装程序已启动"}
+        else:
+            return {"status": "error", "error": "不支持的平台"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 _chromium_install_state = {
     "status": "unknown",  
     "progress": "",
