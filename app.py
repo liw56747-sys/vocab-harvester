@@ -366,9 +366,7 @@ def main():
             if not self.window:
                 return ""
             result = self.window.create_file_dialog(
-                webview.OPEN_DIALOG,
-                allow_multiple=False,
-                directory=True,
+                webview.FileDialog.FOLDER,
             )
             if result and len(result) > 0:
                 return result[0]
