@@ -45,6 +45,15 @@ CREATE TABLE IF NOT EXISTS crawl_log (
 );
 """
 
+CREATE_MODEL_CONFIG_TABLE = """
+CREATE TABLE IF NOT EXISTS model_config (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_key      TEXT NOT NULL UNIQUE,
+    config_value    TEXT NOT NULL DEFAULT '',
+    updated_at      TEXT NOT NULL
+);
+"""
+
 CREATE_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_vocab_word ON vocabulary(word);
 CREATE INDEX IF NOT EXISTS idx_vocab_status ON vocabulary(status);
@@ -79,6 +88,7 @@ async def init_db(db_path: str | Path = "./data/vocab.db") -> aiosqlite.Connecti
 
     await _connection.execute(CREATE_VOCAB_TABLE)
     await _connection.execute(CREATE_CRAWL_LOG_TABLE)
+    await _connection.execute(CREATE_MODEL_CONFIG_TABLE)
     await _connection.executescript(CREATE_INDEX)
 
     # 迁移：为旧表添加新列（忽略已存在的列）

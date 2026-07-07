@@ -1623,9 +1623,47 @@ kbd {
               <span data-i18n="mode_auto">自动</span>
             </label>
           </div>
-          <div class="settings-hint" id="import-mode-hint" data-i18n="mode_manual_hint">手动模式：仅导入存储，不进行 AI 分析</div>
+          <div class="settings-hint" id="import-mode-hint" data-i18n="mode_manual_hint">手动模式：上传文件后进行分析</div>
         </div>
 
+        <!-- 手动模式：文件上传区域 -->
+        <div id="manual-mode-area" class="form-row" style="margin-top:12px">
+          <div class="form-group">
+            <label data-i18n="select_file">选择文件</label>
+            <input type="file" id="import-file" accept=".json,.csv" style="padding:6px">
+          </div>
+          <button class="btn btn-primary" id="import-btn" onclick="startImport()" data-i18n="btn_import">导入并分析</button>
+        </div>
+
+        <!-- 自动模式：状态提示区域 -->
+        <div id="auto-mode-area" style="margin-top:12px;display:none">
+          <div id="auto-mode-status" class="settings-hint" style="padding:12px;background:var(--bg-secondary);border-radius:8px">
+            <span id="auto-status-text">正在检查抓取任务状态...</span>
+          </div>
+          <button class="btn btn-primary" id="auto-analyze-btn" onclick="startAutoAnalyze()" style="margin-top:8px;display:none" data-i18n="btn_analyze">开始分析</button>
+        </div>
+
+        <!-- 工作流选择区域 -->
+        <div class="form-group" style="margin-top:16px">
+          <label>分析工作流</label>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="舆情分析工作流">
+              <input type="checkbox" id="wf-opinion" value="public_opinion" checked> <span>舆情</span>
+            </label>
+            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="涉政分析工作流">
+              <input type="checkbox" id="wf-politics" value="politics"> <span>涉政</span>
+            </label>
+            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="违法分析工作流">
+              <input type="checkbox" id="wf-illegal" value="illegal"> <span>违法</span>
+            </label>
+            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="色情低俗分析工作流">
+              <input type="checkbox" id="wf-porn" value="porn"> <span>色情低俗</span>
+            </label>
+          </div>
+          <div class="settings-hint" style="margin-top:4px">选择需要执行的分析工作流，可多选。未导入的工作流将显示为灰色不可用。</div>
+        </div>
+
+        <!-- 数据筛选 -->
         <div class="form-group" style="margin-top:8px">
           <label data-i18n="data_filter">数据筛选</label>
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">
@@ -1644,15 +1682,18 @@ kbd {
           </div>
         </div>
 
-        <div class="form-row" style="margin-top:12px">
-          <div class="form-group">
-            <label data-i18n="select_file">选择文件</label>
-            <input type="file" id="import-file" accept=".json,.csv" style="padding:6px">
+        <!-- 进度条 -->
+        <div id="import-progress-area" style="margin-top:12px;display:none">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div class="progress-bar" style="flex:1;height:8px;background:var(--bg-secondary);border-radius:4px;overflow:hidden">
+              <div id="import-progress-bar" style="width:0%;height:100%;background:var(--primary);transition:width 0.3s ease"></div>
+            </div>
+            <span id="import-progress-text" style="font-size:12px;color:var(--text-secondary);min-width:60px">0%</span>
           </div>
-          <button class="btn btn-primary" id="import-btn" onclick="startImport()" data-i18n="btn_import">导入并分析</button>
+          <div id="import-progress-status" class="settings-hint" style="margin-top:4px"></div>
         </div>
 
-        <div id="import-result"></div>
+        <div id="import-result" style="margin-top:12px"></div>
       </div>
 
       <div class="card">
@@ -1946,13 +1987,13 @@ const I18N = {
     upload_file_desc: '支持 JSON 和 CSV 格式，文件应包含帖子内容。',
     data_source: '数据来源',
     mode_selection: '模式选择', mode_auto: '自动', mode_manual: '手动',
-    mode_auto_hint: '自动模式：根据筛选条件自动进行 AI 分析',
-    mode_manual_hint: '手动模式：仅导入存储，不进行 AI 分析',
+    mode_auto_hint: '自动模式：无需上传文件，自动分析上次抓取的数据',
+    mode_manual_hint: '手动模式：上传文件后进行分析',
     data_filter: '数据筛选', filter_type: '类型 (type):',
     include_author: '包含', content_required: '(content 必选)',
     platform_weibo: '微博', platform_xhs: '小红书', platform_twitter: 'Twitter',
     platform_douyin: '抖音', platform_other: '其他',
-    select_file: '选择文件', btn_import: '导入并分析',
+    select_file: '选择文件', btn_import: '导入并分析', btn_analyze: '开始分析',
     format_title: '数据格式说明',
     format_json: 'JSON 格式：', format_csv: 'CSV 格式：',
     format_required: '必填字段：', format_optional: '可选字段：',
@@ -2137,13 +2178,13 @@ const I18N = {
     upload_file_desc: 'Supports JSON and CSV formats. Files should contain post content.',
     data_source: 'Data Source',
     mode_selection: 'Mode', mode_auto: 'Auto', mode_manual: 'Manual',
-    mode_auto_hint: 'Auto mode: Automatically run AI analysis based on filters',
-    mode_manual_hint: 'Manual mode: Import and store only, no AI analysis',
+    mode_auto_hint: 'Auto mode: Analyze last scraped data without uploading',
+    mode_manual_hint: 'Manual mode: Upload file then analyze',
     data_filter: 'Data Filter', filter_type: 'Type:',
     include_author: 'Include', content_required: '(content required)',
     platform_weibo: 'Weibo', platform_xhs: 'Xiaohongshu', platform_twitter: 'Twitter',
     platform_douyin: 'Douyin', platform_other: 'Other',
-    select_file: 'Select File', btn_import: 'Import & Analyze',
+    select_file: 'Select File', btn_import: 'Import & Analyze', btn_analyze: 'Start Analysis',
     format_title: 'Data Format Reference',
     format_json: 'JSON format:', format_csv: 'CSV format:',
     format_required: 'Required fields:', format_optional: 'Optional fields:',
@@ -2315,19 +2356,36 @@ function handleKeywordFileUpload(input) {
 }
 
 function saveModelSettings() {
-  localStorage.setItem('model_base_url', document.getElementById('model-base-url').value.trim());
-  localStorage.setItem('model_api_key', document.getElementById('model-api-key').value.trim());
-  localStorage.setItem('model_name', document.getElementById('model-name').value.trim());
-  localStorage.setItem('model_backup_base_url', document.getElementById('model-backup-base-url').value.trim());
-  localStorage.setItem('model_backup_api_key', document.getElementById('model-backup-api-key').value.trim());
-  localStorage.setItem('model_backup_name', document.getElementById('model-backup-name').value.trim());
+  const data = {
+    model_base_url: document.getElementById('model-base-url').value.trim(),
+    model_api_key: document.getElementById('model-api-key').value.trim(),
+    model_name: document.getElementById('model-name').value.trim(),
+    model_backup_base_url: document.getElementById('model-backup-base-url').value.trim(),
+    model_backup_api_key: document.getElementById('model-backup-api-key').value.trim(),
+    model_backup_name: document.getElementById('model-backup-name').value.trim(),
+  };
+  // 同时保存到 localStorage（快速读取）和数据库（持久化）
+  Object.entries(data).forEach(([k, v]) => localStorage.setItem(k, v));
+  // 异步保存到数据库
+  api('/api/model-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(res => {
+    if (res.status === 'ok') toast(t('model_saved'), 'success');
+  }).catch(e => console.warn('DB save failed:', e));
   loadModelSettings();
-  toast(t('model_saved'), 'success');
 }
 
 function clearModelSettings() {
   ['model_base_url', 'model_api_key', 'model_name', 'model_backup_base_url', 'model_backup_api_key', 'model_backup_name'].forEach(k => localStorage.removeItem(k));
   document.querySelectorAll('#model-config-card input').forEach(input => input.value = '');
+  // 同时清除数据库
+  api('/api/model-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_base_url: '', model_api_key: '', model_name: '', model_backup_base_url: '', model_backup_api_key: '', model_backup_name: '' }),
+  }).catch(e => console.warn('DB clear failed:', e));
   loadModelSettings();
   toast(t('model_cleared'), 'info');
 }
@@ -2347,6 +2405,29 @@ function loadModelSettings() {
   } else {
     summary.textContent = t('model_not_configured');
   }
+}
+
+// 从数据库加载模型配置（供自动模式等使用）
+async function loadModelConfigFromDB() {
+  try {
+    const res = await api('/api/model-config');
+    if (res.status === 'ok' && res.config) {
+      // 同步到 localStorage
+      Object.entries(res.config).forEach(([k, v]) => {
+        if (v) localStorage.setItem(k, v);
+      });
+      return res.config;
+    }
+  } catch (e) { /* ignore */ }
+  // 回退到 localStorage
+  return {
+    model_base_url: localStorage.getItem('model_base_url') || '',
+    model_api_key: localStorage.getItem('model_api_key') || '',
+    model_name: localStorage.getItem('model_name') || '',
+    model_backup_base_url: localStorage.getItem('model_backup_base_url') || '',
+    model_backup_api_key: localStorage.getItem('model_backup_api_key') || '',
+    model_backup_name: localStorage.getItem('model_backup_name') || '',
+  };
 }
 
 async function doExport(format) {
@@ -2678,7 +2759,21 @@ function showPage(name, el) {
   if (name === 'dashboard') loadStats();
   if (name === 'vocabulary') loadVocab();
   if (name === 'twitter') loadAllCookies();
-  if (name === 'import') loadModelSettings();
+  if (name === 'import') {
+    loadModelSettings();
+    // 从数据库恢复模型配置（确保跨版本持久化）
+    loadModelConfigFromDB().then(cfg => {
+      if (cfg && cfg.model_api_key) {
+        document.getElementById('model-base-url').value = cfg.model_base_url || '';
+        document.getElementById('model-api-key').value = cfg.model_api_key || '';
+        document.getElementById('model-name').value = cfg.model_name || '';
+        document.getElementById('model-backup-base-url').value = cfg.model_backup_base_url || '';
+        document.getElementById('model-backup-api-key').value = cfg.model_backup_api_key || '';
+        document.getElementById('model-backup-name').value = cfg.model_backup_name || '';
+        loadModelSettings();
+      }
+    });
+  }
   if (name === 'settings') loadSettings();
 }
 
@@ -2735,15 +2830,153 @@ async function loadStats() {
 }
 
 // ── Import ──
+let _autoModePolling = null;
+
 function toggleImportMode() {
   const mode = document.querySelector('input[name="import-mode"]:checked').value;
   const hint = document.getElementById('import-mode-hint');
+  const manualArea = document.getElementById('manual-mode-area');
+  const autoArea = document.getElementById('auto-mode-area');
+
   if (mode === 'auto') {
     hint.textContent = t('mode_auto_hint');
     hint.setAttribute('data-i18n', 'mode_auto_hint');
+    manualArea.style.display = 'none';
+    autoArea.style.display = 'block';
+    checkAutoModeStatus();
   } else {
     hint.textContent = t('mode_manual_hint');
     hint.setAttribute('data-i18n', 'mode_manual_hint');
+    manualArea.style.display = 'flex';
+    autoArea.style.display = 'none';
+    if (_autoModePolling) { clearInterval(_autoModePolling); _autoModePolling = null; }
+  }
+}
+
+async function checkAutoModeStatus() {
+  const statusText = document.getElementById('auto-status-text');
+  const analyzeBtn = document.getElementById('auto-analyze-btn');
+  try {
+    const res = await api('/api/search-running');
+    if (res.running) {
+      statusText.innerHTML = '<span style="color:var(--primary)"><span class="loading"></span> 抓取任务进行中，完成后将自动触发分析...</span>';
+      analyzeBtn.style.display = 'none';
+      // 启动轮询等待抓取完成
+      if (_autoModePolling) clearInterval(_autoModePolling);
+      _autoModePolling = setInterval(async () => {
+        try {
+          const r = await api('/api/search-running');
+          if (!r.running) {
+            clearInterval(_autoModePolling);
+            _autoModePolling = null;
+            statusText.innerHTML = '<span style="color:var(--success)">✓ 抓取任务已完成，可以开始分析</span>';
+            analyzeBtn.style.display = 'inline-flex';
+          }
+        } catch (e) { /* ignore */ }
+      }, 2000);
+    } else {
+      statusText.innerHTML = '<span style="color:var(--success)">✓ 无正在进行的抓取任务，可直接分析上次抓取的数据</span>';
+      analyzeBtn.style.display = 'inline-flex';
+    }
+  } catch (e) {
+    statusText.innerHTML = '<span style="color:var(--danger)">状态检查失败: ' + esc(e.message) + '</span>';
+  }
+}
+
+async function startAutoAnalyze() {
+  const btn = document.getElementById('auto-analyze-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading"></span> 分析中...';
+  showImportProgress('正在分析上次抓取的数据...', 10);
+
+  try {
+    // 收集工作流参数
+    const workflows = getSelectedWorkflows();
+    const formData = new FormData();
+    formData.append('workflows', JSON.stringify(workflows));
+
+    // 附加模型配置
+    const modelCfg = await loadModelConfigFromDB();
+    if (modelCfg && modelCfg.model_api_key && modelCfg.model_base_url) {
+      formData.append('model_api_key', modelCfg.model_api_key);
+      formData.append('model_base_url', modelCfg.model_base_url);
+      formData.append('model_name', modelCfg.model_name || '');
+      formData.append('model_backup_base_url', modelCfg.model_backup_base_url || '');
+      formData.append('model_backup_api_key', modelCfg.model_backup_api_key || '');
+      formData.append('model_backup_name', modelCfg.model_backup_name || '');
+    }
+
+    updateImportProgress(50, '正在调用分析工作流...');
+    const res = await fetch('/api/analyze-last', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '分析失败');
+    }
+    const stats = await res.json();
+    updateImportProgress(100, '分析完成');
+    renderImportResult(stats);
+    toast('分析完成', 'success');
+  } catch (e) {
+    document.getElementById('import-result').innerHTML = `<div class="crawl-result error"><strong>分析失败</strong>: ${esc(e.message)}</div>`;
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = t('btn_analyze') || '开始分析';
+    hideImportProgress();
+  }
+}
+
+function getSelectedWorkflows() {
+  const wfs = [];
+  document.querySelectorAll('#page-import input[id^="wf-"]:checked').forEach(cb => wfs.push(cb.value));
+  return wfs;
+}
+
+function showImportProgress(text, pct) {
+  document.getElementById('import-progress-area').style.display = 'block';
+  document.getElementById('import-progress-bar').style.width = pct + '%';
+  document.getElementById('import-progress-text').textContent = pct + '%';
+  document.getElementById('import-progress-status').textContent = text;
+}
+function updateImportProgress(pct, text) {
+  document.getElementById('import-progress-bar').style.width = pct + '%';
+  document.getElementById('import-progress-text').textContent = pct + '%';
+  if (text) document.getElementById('import-progress-status').textContent = text;
+}
+function hideImportProgress() {
+  setTimeout(() => { document.getElementById('import-progress-area').style.display = 'none'; }, 1500);
+}
+
+function renderImportResult(stats) {
+  const div = document.getElementById('import-result');
+  if (stats.status === 'success') {
+    let postsHtml = '';
+    if (stats.sampled_posts && stats.sampled_posts.length > 0) {
+      postsHtml = `<div class="sampled-posts">
+        <h4>${t('import_posts', {n: stats.sampled_posts.length})}</h4>
+        ${stats.sampled_posts.map(post => `
+          <div class="post-card">
+            <div class="post-header">
+              <span class="post-platform">${esc(post.platform)}</span>
+              <span class="post-author">@${esc(post.author)}</span>
+            </div>
+            <div class="post-content">${esc(post.content)}</div>
+          </div>
+        `).join('')}
+      </div>`;
+    }
+    div.innerHTML = `<div class="crawl-result">
+      <strong>${t('import_success')}</strong>
+      <div class="result-stats">
+        <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('import_stat_posts')}</div></div>
+        <div class="result-stat"><div class="num">${stats.total_keywords}</div><div class="lbl">${t('import_stat_keywords')}</div></div>
+        <div class="result-stat"><div class="num">${stats.ingested_count || 0}</div><div class="lbl">${t('import_stat_vocab')}</div></div>
+      </div>
+      ${postsHtml}
+    </div>`;
+    loadStats();
+  } else {
+    div.innerHTML = `<div class="crawl-result error"><strong>${t('import_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
   }
 }
 
@@ -2763,6 +2996,7 @@ async function startImport() {
   btn.disabled = true;
   btn.innerHTML = '<span class="loading"></span> ' + t('importing');
   document.getElementById('import-result').innerHTML = '';
+  showImportProgress('正在上传文件...', 10);
 
   try {
     const formData = new FormData();
@@ -2771,6 +3005,10 @@ async function startImport() {
     formData.append('type_post', typePost ? 'true' : 'false');
     formData.append('type_comment', typeComment ? 'true' : 'false');
     formData.append('include_author', includeAuthor ? 'true' : 'false');
+
+    // 附加工作流参数
+    const workflows = getSelectedWorkflows();
+    formData.append('workflows', JSON.stringify(workflows));
 
     // 附加模型 API 配置（如有）
     const _mKey = localStorage.getItem('model_api_key') || '';
@@ -2784,6 +3022,7 @@ async function startImport() {
       formData.append('model_backup_name', localStorage.getItem('model_backup_name') || '');
     }
 
+    updateImportProgress(40, '正在分析数据...');
     const res = await fetch('/api/import', {
       method: 'POST',
       body: formData,
@@ -2795,38 +3034,9 @@ async function startImport() {
     }
 
     const stats = await res.json();
-    const div = document.getElementById('import-result');
-
-    if (stats.status === 'success') {
-      let postsHtml = '';
-      if (stats.sampled_posts && stats.sampled_posts.length > 0) {
-        postsHtml = `<div class="sampled-posts">
-          <h4>${t('import_posts', {n: stats.sampled_posts.length})}</h4>
-          ${stats.sampled_posts.map(post => `
-            <div class="post-card">
-              <div class="post-header">
-                <span class="post-platform">${esc(post.platform)}</span>
-                <span class="post-author">@${esc(post.author)}</span>
-              </div>
-              <div class="post-content">${esc(post.content)}</div>
-            </div>
-          `).join('')}
-        </div>`;
-      }
-
-      div.innerHTML = `<div class="crawl-result">
-        <strong>${t('import_success')}</strong>
-        <div class="result-stats">
-          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('import_stat_posts')}</div></div>
-          <div class="result-stat"><div class="num">${stats.total_keywords}</div><div class="lbl">${t('import_stat_keywords')}</div></div>
-          <div class="result-stat"><div class="num">${stats.ingested_count || 0}</div><div class="lbl">${t('import_stat_vocab')}</div></div>
-        </div>
-        ${postsHtml}
-      </div>`;
-      toast(t('import_success'), 'success');
-    } else {
-      div.innerHTML = `<div class="crawl-result error"><strong>${t('import_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
-    }
+    updateImportProgress(100, '分析完成');
+    renderImportResult(stats);
+    toast(t('import_success'), 'success');
     loadStats();
   } catch (e) {
     document.getElementById('import-result').innerHTML = `<div class="crawl-result error"><strong>${t('import_failed')}</strong>: ${esc(e.message)}</div>`;
@@ -2834,6 +3044,7 @@ async function startImport() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = t('btn_import');
+    hideImportProgress();
   }
 }
 

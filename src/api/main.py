@@ -228,6 +228,138 @@ async def cancel_search(task_id: str):
     return {"status": "ok", "message": "搜索已取消"}
 
 
+# ── 搜索任务状态查询（供自动模式轮询） ──────────────────────
+
+@app.get("/api/search-running")
+async def search_running():
+    """检查是否有正在运行的搜索任务"""
+    with _BG_TASKS_LOCK:
+        for data in _BACKGROUND_TASKS.values():
+            if data.get("status") == "running":
+                return {"running": True, "task_id": data.get("_task_id", "")}
+    return {"running": False}
+
+
+# ── 模型配置持久化 ──────────────────────────────────────────
+
+class ModelConfigData(BaseModel):
+    model_base_url: str = ""
+    model_api_key: str = ""
+    model_name: str = ""
+    model_backup_base_url: str = ""
+    model_backup_api_key: str = ""
+    model_backup_name: str = ""
+
+
+@app.get("/api/model-config")
+async def get_model_config():
+    """从数据库读取模型配置"""
+    try:
+        from src.common.database import get_db
+        db = await get_db()
+        cursor = await db.execute("SELECT config_key, config_value FROM model_config")
+        rows = await cursor.fetchall()
+        config = {row[0]: row[1] for row in rows}
+        return {"status": "ok", "config": config}
+    except Exception as e:
+        logger.error(f"读取模型配置失败: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/model-config")
+async def save_model_config(req: ModelConfigData):
+    """保存模型配置到数据库"""
+    try:
+        from src.common.database import get_db
+        db = await get_db()
+        now = datetime.now().isoformat()
+        fields = {
+            "model_base_url": req.model_base_url,
+            "model_api_key": req.model_api_key,
+            "model_name": req.model_name,
+            "model_backup_base_url": req.model_backup_base_url,
+            "model_backup_api_key": req.model_backup_api_key,
+            "model_backup_name": req.model_backup_name,
+        }
+        for key, value in fields.items():
+            await db.execute(
+                "INSERT INTO model_config (config_key, config_value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(config_key) DO UPDATE SET config_value=excluded.config_value, updated_at=excluded.updated_at",
+                (key, value, now)
+            )
+        await db.commit()
+        return {"status": "ok", "message": "配置已保存"}
+    except Exception as e:
+        logger.error(f"保存模型配置失败: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+# ── 分析上次抓取数据（自动模式） ──────────────────────────────
+
+# 缓存最近一次搜索的结果数据（task_id -> csv_data）
+_LAST_SEARCH_DATA: dict[str, str] = {}
+_LAST_SEARCH_LOCK = threading.Lock()
+
+
+@app.post("/api/analyze-last")
+async def analyze_last_data(
+    workflows: str = Form(default="[]"),
+    model_api_key: str = Form(default=""),
+    model_base_url: str = Form(default=""),
+    model_name: str = Form(default=""),
+    model_backup_base_url: str = Form(default=""),
+    model_backup_api_key: str = Form(default=""),
+    model_backup_name: str = Form(default=""),
+):
+    """分析最近一次搜索抓取的数据（无需上传文件）"""
+    import csv as _csv
+    with _LAST_SEARCH_LOCK:
+        if not _LAST_SEARCH_DATA:
+            raise HTTPException(400, "没有可分析的抓取数据，请先完成一次搜索")
+        # 取最新的一份
+        latest_key = list(_LAST_SEARCH_DATA.keys())[-1]
+        csv_data = _LAST_SEARCH_DATA[latest_key]
+
+    # 解析 CSV 为帖子列表
+    reader = _csv.DictReader(io.StringIO(csv_data))
+    posts: list[ParsedPost] = []
+    for row in reader:
+        content = row.get("content", "") or ""
+        if not content.strip():
+            continue
+        posts.append(ParsedPost(
+            platform=row.get("platform", "unknown"),
+            post_id=row.get("post_id", str(uuid.uuid4())[:12]),
+            content=content,
+            author=row.get("author", ""),
+            published_at=_parse_date(row.get("created_at", "")),
+            metrics={},
+            tags=[],
+            raw_data={"type": row.get("type", "post")},
+        ))
+
+    if not posts:
+        raise HTTPException(400, "抓取数据中没有有效内容")
+
+    # 解析工作流参数
+    try:
+        workflow_list = json.loads(workflows)
+    except Exception:
+        workflow_list = []
+
+    if not (model_api_key and model_base_url):
+        pipeline = Pipeline.from_config()
+    else:
+        pipeline = Pipeline.from_config_with_model(
+            base_url=model_base_url, api_key=model_api_key, model=model_name,
+            backup_model=model_backup_name,
+            backup_base_url=model_backup_base_url or model_base_url,
+            backup_api_key=model_backup_api_key or model_api_key,
+        )
+
+    stats = await pipeline.process_posts(posts, source="auto-analyze")
+    return stats
+
 @app.get("/")
 async def index():
     """返回前端页面"""
@@ -719,6 +851,12 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                         writer.writerow(t)
 
                 csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
+                # 缓存搜索结果供自动分析使用
+                with _LAST_SEARCH_LOCK:
+                    _LAST_SEARCH_DATA[task_id] = csv_buf.getvalue()
+                    # 只保留最近 3 份
+                    while len(_LAST_SEARCH_DATA) > 3:
+                        _LAST_SEARCH_DATA.pop(next(iter(_LAST_SEARCH_DATA)))
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 result_status = "cancelled" if was_cancelled else "success"
                 result_msg = "搜索已取消，数据已保存" if was_cancelled else None
@@ -912,6 +1050,11 @@ async def batch_search(req: BatchSearchRequest):
                     else: writer.writerow(t)
 
                 csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
+                # 缓存批量搜索结果供自动分析使用
+                with _LAST_SEARCH_LOCK:
+                    _LAST_SEARCH_DATA[task_id] = csv_buf.getvalue()
+                    while len(_LAST_SEARCH_DATA) > 3:
+                        _LAST_SEARCH_DATA.pop(next(iter(_LAST_SEARCH_DATA)))
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 result_status = "cancelled" if was_cancelled else "success"
                 result_msg = "搜索已取消，数据已保存" if was_cancelled else None
