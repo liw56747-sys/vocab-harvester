@@ -632,31 +632,25 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                 )
                 search_timeout = max(search_timeout, 120)  # 最低 2 分钟保底
                 
-                # 使用 asyncio.wait 以便在取消时能立即返回已完成的结果
-                done_tasks = []
+                # 使用 asyncio.gather 保持结果顺序（asyncio.wait 返回无序 set 会导致平台结果错位）
+                was_cancelled = False
                 try:
-                    done_tasks, pending = await asyncio.wait(
-                        [asyncio.create_task(t) for t in tasks],
+                    results = await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
                         timeout=search_timeout
                     )
-                    # 取消未完成的任务
-                    for t in pending:
-                        t.cancel()
-                    # 等待取消完成
-                    if pending:
-                        await asyncio.gather(*pending, return_exceptions=True)
                 except asyncio.TimeoutError:
-                    pass
+                    # 超时也要检查是否有已完成的结果
+                    logger.warning(f"搜索超时（{search_timeout}秒）")
+                    was_cancelled = _is_task_cancelled(task_id)
+                    if not was_cancelled:
+                        _set_task_status(task_id, {"status": "error", "error": f"搜索超时（{search_timeout}秒），请减少关键词数量或稍后重试"})
+                        return
+                    results = []
                 
                 # 检查是否被用户取消
-                was_cancelled = _is_task_cancelled(task_id)
-                
-                results = []
-                for t in done_tasks:
-                    try:
-                        results.append(t.result())
-                    except Exception as e:
-                        results.append(e)
+                if not was_cancelled:
+                    was_cancelled = _is_task_cancelled(task_id)
                 
                 if was_cancelled:
                     # 取消时保存已获取的数据

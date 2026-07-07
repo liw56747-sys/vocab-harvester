@@ -86,7 +86,7 @@ _CSV_FIELDS = [
 # ── 共享的推文提取 JS ────────────────────────────────────
 # 用于 _scrape_user / _scrape_search 的每轮滚动提取
 # 参数: (alreadySeenIds: string[])  →  返回: tweet object[]
-_EXTRACT_TWEETS_JS = r"""(alreadySeenIds) => {
+_EXTRACT_TWEETS_JS = r"""(alreadySeenIds, skipMedia) => {
     const seenSet = new Set(alreadySeenIds);
 
     function extractText(container) {
@@ -205,30 +205,31 @@ _EXTRACT_TWEETS_JS = r"""(alreadySeenIds) => {
             ? socialContext.textContent.toLowerCase().includes('repost')
             : false;
 
-        // ── media ──
+        // ── media（加速模式下跳过提取）──
         const mediaUrls = [];
         let hasPhoto = false, hasVideo = false;
-        const photoEls = article.querySelectorAll('[data-testid="tweetPhoto"] img');
-        for (const img of photoEls) {
-            const src = img.getAttribute('src') || '';
-            if (src && src.includes('pbs.twimg.com/media/') && !src.startsWith('blob:')) {
-                mediaUrls.push(src.replace(/&name=\w+/, '&name=large').replace(/\?name=\w+/, '?name=large'));
-                hasPhoto = true;
-            }
-        }
-        const videoEl = article.querySelector('[data-testid="videoPlayer"] video');
-        if (videoEl) {
-            hasVideo = true;
-            // 过滤 blob: 和 .m3u8（HLS 流在浏览器中无法直接播放），只保留封面图
-            const poster = videoEl.getAttribute('poster') || '';
-            if (poster && poster.includes('pbs.twimg.com') && !poster.startsWith('blob:')) {
-                mediaUrls.push(poster.replace(/&name=\w+/, '&name=large').replace(/\?name=\w+/, '?name=large'));
-            }
-        }
         let mediaType = 'none';
-        if (hasPhoto && hasVideo) mediaType = 'mixed';
-        else if (hasVideo) mediaType = 'video';
-        else if (hasPhoto) mediaType = 'image';
+        if (!skipMedia) {
+            const photoEls = article.querySelectorAll('[data-testid="tweetPhoto"] img');
+            for (const img of photoEls) {
+                const src = img.getAttribute('src') || '';
+                if (src && src.includes('pbs.twimg.com/media/') && !src.startsWith('blob:')) {
+                    mediaUrls.push(src.replace(/&name=\w+/, '&name=large').replace(/\?name=\w+/, '?name=large'));
+                    hasPhoto = true;
+                }
+            }
+            const videoEl = article.querySelector('[data-testid="videoPlayer"] video');
+            if (videoEl) {
+                hasVideo = true;
+                const poster = videoEl.getAttribute('poster') || '';
+                if (poster && poster.includes('pbs.twimg.com') && !poster.startsWith('blob:')) {
+                    mediaUrls.push(poster.replace(/&name=\w+/, '&name=large').replace(/\?name=\w+/, '?name=large'));
+                }
+            }
+            if (hasPhoto && hasVideo) mediaType = 'mixed';
+            else if (hasVideo) mediaType = 'video';
+            else if (hasPhoto) mediaType = 'image';
+        }
 
         if (text || tweetId) {
             results.push({
@@ -243,9 +244,9 @@ _EXTRACT_TWEETS_JS = r"""(alreadySeenIds) => {
                 retweets: retweets,
                 replies: replies,
                 quotes: quotes,
-                has_media: mediaUrls.length > 0 || hasVideo,
+                has_media: skipMedia ? false : (mediaUrls.length > 0 || hasVideo),
                 media_type: mediaType,
-                media_urls: mediaUrls.join(';'),
+                media_urls: skipMedia ? '' : mediaUrls.join(';'),
                 is_retweet: isRetweet,
                 is_reply: false,
             });
@@ -690,7 +691,7 @@ class TwitterCookieFetcher:
                 await asyncio.sleep(_TC.user_expand_wait)
             
             # 提取当前 DOM 中的推文（排除已见过的 ID）
-            new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()))
+            new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()), self.block_resources)
             for t in new_tweets:
                 tid = t.get("tweet_id", "")
                 if tid and tid not in all_tweets:
@@ -825,7 +826,7 @@ class TwitterCookieFetcher:
                 await asyncio.sleep(_TC.search_expand_wait)
                     
             # 提取当前 DOM 中的推文
-            new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()))
+            new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()), self.block_resources)
             for t in new_tweets:
                 tid = t.get("tweet_id", "")
                 if tid and tid not in all_tweets:

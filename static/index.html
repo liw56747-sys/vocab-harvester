@@ -3179,7 +3179,8 @@ async function startTwitterFetch() {
           <h4>${t('scraped_posts', {n: stats.sampled_posts.length})}</h4>
           ${stats.sampled_posts.map((post, idx) => {
             let mediaHtml = '';
-            if (post.has_media) {
+            const _isAccel = document.getElementById('block-resources-toggle')?.checked;
+            if (post.has_media && !_isAccel) {
               const badge = post.media_type === 'image' ? '&#128247; ' + t('images') : post.media_type === 'video' ? '&#127909; ' + t('videos') : post.media_type === 'mixed' ? '&#128247;&#127909; ' + t('images') + '+' + t('videos') : '&#128206; ' + t('media');
               const urls = (post.media_urls || '').split(';').filter(Boolean);
               const thumbsHtml = urls.map((u, i) => {
@@ -3573,7 +3574,8 @@ function renderResultPosts() {
         <span>${t('comments')} ${(post.metrics?.comments||0).toLocaleString()}</span>`;
     }
     let mediaHtml = '';
-    if (post.has_media) {
+    const _isAccel2 = document.getElementById('block-resources-toggle')?.checked;
+    if (post.has_media && !_isAccel2) {
       const badge = post.media_type === 'image' ? '&#128247; ' + t('images')
                   : post.media_type === 'video' ? '&#127909; ' + t('videos')
                   : post.media_type === 'mixed' ? '&#128247;&#127909; ' + t('images') + '+' + t('videos')
