@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import platform
 import sys
 import threading
@@ -51,7 +52,7 @@ def get_platform() -> str:
 # ── 更新检查 ──────────────────────────────────────────
 
 _GITHUB_API = "https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest"
-# 国内可访问的 GitHub 镜像 API（按优先级排序）
+# 国内可访问的 GitHub 镜像 API（无 Token 时的备选方案）
 _GITHUB_MIRRORS = [
     # 使用 kkgithub 镜像（国内较稳定）
     "https://api.kkgithub.com/repos/liw56747-sys/vocab-harvester/releases/latest",
@@ -61,6 +62,25 @@ _GITHUB_MIRRORS = [
     "https://api.github.com/repos/liw56747-sys/vocab-harvester/releases/latest",
 ]
 _update_info: dict | None = None
+
+
+def _get_github_token() -> str:
+    """从环境变量读取 GitHub Token（支持 .env 文件或系统环境变量）"""
+    # 1. 系统环境变量
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if token:
+        return token
+    # 2. 项目根目录 .env 文件
+    env_file = Path(__file__).parent.parent.parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("GITHUB_TOKEN="):
+                val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if val:
+                    logger.debug("GitHub Token loaded from .env file")
+                    return val
+    return ""
 
 
 def _get_proxy_url() -> str | None:
@@ -139,15 +159,33 @@ def check_for_update_async(callback=None):
         proxy_url = _get_proxy_url()
         proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
 
-        # 构建尝试列表：镜像优先（包含原始 API）
-        apis = _GITHUB_MIRRORS
+        # 检测 Token
+        gh_token = _get_github_token()
+
+        # 构建请求顺序：
+        # 有 Token → 优先官方 API（5000次/小时），再走镜像（不带 Token）
+        # 无 Token → 镜像优先，官方 API 最后（60次/小时）
+        if gh_token:
+            apis = [("official_with_token", _GITHUB_API)] + [("mirror", m) for m in _GITHUB_MIRRORS]
+        else:
+            apis = [("mirror", m) for m in _GITHUB_MIRRORS]
+
         last_error = None
 
-        for api_url in apis:
+        for api_type, api_url in apis:
             try:
+                headers = {
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "vocab-harvester",
+                }
+                # 仅官方 API 携带 Token（镜像不支持 Authorization 头）
+                if api_type == "official_with_token" and gh_token:
+                    headers["Authorization"] = f"token {gh_token}"
+                    logger.debug("GitHub Token attached to official API request")
+
                 response = requests.get(
                     api_url,
-                    headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "vocab-harvester"},
+                    headers=headers,
                     timeout=10,
                     proxies=proxies,
                     verify=False,  # 跳过 SSL 验证（解决 macOS/PyInstaller CA 证书缺失）
@@ -192,7 +230,7 @@ def check_for_update_async(callback=None):
 
             except Exception as e:
                 last_error = e
-                logger.debug(f"Update check failed ({api_url}): {e}")
+                logger.debug(f"Update check failed [{api_type}] ({api_url}): {e}")
                 continue  # 尝试下一个 API
 
         # 所有 API 都失败

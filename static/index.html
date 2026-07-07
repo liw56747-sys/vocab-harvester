@@ -1262,6 +1262,10 @@ kbd {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
         <span data-i18n="nav_vocabulary">词库管理</span>
       </div>
+      <div class="nav-item" onclick="showPage('schedule', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span data-i18n="nav_schedule">定时任务</span>
+      </div>
       <div class="nav-item" onclick="showPage('export', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span data-i18n="nav_export">导出</span>
@@ -1777,6 +1781,96 @@ kbd {
       </div>
     </div>
 
+    <!-- 定时任务配置页 -->
+    <div id="page-schedule" class="page">
+      <div class="page-header">
+        <div class="page-title" data-i18n="schedule_title">定时任务配置</div>
+        <div class="page-desc" data-i18n="schedule_desc">设置自动化定时抓取与分析任务</div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-weight:600;font-size:15px" data-i18n="schedule_list">任务列表</div>
+          <button class="btn btn-primary btn-sm" onclick="showScheduleForm()" data-i18n="btn_add_task">+ 新建任务</button>
+        </div>
+
+        <div class="table-wrap">
+          <table id="schedule-table">
+            <thead><tr>
+              <th data-i18n="th_task_name">任务名称</th>
+              <th data-i18n="th_task_type">类型</th>
+              <th data-i18n="th_cron">执行时间</th>
+              <th data-i18n="th_keywords">关键词/URL</th>
+              <th data-i18n="th_save_path">保存路径</th>
+              <th data-i18n="th_last_run">上次执行</th>
+              <th data-i18n="th_status">状态</th>
+              <th data-i18n="th_enabled">启用</th>
+              <th data-i18n="th_ops">操作</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 任务配置表单 -->
+      <div class="card" id="schedule-form-card" style="display:none">
+        <div style="font-weight:600;font-size:15px;margin-bottom:16px" data-i18n="schedule_form_title">任务配置</div>
+        <input type="hidden" id="schedule-task-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label data-i18n="label_task_name">任务名称</label>
+            <input type="text" id="schedule-name" placeholder="每日舆情抓取" style="width:240px">
+          </div>
+          <div class="form-group">
+            <label data-i18n="label_task_type">任务类型</label>
+            <select id="schedule-type" style="width:140px">
+              <option value="search" data-i18n="type_search">关键词搜索</option>
+              <option value="url_fetch" data-i18n="type_url">URL抓取</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label data-i18n="label_cron">Cron表达式</label>
+            <input type="text" id="schedule-cron" placeholder="0 8 * * *" style="width:180px">
+            <div style="font-size:12px;color:#666;margin-top:4px" data-i18n="cron_hint">分 时 日 月 周（例：0 8 * * * = 每天8点）</div>
+          </div>
+          <div class="form-group">
+            <label data-i18n="label_save_path">保存路径</label>
+            <input type="text" id="schedule-save-path" placeholder="./data/scheduled" style="width:240px">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" id="schedule-keywords-group">
+            <label data-i18n="label_keywords">关键词（每行一个）</label>
+            <textarea id="schedule-keywords" rows="3" style="width:360px" placeholder="舆情&#10;涉政&#10;违法"></textarea>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label data-i18n="label_workflows">分析工作流</label>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <label><input type="checkbox" class="schedule-workflow" value="yq"> <span data-i18n="wf_yq">舆情</span></label>
+              <label><input type="checkbox" class="schedule-workflow" value="sz"> <span data-i18n="wf_sz">涉政</span></label>
+              <label><input type="checkbox" class="schedule-workflow" value="wf"> <span data-i18n="wf_wf">违法</span></label>
+              <label><input type="checkbox" class="schedule-workflow" value="pqds"> <span data-i18n="wf_pqds">色情低俗</span></label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label data-i18n="label_enabled">启用状态</label>
+            <label style="display:flex;align-items:center;gap:8px">
+              <input type="checkbox" id="schedule-enabled" checked>
+              <span data-i18n="enabled_yes">启用</span>
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn btn-primary btn-sm" onclick="saveScheduleTask()" data-i18n="btn_save_task">保存任务</button>
+          <button class="btn btn-secondary btn-sm" onclick="hideScheduleForm()" data-i18n="btn_cancel">取消</button>
+        </div>
+      </div>
+    </div>
+
     <div id="page-export" class="page">
       <div class="page-header">
         <div class="page-title" data-i18n="export_title">导出词库</div>
@@ -1882,28 +1976,6 @@ kbd {
           <div id="about-update-status" style="font-size:12px;color:var(--text-secondary);display:none"></div>
         </div>
       </div>
-
-      <div class="card">
-        <div class="card-title">GitHub Token 验证</div>
-        <div class="card-desc" style="margin-bottom:12px">验证 GitHub Token 是否有效，用于版本检查时避免 403 速率限制</div>
-        <div class="form-group">
-          <label>GitHub Personal Access Token</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="password" id="github-token-input" placeholder="ghp_xxxxxxxxxxxx" style="flex:1;font-family:monospace;font-size:12px">
-            <button class="btn btn-secondary btn-sm" onclick="toggleSecret('github-token-input', this)" style="padding:4px 8px;flex-shrink:0">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
-          <button class="btn btn-primary btn-sm" id="verify-token-btn" onclick="verifyGitHubToken()">验证 Token</button>
-          <span id="github-token-status" style="font-size:12px"></span>
-        </div>
-        <div class="settings-hint" style="margin-top:8px">
-          生成 Token: <a href="https://github.com/settings/tokens" target="_blank" style="color:var(--primary)">GitHub Settings → Developer settings → Personal access tokens</a><br>
-          需要勾选 <code>repo</code> 或 <code>public_repo</code> 权限
-        </div>
-      </div>
     </div>
 
   </div>
@@ -1918,7 +1990,7 @@ const I18N = {
   zh: {
     // Nav
     nav_dashboard: '仪表盘', nav_scrape: '数据抓取', nav_import: '数据导入',
-    nav_vocabulary: '词库管理', nav_export: '导出', nav_settings: '设置',
+    nav_vocabulary: '词库管理', nav_schedule: '定时任务', nav_export: '导出', nav_settings: '设置',
     subtitle: '词库构建系统',
     // Dashboard
     dashboard_title: '仪表盘', dashboard_desc: '词库数据概览与最近词条',
@@ -2015,6 +2087,22 @@ const I18N = {
     btn_prev: '上一页', btn_next: '下一页',
     page_info_tpl: '第 {x} / {y} 页（共 {z} 条）',
     no_data: '暂无数据',
+    // Schedule
+    schedule_title: '定时任务配置', schedule_desc: '设置自动化定时抓取与分析任务',
+    schedule_list: '任务列表', btn_add_task: '+ 新建任务',
+    th_task_name: '任务名称', th_task_type: '类型', th_cron: '执行时间',
+    th_keywords: '关键词/URL', th_save_path: '保存路径', th_last_run: '上次执行',
+    th_status: '状态', th_enabled: '启用',
+    schedule_form_title: '任务配置', label_task_name: '任务名称',
+    label_task_type: '任务类型', type_search: '关键词搜索', type_url: 'URL抓取',
+    label_cron: 'Cron表达式', cron_hint: '分 时 日 月 周（例：0 8 * * * = 每天8点）',
+    label_save_path: '保存路径', label_keywords: '关键词（每行一个）',
+    label_workflows: '分析工作流', wf_yq: '舆情', wf_sz: '涉政', wf_wf: '违法', wf_pqds: '色情低俗',
+    label_enabled: '启用状态', enabled_yes: '启用',
+    btn_save_task: '保存任务', btn_cancel: '取消', btn_edit: '编辑', btn_run_now: '立即执行',
+    no_tasks: '暂无定时任务', task_name_required: '请输入任务名称',
+    task_saved: '任务已保存', confirm_delete_task: '确认删除此任务？',
+    task_deleted: '任务已删除', confirm_run_now: '确认立即执行此任务？', task_running: '任务已触发',
     // Export
     export_title: '导出词库', export_desc: '将词库数据导出为不同格式',
     filter_status: '筛选状态',
@@ -2113,7 +2201,7 @@ const I18N = {
   },
   en: {
     nav_dashboard: 'Dashboard', nav_scrape: 'Data Scraping', nav_import: 'Data Import',
-    nav_vocabulary: 'Vocabulary', nav_export: 'Export', nav_settings: 'Settings',
+    nav_vocabulary: 'Vocabulary', nav_schedule: 'Scheduled Tasks', nav_export: 'Export', nav_settings: 'Settings',
     subtitle: 'Vocabulary Builder',
     dashboard_title: 'Dashboard', dashboard_desc: 'Vocabulary overview and recent entries',
     stat_total: 'Total', stat_pending: 'Pending', stat_approved: 'Approved', stat_rejected: 'Rejected',
@@ -2205,6 +2293,23 @@ const I18N = {
     btn_prev: 'Previous', btn_next: 'Next',
     page_info_tpl: 'Page {x} / {y} ({z} total)',
     no_data: 'No data',
+    // Schedule
+    schedule_title: 'Scheduled Tasks', schedule_desc: 'Configure automated scraping and analysis tasks',
+    schedule_list: 'Task List', btn_add_task: '+ New Task',
+    th_task_name: 'Task Name', th_task_type: 'Type', th_cron: 'Schedule',
+    th_keywords: 'Keywords/URL', th_save_path: 'Save Path', th_last_run: 'Last Run',
+    th_status: 'Status', th_enabled: 'Enabled',
+    schedule_form_title: 'Task Configuration', label_task_name: 'Task Name',
+    label_task_type: 'Task Type', type_search: 'Keyword Search', type_url: 'URL Fetch',
+    label_cron: 'Cron Expression', cron_hint: 'Min Hour Day Month Week (e.g. 0 8 * * * = daily 8am)',
+    label_save_path: 'Save Path', label_keywords: 'Keywords (one per line)',
+    label_workflows: 'Analysis Workflows', wf_yq: 'Public Opinion', wf_sz: 'Political', wf_wf: 'Illegal', wf_pqds: 'NSFW',
+    label_enabled: 'Enabled', enabled_yes: 'Enabled',
+    btn_save_task: 'Save Task', btn_cancel: 'Cancel', btn_edit: 'Edit', btn_run_now: 'Run Now',
+    no_tasks: 'No scheduled tasks', task_name_required: 'Please enter task name',
+    task_saved: 'Task saved', confirm_delete_task: 'Delete this task?',
+    task_deleted: 'Task deleted', confirm_run_now: 'Run this task now?', task_running: 'Task triggered',
+    // Export
     export_title: 'Export Vocabulary', export_desc: 'Export vocabulary data in different formats',
     filter_status: 'Filter by Status',
     filter_all: 'All entries', filter_approved: 'Approved only', filter_pending: 'Pending only',
@@ -2487,51 +2592,6 @@ function dismissUpdate() {
   document.getElementById('update-banner').classList.remove('show');
 }
 
-// GitHub Token 验证
-async function verifyGitHubToken() {
-  const tokenInput = document.getElementById('github-token-input');
-  const statusEl = document.getElementById('github-token-status');
-  const btn = document.getElementById('verify-token-btn');
-  const token = tokenInput.value.trim();
-  
-  if (!token) {
-    statusEl.innerHTML = '<span style="color:var(--warning)">请输入 Token</span>';
-    return;
-  }
-  
-  btn.disabled = true;
-  btn.textContent = '验证中...';
-  statusEl.innerHTML = '';
-  
-  try {
-    const result = await api('/api/verify-github-token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token })
-    });
-    
-    const statusColors = {
-      valid: 'var(--success)',
-      invalid: 'var(--danger)',
-      not_configured: 'var(--warning)',
-      rate_limited: 'var(--warning)',
-      forbidden: 'var(--danger)',
-      error: 'var(--danger)',
-    };
-    const color = statusColors[result.status] || 'var(--text-secondary)';
-    statusEl.innerHTML = `<span style="color:${color}">${result.message}</span>`;
-    
-    if (result.status === 'valid') {
-      toast('Token 验证通过', 'success');
-    }
-  } catch (e) {
-    statusEl.innerHTML = `<span style="color:var(--danger)">验证失败: ${e.message}</span>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '验证 Token';
-  }
-}
-
 // 一键更新功能
 let _downloadPollTimer = null;
 
@@ -2758,6 +2818,7 @@ function showPage(name, el) {
   el.classList.add('active');
   if (name === 'dashboard') loadStats();
   if (name === 'vocabulary') loadVocab();
+  if (name === 'schedule') loadScheduleTasks();
   if (name === 'twitter') loadAllCookies();
   if (name === 'import') {
     loadModelSettings();
@@ -3189,6 +3250,118 @@ async function batchDelete() {
     clearSelection();
     loadVocab();
     loadStats();
+  } catch (e) {}
+}
+
+// ── Scheduled Tasks ──
+async function loadScheduleTasks() {
+  try {
+    const data = await api('/api/scheduled-tasks');
+    const tbody = document.querySelector('#schedule-table tbody');
+    tbody.innerHTML = '';
+    if (!data.tasks || data.tasks.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:48px">' + t('no_tasks') + '</td></tr>';
+      return;
+    }
+    data.tasks.forEach(task => {
+      const params = task.params || {};
+      const keywords = (params.keywords || []).join(', ');
+      const statusBadge = task.last_run_status === 'success' ? 'badge-approved' :
+                          task.last_run_status === 'failed' ? 'badge-rejected' :
+                          task.last_run_status === 'running' ? 'badge-observe' : '';
+      tbody.innerHTML += `<tr>
+        <td><strong>${esc(task.name || '-')}</strong></td>
+        <td>${task.task_type === 'search' ? t('type_search') : t('type_url')}</td>
+        <td><code>${esc(task.cron_expression)}</code></td>
+        <td title="${esc(keywords)}">${esc(keywords.slice(0, 30))}${keywords.length > 30 ? '...' : ''}</td>
+        <td><code>${esc(task.save_path || '-')}</code></td>
+        <td>${task.last_run_at ? new Date(task.last_run_at).toLocaleString() : '-'}</td>
+        <td><span class="badge ${statusBadge}">${task.last_run_status || '-'}</span></td>
+        <td>${task.enabled ? '✅' : '❌'}</td>
+        <td>
+          <button class="btn btn-primary btn-sm" onclick="editScheduleTask('${task.id}')">${t('btn_edit')}</button>
+          <button class="btn btn-secondary btn-sm" onclick="runTaskNow('${task.id}')">${t('btn_run_now')}</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteScheduleTask('${task.id}')">${t('btn_delete')}</button>
+        </td>
+      </tr>`;
+    });
+  } catch (e) { console.error(e); }
+}
+
+function showScheduleForm() {
+  document.getElementById('schedule-form-card').style.display = 'block';
+  document.getElementById('schedule-task-id').value = '';
+  document.getElementById('schedule-name').value = '';
+  document.getElementById('schedule-type').value = 'search';
+  document.getElementById('schedule-cron').value = '0 8 * * *';
+  document.getElementById('schedule-save-path').value = './data/scheduled';
+  document.getElementById('schedule-keywords').value = '';
+  document.getElementById('schedule-enabled').checked = true;
+  document.querySelectorAll('.schedule-workflow').forEach(cb => cb.checked = false);
+}
+
+function hideScheduleForm() {
+  document.getElementById('schedule-form-card').style.display = 'none';
+}
+
+async function editScheduleTask(taskId) {
+  try {
+    const data = await api('/api/scheduled-tasks');
+    const task = data.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    document.getElementById('schedule-form-card').style.display = 'block';
+    document.getElementById('schedule-task-id').value = task.id;
+    document.getElementById('schedule-name').value = task.name || '';
+    document.getElementById('schedule-type').value = task.task_type || 'search';
+    document.getElementById('schedule-cron').value = task.cron_expression || '0 8 * * *';
+    document.getElementById('schedule-save-path').value = task.save_path || '';
+    document.getElementById('schedule-keywords').value = (task.params?.keywords || []).join('\n');
+    document.getElementById('schedule-enabled').checked = task.enabled;
+    document.querySelectorAll('.schedule-workflow').forEach(cb => {
+      cb.checked = (task.workflows || []).includes(cb.value);
+    });
+  } catch (e) {}
+}
+
+async function saveScheduleTask() {
+  const taskId = document.getElementById('schedule-task-id').value;
+  const name = document.getElementById('schedule-name').value.trim();
+  if (!name) return toast(t('task_name_required'), 'error');
+  const taskType = document.getElementById('schedule-type').value;
+  const cron = document.getElementById('schedule-cron').value.trim() || '0 8 * * *';
+  const savePath = document.getElementById('schedule-save-path').value.trim();
+  const keywords = document.getElementById('schedule-keywords').value.split('\n').filter(k => k.trim());
+  const enabled = document.getElementById('schedule-enabled').checked;
+  const workflows = [...document.querySelectorAll('.schedule-workflow:checked')].map(cb => cb.value);
+  const body = {
+    name, task_type: taskType, cron_expression: cron,
+    enabled, params: { keywords }, save_path: savePath, workflows,
+  };
+  try {
+    const url = taskId ? `/api/scheduled-tasks/${taskId}` : '/api/scheduled-tasks';
+    const method = taskId ? 'PUT' : 'POST';
+    await api(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    toast(t('task_saved'), 'success');
+    hideScheduleForm();
+    loadScheduleTasks();
+  } catch (e) {}
+}
+
+async function deleteScheduleTask(taskId) {
+  if (!confirm(t('confirm_delete_task'))) return;
+  try {
+    await api(`/api/scheduled-tasks/${taskId}`, { method: 'DELETE' });
+    toast(t('task_deleted'), 'success');
+    loadScheduleTasks();
+  } catch (e) {}
+}
+
+async function runTaskNow(taskId) {
+  if (!confirm(t('confirm_run_now'))) return;
+  try {
+    await api(`/api/scheduled-tasks/${taskId}/run`, { method: 'POST' });
+    toast(t('task_running'), 'info');
+    setTimeout(loadScheduleTasks, 3000);
   } catch (e) {}
 }
 

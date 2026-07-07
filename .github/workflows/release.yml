@@ -34,6 +34,12 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
+      - name: Inject GitHub Token into .env
+        shell: pwsh
+        run: |
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" > .env
+          echo ".env created with GITHUB_TOKEN"
+
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
@@ -178,6 +184,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
+
+      - name: Inject GitHub Token into .env
+        run: |
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" > .env
+          echo ".env created with GITHUB_TOKEN"
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
