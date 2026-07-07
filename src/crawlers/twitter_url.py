@@ -618,7 +618,7 @@ class TwitterCookieFetcher:
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
         # 等待 SPA 渲染
-        await asyncio.sleep(2)
+        await asyncio.sleep(1.5)
 
         # 检查账号是否存在
         body_text = ""
@@ -639,14 +639,14 @@ class TwitterCookieFetcher:
         for _attempt in range(2):
             try:
                 await page.wait_for_selector(
-                    'article[data-testid="tweet"]', timeout=30000
+                    'article[data-testid="tweet"]', timeout=15000
                 )
                 break
             except Exception:
                 if _attempt == 0:
                     logger.info(f"@{username}: 首次等待超时，刷新重试...")
                     await page.reload(wait_until="domcontentloaded", timeout=60000)
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1.5)
                     continue
                 logger.warning(f"@{username}: 等待推文超时（重试后仍无结果）")
                 return []
@@ -654,7 +654,7 @@ class TwitterCookieFetcher:
         # 逐轮滚动 + 提取 + 去重（虚拟滚动：DOM 同时仅保留 ~15-25 条）
         all_tweets: dict[str, dict] = {}
         stall_count = 0
-        max_rounds = max(20, count // 5)
+        max_rounds = min(20, count)  # 限制最多 20 轮
 
         # 点击"加载更多"的 JS
         _CLICK_MORE_USER_JS = r"""() => {
@@ -685,7 +685,7 @@ class TwitterCookieFetcher:
             # 展开截断的长推文
             expanded = await page.evaluate(_EXPAND_TWEETS_JS)
             if expanded > 0:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.2)
 
             # 提取当前 DOM 中的推文（排除已见过的 ID）
             new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()))
@@ -701,17 +701,17 @@ class TwitterCookieFetcher:
                 await page.evaluate("window.scrollBy(0, 1200)")
             else:
                 await page.evaluate("window.scrollBy(0, 800)")
-            await asyncio.sleep(1.5)
-
+            await asyncio.sleep(0.3)
+            
             if len(all_tweets) == prev_count:
                 stall_count += 1
-
-                # 停滞时尝试点击"加载更多"
+            
+                # 停滞时尝试点击“加载更多”
                 if stall_count >= 2:
                     clicked = await page.evaluate(_CLICK_MORE_USER_JS)
                     if clicked:
                         logger.info(f"@{username} 第{round_num+1}轮: 点击了加载更多按钮")
-                        await asyncio.sleep(1.5)
+                        await asyncio.sleep(0.5)
                         stall_count = 0
                         continue
 
@@ -741,7 +741,7 @@ class TwitterCookieFetcher:
         url = f"https://x.com/search?q={quote_plus(keyword)}&f={f_param}"
         logger.info(f"搜索 {url} ...")
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        await asyncio.sleep(3)
+        await asyncio.sleep(1.5)
 
         # 检查是否被重定向到登录页
         current_url = page.url
@@ -763,7 +763,7 @@ class TwitterCookieFetcher:
         for _attempt in range(2):
             try:
                 await page.wait_for_selector(
-                    'article[data-testid="tweet"]', timeout=40000
+                    'article[data-testid="tweet"]', timeout=15000
                 )
                 tweets_loaded = True
                 break
@@ -822,7 +822,7 @@ class TwitterCookieFetcher:
             # 展开截断的长推文
             expanded = await page.evaluate(_EXPAND_TWEETS_JS)
             if expanded > 0:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.2)
 
             # 提取当前 DOM 中的推文
             new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()))
@@ -840,7 +840,7 @@ class TwitterCookieFetcher:
                 await page.evaluate("window.scrollBy(0, 1200)")
             else:
                 await page.evaluate("window.scrollBy(0, 600)")
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.3)
 
             if len(all_tweets) == prev_count:
                 stall_count += 1
@@ -850,16 +850,16 @@ class TwitterCookieFetcher:
                     clicked = await page.evaluate(_CLICK_MORE_JS)
                     if clicked:
                         logger.info(f"搜索「{keyword}」第{round_num+1}轮: 点击了加载更多按钮")
-                        await asyncio.sleep(1.5)
+                        await asyncio.sleep(0.2)
                         stall_count = 0
                         continue
 
                 # 停滞较多且是热门排序时，尝试更大步长
                 if stall_count >= 3 and is_top:
                     await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    await asyncio.sleep(0.8)
+                    await asyncio.sleep(0.3)
                     await page.evaluate("window.scrollBy(0, -3000)")
-                    await asyncio.sleep(0.8)
+                    await asyncio.sleep(0.3)
 
                 if stall_count >= max_stalls:
                     logger.info(f"搜索「{keyword}」({sort_by}): 滚动加载完成 ({len(all_tweets)} 条，连续 {stall_count} 轮无新增)")
@@ -1074,7 +1074,7 @@ class TwitterCookieFetcher:
             # 展开截断的长回复
             expanded = await page.evaluate(_EXPAND_TWEETS_JS)
             if expanded > 0:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.2)
 
             # 提取当前 DOM 中的回复
             main_id = tweet_url.split("/status/")[-1].split("?")[0] if "/status/" in tweet_url else ""
@@ -1099,7 +1099,7 @@ class TwitterCookieFetcher:
 
             # 逐步滚动
             await page.evaluate("window.scrollBy(0, 600)")
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(0.3)
 
             if len(collected) == prev_count:
                 stall_count += 1
@@ -1109,14 +1109,14 @@ class TwitterCookieFetcher:
                     clicked = await page.evaluate(_CLICK_SHOW_MORE_JS)
                     if clicked:
                         logger.info(f"第 {round_num+1} 轮: 点击了'加载更多回复'按钮")
-                        await asyncio.sleep(1.5)
+                        await asyncio.sleep(0.5)
                         stall_count = 0
                         continue
 
                 # 停滞较多时，尝试更大步长滚动
                 if stall_count >= 3:
                     await page.evaluate("window.scrollBy(0, 2000)")
-                    await asyncio.sleep(0.8)
+                    await asyncio.sleep(0.3)
 
                 if stall_count >= max_stalls:
                     logger.info(f"回复加载完成: {len(collected)} 条 (连续 {stall_count} 轮无新增)")
