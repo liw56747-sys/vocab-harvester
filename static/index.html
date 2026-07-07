@@ -647,6 +647,20 @@ input[type="checkbox"] {
 }
 .btn-download:hover { background: #1A8CD8; }
 
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+.btn-danger:hover { background: #B91C1C; }
+.btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── Crawl Result Warning ── */
+.crawl-result.warning {
+  background: var(--warning-light);
+  border-color: var(--warning);
+  color: #92400E;
+}
+
 /* ── Cookie Tabs ── */
 .cookie-tabs {
   display: flex;
@@ -1507,8 +1521,9 @@ kbd {
             <input type="checkbox" id="search-include-replies">
             <span data-i18n="include_replies">同时抓取评论</span>
           </label>
-          <div style="margin-left:auto">
+          <div style="margin-left:auto;display:flex;gap:8px">
             <button class="btn btn-primary" id="multi-search-btn" onclick="startMultiSearch()" data-i18n="btn_search">开始搜索</button>
+            <button class="btn btn-danger" id="cancel-search-btn" onclick="cancelCurrentSearch()" style="display:none" data-i18n="btn_cancel_search">取消搜索</button>
           </div>
         </div>
 
@@ -1826,6 +1841,28 @@ kbd {
           <div id="about-update-status" style="font-size:12px;color:var(--text-secondary);display:none"></div>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-title">GitHub Token 验证</div>
+        <div class="card-desc" style="margin-bottom:12px">验证 GitHub Token 是否有效，用于版本检查时避免 403 速率限制</div>
+        <div class="form-group">
+          <label>GitHub Personal Access Token</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="password" id="github-token-input" placeholder="ghp_xxxxxxxxxxxx" style="flex:1;font-family:monospace;font-size:12px">
+            <button class="btn btn-secondary btn-sm" onclick="toggleSecret('github-token-input', this)" style="padding:4px 8px;flex-shrink:0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+          <button class="btn btn-primary btn-sm" id="verify-token-btn" onclick="verifyGitHubToken()">验证 Token</button>
+          <span id="github-token-status" style="font-size:12px"></span>
+        </div>
+        <div class="settings-hint" style="margin-top:8px">
+          生成 Token: <a href="https://github.com/settings/tokens" target="_blank" style="color:var(--primary)">GitHub Settings → Developer settings → Personal access tokens</a><br>
+          需要勾选 <code>repo</code> 或 <code>public_repo</code> 权限
+        </div>
+      </div>
     </div>
 
   </div>
@@ -1893,6 +1930,7 @@ const I18N = {
     sort_top: '热门', sort_live: '最新',
     block_resources: '加速模式（屏蔽图片/CSS，页面加载更快）',
     btn_search: '开始搜索',
+    btn_cancel_search: '取消搜索',
     // Import
     import_title: '数据导入',
     import_desc: '上传数据文件，系统自动调用工作流提取关键词并写入词库',
@@ -2084,6 +2122,7 @@ const I18N = {
     sort_top: 'Top', sort_live: 'Latest',
     block_resources: 'Speed mode (block images/CSS for faster loading)',
     btn_search: 'Start Search',
+    btn_cancel_search: 'Cancel Search',
     import_title: 'Data Import',
     import_desc: 'Upload data files. The system uses AI workflow to extract keywords and write to vocabulary.',
     model_config: 'Model API Config', model_not_configured: 'Not configured',
@@ -2365,6 +2404,51 @@ function dismissUpdate() {
     localStorage.setItem('update_dismissed_version', versionEl.textContent.replace('v', ''));
   }
   document.getElementById('update-banner').classList.remove('show');
+}
+
+// GitHub Token 验证
+async function verifyGitHubToken() {
+  const tokenInput = document.getElementById('github-token-input');
+  const statusEl = document.getElementById('github-token-status');
+  const btn = document.getElementById('verify-token-btn');
+  const token = tokenInput.value.trim();
+  
+  if (!token) {
+    statusEl.innerHTML = '<span style="color:var(--warning)">请输入 Token</span>';
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.textContent = '验证中...';
+  statusEl.innerHTML = '';
+  
+  try {
+    const result = await api('/api/verify-github-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    
+    const statusColors = {
+      valid: 'var(--success)',
+      invalid: 'var(--danger)',
+      not_configured: 'var(--warning)',
+      rate_limited: 'var(--warning)',
+      forbidden: 'var(--danger)',
+      error: 'var(--danger)',
+    };
+    const color = statusColors[result.status] || 'var(--text-secondary)';
+    statusEl.innerHTML = `<span style="color:${color}">${result.message}</span>`;
+    
+    if (result.status === 'valid') {
+      toast('Token 验证通过', 'success');
+    }
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:var(--danger)">验证失败: ${e.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '验证 Token';
+  }
 }
 
 // 一键更新功能
@@ -3190,13 +3274,17 @@ async function startMultiSearch() {
   }
 
   const btn = document.getElementById('multi-search-btn');
+  const cancelBtn = document.getElementById('cancel-search-btn');
   document.getElementById('multi-search-result').innerHTML = '';
   btn.disabled = true;
+  cancelBtn.style.display = 'inline-block';
   const _startTime = Date.now();
+  let _currentTaskId = null;
 
   const finishUI = () => {
     btn.disabled = false;
     btn.innerHTML = t('btn_search');
+    cancelBtn.style.display = 'none';
     const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
     const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
@@ -3206,7 +3294,8 @@ async function startMultiSearch() {
 
   const renderFinalResult = (stats) => {
     const div = document.getElementById('multi-search-result');
-    if (stats.status === 'success' || stats.status === 'empty') {
+    const isCancelled = stats.status === 'cancelled';
+    if (stats.status === 'success' || stats.status === 'empty' || isCancelled) {
       _resultPosts = stats.sampled_posts || [];
       _resultPageIdx = 0;
       _resultContainerId = 'result-posts-container';
@@ -3224,8 +3313,8 @@ async function startMultiSearch() {
       }
 
       div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4>
-        <div class="crawl-result ${isError ? 'error' : ''}">
-        <strong>${isError ? t('no_search_result') : t('search_complete')}</strong>
+        <div class="crawl-result ${isError ? 'error' : (isCancelled ? 'warning' : '')}">
+        <strong>${isCancelled ? (stats.message || '搜索已取消，数据已保存') : (isError ? t('no_search_result') : t('search_complete'))}</strong>
         ${stats.error ? `<div style="font-size:12px;color:var(--danger);margin-top:4px">${esc(stats.error)}</div>` : ''}
         ${stats.errors && stats.errors.length ? `<div class="error-box" style="margin-top:8px">${stats.errors.map(e => `<p>${esc(e)}</p>`).join('')}</div>` : ''}
         ${skippedHtml}
@@ -3237,7 +3326,7 @@ async function startMultiSearch() {
         ${_resultPosts.length ? '<div id="result-posts-container"></div>' : ''}
         </div>`;
       if (_resultPosts.length) renderResultPosts();
-      if (!isError) toast(t('multi_search_done'), 'success');
+      if (!isError) toast(isCancelled ? '搜索已取消' : t('multi_search_done'), isCancelled ? 'warning' : 'success');
     } else {
       div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('search_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
     }
@@ -3250,6 +3339,7 @@ async function startMultiSearch() {
     });
     
     const taskId = initRes.task_id;
+    _currentTaskId = taskId;
     let isPolling = true;
 
     const poll = async () => {
@@ -3277,6 +3367,26 @@ async function startMultiSearch() {
   }
 }
 
+async function cancelCurrentSearch() {
+  if (!_currentTaskId) {
+    toast('没有正在进行的搜索任务', 'error');
+    return;
+  }
+  
+  const cancelBtn = document.getElementById('cancel-search-btn');
+  cancelBtn.disabled = true;
+  cancelBtn.textContent = '正在取消...';
+  
+  try {
+    await api(`/api/cancel-search?task_id=${_currentTaskId}`, { method: 'POST' });
+    toast('已发送取消请求，正在保存数据...', 'info');
+  } catch (e) {
+    toast('取消失败: ' + e.message, 'error');
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = t('btn_cancel_search');
+  }
+}
+
 async function startBatchSearch(keywords) {
   const platforms = getSelectedPlatforms();
   const count = parseInt(document.getElementById('search-count').value) || 50;
@@ -3300,13 +3410,17 @@ async function startBatchSearch(keywords) {
   if (!cookies.length) return toast(t('all_cookie_not_configured'), 'error');
 
   const btn = document.getElementById('multi-search-btn');
+  const cancelBtn = document.getElementById('cancel-search-btn');
   document.getElementById('multi-search-result').innerHTML = '';
   btn.disabled = true;
+  cancelBtn.style.display = 'inline-block';
   const _startTime = Date.now();
+  let _currentTaskId = null;
 
   const finishUI = () => {
     btn.disabled = false;
     btn.textContent = t('btn_search');
+    cancelBtn.style.display = 'none';
     const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
     const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
@@ -3316,7 +3430,8 @@ async function startBatchSearch(keywords) {
 
   const renderFinalResult = (stats) => {
     const div = document.getElementById('multi-search-result');
-    if (stats.status === 'success' || stats.status === 'empty') {
+    const isCancelled = stats.status === 'cancelled';
+    if (stats.status === 'success' || stats.status === 'empty' || isCancelled) {
       let kwSummary = '';
       if (stats.keyword_results) {
         kwSummary = stats.keyword_results.map(kr => `<span class="keyword-result">「${esc(kr.keyword)}」: ${kr.post_count} ${t('stat_scraped')}</span>`).join('');
@@ -3337,6 +3452,7 @@ async function startBatchSearch(keywords) {
 
       div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4>
         ${skippedHtml}
+        ${isCancelled ? `<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E"><strong>${stats.message || '搜索已取消，数据已保存'}</strong></div>` : ''}
         <div class="stats-success">
           <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('stat_total_posts')}</div></div>
           <div class="result-stat"><div class="num">${stats.total_rows}</div><div class="lbl">${t('stat_total_rows')}</div></div>
@@ -3363,6 +3479,7 @@ async function startBatchSearch(keywords) {
     });
     
     const taskId = initRes.task_id;
+    _currentTaskId = taskId;
     let isPolling = true;
 
     const poll = async () => {

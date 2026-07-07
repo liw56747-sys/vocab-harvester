@@ -160,6 +160,28 @@ _BG_TASKS_LOCK = threading.Lock()
 _BG_TASKS_MAX = 500       # 最多保留 500 个已完成任务
 _BG_TASKS_TTL = 3600      # 已完成任务最多保留 1 小时
 
+# 已取消的任务 ID 集合（用于中断搜索任务）
+_CANCELLED_TASKS: set[str] = set()
+_CANCELLED_LOCK = threading.Lock()
+
+
+def _is_task_cancelled(task_id: str) -> bool:
+    """检查任务是否已被取消"""
+    with _CANCELLED_LOCK:
+        return task_id in _CANCELLED_TASKS
+
+
+def _cancel_task(task_id: str) -> None:
+    """标记任务为已取消"""
+    with _CANCELLED_LOCK:
+        _CANCELLED_TASKS.add(task_id)
+
+
+def _remove_cancelled(task_id: str) -> None:
+    """移除取消标记（任务完成后清理）"""
+    with _CANCELLED_LOCK:
+        _CANCELLED_TASKS.discard(task_id)
+
 
 def _set_task_status(task_id: str, data: dict) -> None:
     """线程安全地写入任务状态，并清理过期条目"""
@@ -190,6 +212,20 @@ async def get_task_status(task_id: str):
     if data is None:
         return {"status": "error", "error": "任务不存在或已失效"}
     return data
+
+
+@app.post("/api/cancel-search")
+async def cancel_search(task_id: str):
+    """取消正在进行的搜索任务"""
+    data = _get_task_status(task_id)
+    if data is None:
+        return {"status": "error", "error": "任务不存在或已失效"}
+    if data.get("status") != "running":
+        return {"status": "error", "error": "任务未在运行中"}
+    
+    _cancel_task(task_id)
+    logger.info(f"搜索任务已标记为取消: {task_id}")
+    return {"status": "ok", "message": "搜索已取消"}
 
 
 @app.get("/")
@@ -589,14 +625,45 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                     _set_task_status(task_id, {"status": "error", "error": "所选平台均未配置 Cookie，请先填写"})
                     return
 
-                # 添加整体超时保护（8分钟）
+                # 按平台分别计算超时（X:30分钟/R:20分钟），仅作为兜底保护
+                search_timeout = (
+                    (_TC.single_keyword_timeout if "twitter" in platform_names else 0)
+                    + (_RC.single_keyword_timeout if "reddit" in platform_names else 0)
+                )
+                search_timeout = max(search_timeout, 120)  # 最低 2 分钟保底
+                
+                # 使用 asyncio.wait 以便在取消时能立即返回已完成的结果
+                done_tasks = []
                 try:
-                    results = await asyncio.wait_for(
-                        asyncio.gather(*tasks, return_exceptions=True),
-                        timeout=480
+                    done_tasks, pending = await asyncio.wait(
+                        [asyncio.create_task(t) for t in tasks],
+                        timeout=search_timeout
                     )
+                    # 取消未完成的任务
+                    for t in pending:
+                        t.cancel()
+                    # 等待取消完成
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
                 except asyncio.TimeoutError:
-                    _set_task_status(task_id, {"status": "error", "error": "搜索超时（8分钟），请减少关键词数量或稍后重试"})
+                    pass
+                
+                # 检查是否被用户取消
+                was_cancelled = _is_task_cancelled(task_id)
+                
+                results = []
+                for t in done_tasks:
+                    try:
+                        results.append(t.result())
+                    except Exception as e:
+                        results.append(e)
+                
+                if was_cancelled:
+                    # 取消时保存已获取的数据
+                    logger.info(f"搜索任务已取消，保存已获取的数据: {task_id}")
+                
+                if not results and not was_cancelled:
+                    _set_task_status(task_id, {"status": "error", "error": f"搜索超时（{search_timeout}秒），请减少关键词数量或稍后重试"})
                     return
 
                 all_posts: list[dict] = []
@@ -659,10 +726,14 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
 
                 csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                _set_task_status(task_id, {"status": "success", "result": {"status": "success", "total_posts": sum(1 for p in all_posts if p.get("type", "post") != "comment"), "total_rows": len(all_posts), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"multi_search_{timestamp}.csv", "platform_counts": platform_counts, "skipped_platforms": skipped_platforms, "errors": errors}})
+                result_status = "cancelled" if was_cancelled else "success"
+                result_msg = "搜索已取消，数据已保存" if was_cancelled else None
+                _set_task_status(task_id, {"status": "success", "result": {"status": result_status, "total_posts": sum(1 for p in all_posts if p.get("type", "post") != "comment"), "total_rows": len(all_posts), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"multi_search_{timestamp}.csv", "platform_counts": platform_counts, "skipped_platforms": skipped_platforms, "errors": errors, "message": result_msg}})
             except Exception as e:
                 tb.print_exc()
                 _set_task_status(task_id, {"status": "error", "error": str(e)})
+            finally:
+                _remove_cancelled(task_id)
 
         loop.run_until_complete(_run())
         loop.close()
@@ -757,20 +828,43 @@ async def batch_search(req: BatchSearchRequest):
                         return kw_rows, {"keyword": kw, "post_count": kw_post_count, "total_rows": len([x for x in results if not isinstance(x, Exception) and x[0]]) if results else 0}, kw_errors
 
                 valid_keywords = [(kw.strip(), i) for i, kw in enumerate(req.keywords) if kw.strip()]
-                # 批量搜索整体超时保护：按平台分别累加，分别封顶（X:8分钟/R:6分钟）
+                # 批量搜索整体超时保护：按平台分别累加，分别封顶（X:60分钟/R:40分钟）
                 twitter_kw_count = sum(1 for kw, _ in valid_keywords if "twitter" in req.platforms)
                 reddit_kw_count = sum(1 for kw, _ in valid_keywords if "reddit" in req.platforms)
-                twitter_batch_cap = _TC.batch_max_timeout  # 480秒 = 8分钟
-                reddit_batch_cap = _RC.batch_max_timeout    # 360秒 = 6分钟
+                twitter_batch_cap = _TC.batch_max_timeout  # 3600秒 = 60分钟
+                reddit_batch_cap = _RC.batch_max_timeout    # 2400秒 = 40分钟
                 twitter_timeout = min(twitter_kw_count * _TC.single_keyword_timeout, twitter_batch_cap) if twitter_kw_count > 0 else 0
                 reddit_timeout = min(reddit_kw_count * _RC.single_keyword_timeout, reddit_batch_cap) if reddit_kw_count > 0 else 0
                 batch_timeout = max(twitter_timeout + reddit_timeout, 120)  # 最低 2 分钟保底
                 all_kw_results = []
+                was_cancelled = False
                 try:
-                    all_kw_results = await asyncio.wait_for(
-                        asyncio.gather(*[_search_one_keyword(kw, idx) for kw, idx in valid_keywords], return_exceptions=True),
+                    # 使用 asyncio.wait 以便在取消时能立即返回已完成的结果
+                    batch_tasks = [asyncio.create_task(_search_one_keyword(kw, idx)) for kw, idx in valid_keywords]
+                    done_batch, pending_batch = await asyncio.wait(
+                        batch_tasks,
                         timeout=batch_timeout
                     )
+                    # 取消未完成的任务
+                    for t in pending_batch:
+                        t.cancel()
+                    if pending_batch:
+                        await asyncio.gather(*pending_batch, return_exceptions=True)
+                    
+                    # 检查是否被用户取消
+                    was_cancelled = _is_task_cancelled(task_id)
+                    if was_cancelled:
+                        logger.info(f"批量搜索任务已取消，保存已获取的数据: {task_id}")
+                    
+                    # 收集已完成的结果
+                    for t in done_batch:
+                        try:
+                            all_kw_results.append(t.result())
+                        except Exception as e:
+                            all_kw_results.append(e)
+                    
+                    if not was_cancelled and not all_kw_results and pending_batch:
+                        errors.append(f"批量搜索超时（{batch_timeout}秒），部分关键词可能未完成")
                 except asyncio.TimeoutError:
                     # 批量超时也要返回已获取的部分数据，而不是直接报错
                     logger.warning(f"批量搜索超时（{batch_timeout}秒），返回已获取的部分数据")
@@ -825,10 +919,14 @@ async def batch_search(req: BatchSearchRequest):
 
                 csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                _set_task_status(task_id, {"status": "success", "result": {"status": "success", "total_posts": sum(1 for p in all_rows if p.get("type", "post") != "comment"), "total_rows": len(all_rows), "keyword_results": keyword_results, "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"batch_search_{timestamp}.csv", "skipped_platforms": skipped_platforms, "errors": errors}})
+                result_status = "cancelled" if was_cancelled else "success"
+                result_msg = "搜索已取消，数据已保存" if was_cancelled else None
+                _set_task_status(task_id, {"status": "success", "result": {"status": result_status, "total_posts": sum(1 for p in all_rows if p.get("type", "post") != "comment"), "total_rows": len(all_rows), "keyword_results": keyword_results, "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"batch_search_{timestamp}.csv", "skipped_platforms": skipped_platforms, "errors": errors, "message": result_msg}})
             except Exception as e:
                 tb.print_exc()
                 _set_task_status(task_id, {"status": "error", "error": str(e)})
+            finally:
+                _remove_cancelled(task_id)
 
         loop.run_until_complete(_run())
         loop.close()
@@ -966,6 +1064,80 @@ async def api_install_update():
             return {"status": "error", "error": "不支持的平台"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
+
+
+# ── GitHub Token 验证 ──────────────────────────────────────────────
+
+class GitHubTokenVerifyRequest(BaseModel):
+    token: str = ""
+
+
+@app.post("/api/verify-github-token")
+async def verify_github_token(req: GitHubTokenVerifyRequest):
+    """验证 GitHub Token 的有效性"""
+    import requests as _requests
+    
+    token = req.token.strip()
+    if not token:
+        return {"status": "not_configured", "message": "未配置 Token，请前往设置添加"}
+    
+    # 检测代理
+    from src.common.version import _get_proxy_url
+    proxy_url = _get_proxy_url()
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+    
+    # 尝试多个 API 端点
+    apis = [
+        "https://api.github.com/user",
+        "https://api.kkgithub.com/user",
+    ]
+    
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "vocab-harvester",
+        "Authorization": f"token {token}",
+    }
+    
+    last_error = None
+    for api_url in apis:
+        try:
+            resp = _requests.get(
+                api_url,
+                headers=headers,
+                timeout=15,
+                proxies=proxies,
+                verify=False,
+            )
+            
+            if resp.status_code == 200:
+                # Token 有效
+                remaining = resp.headers.get("X-RateLimit-Remaining", "未知")
+                limit = resp.headers.get("X-RateLimit-Limit", "未知")
+                return {
+                    "status": "valid",
+                    "message": f"Token 验证通过，当前剩余请求次数：{remaining} 次（总额 {limit}）",
+                    "remaining": remaining,
+                    "limit": limit,
+                }
+            elif resp.status_code == 401:
+                return {"status": "invalid", "message": "Token 无效，请重新生成"}
+            elif resp.status_code == 403:
+                # 可能是权限不足或 rate limit
+                error_data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+                msg = error_data.get("message", "")
+                if "rate limit" in msg.lower():
+                    return {"status": "rate_limited", "message": "Token 权限不足或已达到速率限制，请检查是否勾选了 repo 或 public_repo 权限"}
+                else:
+                    return {"status": "forbidden", "message": f"Token 权限不足：{msg}"}
+            else:
+                last_error = f"HTTP {resp.status_code}"
+                continue
+                
+        except Exception as e:
+            last_error = str(e)
+            continue
+    
+    return {"status": "error", "message": f"验证失败：{last_error}"}
 
 
 _chromium_install_state = {
