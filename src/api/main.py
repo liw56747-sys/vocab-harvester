@@ -730,14 +730,14 @@ async def batch_search(req: BatchSearchRequest):
                                 plat_names.append("reddit")
 
                         if not tasks: return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 无可用平台 Cookie"]
-                        # 单关键词搜索超时保护（3分钟）
+                        # 单关键词搜索超时保护（5分钟）
                         try:
                             results = await asyncio.wait_for(
                                 asyncio.gather(*tasks, return_exceptions=True),
-                                timeout=180
+                                timeout=300
                             )
                         except asyncio.TimeoutError:
-                            return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 搜索超时（3分钟）"]
+                            return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 搜索超时（5分钟）"]
                         kw_rows, kw_errors, kw_post_count = [], [], 0
                         for plat, result in zip(plat_names, results):
                             if isinstance(result, Exception):

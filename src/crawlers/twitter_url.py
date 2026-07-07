@@ -11,6 +11,7 @@ import asyncio
 import csv
 import json
 import logging
+import random
 import re
 from datetime import datetime
 from pathlib import Path
@@ -787,13 +788,12 @@ class TwitterCookieFetcher:
                 return []
 
         # 逐轮滚动 + 提取 + 去重（虚拟滚动：DOM 同时仅保留 ~15-25 条）
+        SEARCH_MAX_ROUNDS = 30  # 固定最大轮数（仅作为硬性保底）
         all_tweets: dict[str, dict] = {}
         stall_count = 0
-        max_rounds = min(25, count)  # 限制最多滚动轮数，防止无限循环
-        max_stalls = 3
-        is_top = (sort_by != "live")
-
-        # 点击"显示更多的"类按钮
+        MAX_STALLS = 2  # 连续 2 次无新增即停止
+        
+        # 点击“显示更多的”类按钮
         _CLICK_MORE_JS = r"""() => {
             const spans = document.querySelectorAll('span');
             for (const span of spans) {
@@ -814,55 +814,47 @@ class TwitterCookieFetcher:
             }
             return false;
         }"""
-
-        for round_num in range(max_rounds):
+        
+        for round_num in range(SEARCH_MAX_ROUNDS):
+            # 条件 A（主要）：已抓取数量 >= 目标数量，立即停止
             if len(all_tweets) >= count:
+                logger.info(f"搜索「{keyword}」: 已达到目标数量 {count} 条，停止滚动")
                 break
-
+        
             # 展开截断的长推文
             expanded = await page.evaluate(_EXPAND_TWEETS_JS)
             if expanded > 0:
                 await asyncio.sleep(0.2)
-
+        
             # 提取当前 DOM 中的推文
             new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()))
             for t in new_tweets:
                 tid = t.get("tweet_id", "")
                 if tid and tid not in all_tweets:
                     all_tweets[tid] = t
-
+        
             prev_count = len(all_tweets)
-
-            # 可变步长滚动：前段大步快拉，后段小步精取
-            if round_num < 10:
-                await page.evaluate("window.scrollBy(0, 2000)")
-            elif round_num < 30:
-                await page.evaluate("window.scrollBy(0, 1200)")
-            else:
-                await page.evaluate("window.scrollBy(0, 600)")
-            await asyncio.sleep(0.3)
-
+        
+            # 滚动到页面底部（触底加载）
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            # 随机等待 2~4 秒（适配多关键词并行）
+            await asyncio.sleep(random.uniform(2, 4))
+        
+            # 条件 B（保底/触底检测）：连续 2 次无新增即停止
             if len(all_tweets) == prev_count:
                 stall_count += 1
-
-                # 停滞时尝试点击"加载更多"
-                if stall_count >= 2:
+        
+                # 停滞时尝试点击“加载更多”
+                if stall_count >= 1:
                     clicked = await page.evaluate(_CLICK_MORE_JS)
                     if clicked:
                         logger.info(f"搜索「{keyword}」第{round_num+1}轮: 点击了加载更多按钮")
-                        await asyncio.sleep(0.2)
+                        await asyncio.sleep(random.uniform(2, 4))
                         stall_count = 0
                         continue
-
-                # 停滞较多且是热门排序时，尝试更大步长
-                if stall_count >= 3 and is_top:
-                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    await asyncio.sleep(0.3)
-                    await page.evaluate("window.scrollBy(0, -3000)")
-                    await asyncio.sleep(0.3)
-
-                if stall_count >= max_stalls:
-                    logger.info(f"搜索「{keyword}」({sort_by}): 滚动加载完成 ({len(all_tweets)} 条，连续 {stall_count} 轮无新增)")
+        
+                if stall_count >= MAX_STALLS:
+                    logger.info(f"搜索「{keyword}」({sort_by}): 触底停止 ({len(all_tweets)} 条，连续 {stall_count} 轮无新增)")
                     break
             else:
                 stall_count = 0
@@ -1058,14 +1050,14 @@ class TwitterCookieFetcher:
         }"""
 
         # 渐进式滚动 + 去重采集
+        COMMENT_MAX_ROUNDS = 8  # 评论页固定最多 8 轮
         collected = {}
         stall_count = 0
-        max_rounds = 20
-        max_stalls = 3
+        max_stalls = 2
         per_tweet_budget = 45
         _tweet_start = _time.time()
 
-        for round_num in range(max_rounds):
+        for round_num in range(COMMENT_MAX_ROUNDS):
             # 超时保护
             if _time.time() - _tweet_start > per_tweet_budget:
                 logger.info(f"回复超时保护: 已用 {int(_time.time() - _tweet_start)} 秒，停止")

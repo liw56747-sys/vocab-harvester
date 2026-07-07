@@ -7,8 +7,6 @@ import logging
 import platform
 import sys
 import threading
-import urllib.request
-import urllib.error
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -130,27 +128,16 @@ def _get_proxy_url() -> str | None:
 
 def check_for_update_async(callback=None):
     """后台线程检查 GitHub 最新版本，完成后调用 callback(info)"""
-    import ssl
+    import requests
 
     def _check():
         global _update_info
         # 重置状态，确保每次检查都是全新的
         _update_info = None
 
-        # 跳过 SSL 证书验证（解决 macOS/PyInstaller 打包后 CA 证书缺失问题）
-        # 更新检查只读取公开版本号，不涉及敏感数据，安全风险可接受
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
-
+        # 检测代理
         proxy_url = _get_proxy_url()
-        if proxy_url:
-            proxy_handler = urllib.request.ProxyHandler({
-                "https": proxy_url, "http": proxy_url,
-            })
-            opener = urllib.request.build_opener(proxy_handler)
-        else:
-            opener = urllib.request.build_opener()
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
 
         # 构建尝试列表：镜像优先（包含原始 API）
         apis = _GITHUB_MIRRORS
@@ -158,12 +145,15 @@ def check_for_update_async(callback=None):
 
         for api_url in apis:
             try:
-                req = urllib.request.Request(
+                response = requests.get(
                     api_url,
                     headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "vocab-harvester"},
+                    timeout=10,
+                    proxies=proxies,
+                    verify=False,  # 跳过 SSL 验证（解决 macOS/PyInstaller CA 证书缺失）
                 )
-                with opener.open(req, timeout=10, context=ssl_ctx) as resp:
-                    data = json.loads(resp.read().decode())
+                response.raise_for_status()
+                data = response.json()
 
                 latest = data.get("tag_name", "").lstrip("v")
                 current = get_version()
@@ -253,25 +243,30 @@ def _version_gt(a: str, b: str) -> bool:
 
 def download_update(url: str, dest: Path, progress_callback=None) -> bool:
     """下载安装包，支持进度回调 callback(downloaded_bytes, total_bytes)"""
-    import ssl
+    import requests
     try:
-        # 跳过 SSL 证书验证（与 check_for_update_async 保持一致）
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
+        # 检测代理
+        proxy_url = _get_proxy_url()
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
 
-        req = urllib.request.Request(url, headers={"User-Agent": "vocab-harvester"})
-        with urllib.request.urlopen(req, timeout=120, context=ssl_ctx) as resp:
-            total = int(resp.headers.get("Content-Length", 0))
-            downloaded = 0
-            chunk_size = 1024 * 256  # 256KB chunks
+        response = requests.get(
+            url,
+            headers={"User-Agent": "vocab-harvester"},
+            timeout=120,
+            proxies=proxies,
+            verify=False,  # 跳过 SSL 验证
+            stream=True,  # 流式下载
+        )
+        response.raise_for_status()
 
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with open(dest, "wb") as f:
-                while True:
-                    chunk = resp.read(chunk_size)
-                    if not chunk:
-                        break
+        total = int(response.headers.get("Content-Length", 0))
+        downloaded = 0
+        chunk_size = 1024 * 256  # 256KB chunks
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "wb") as f:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
                     f.write(chunk)
                     downloaded += len(chunk)
                     if progress_callback:
