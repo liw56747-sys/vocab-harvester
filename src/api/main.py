@@ -28,6 +28,7 @@ from src.common.config import load_settings
 from src.common.database import init_db, close_db
 from src.common.models import CrawlQuery, ParsedPost, Platform, VocabStatus
 from src.common.version import get_version, get_platform, check_for_update_async, get_update_info, download_update
+from src.crawlers.platform_config import twitter_config as _TC, reddit_config as _RC
 from src.orchestrator.pipeline import Pipeline
 from src.vocabulary.manager import VocabManager
 
@@ -730,14 +731,19 @@ async def batch_search(req: BatchSearchRequest):
                                 plat_names.append("reddit")
 
                         if not tasks: return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 无可用平台 Cookie"]
-                        # 单关键词搜索超时保护（5分钟）
+                        # 根据涉及的平台累加超时时间（双平台时给足两平台时间）
+                        kw_timeout = (
+                            (_TC.single_keyword_timeout if "twitter" in plat_names else 0)
+                            + (_RC.single_keyword_timeout if "reddit" in plat_names else 0)
+                        )
+                        kw_timeout = max(kw_timeout, 60)  # 最低 60 秒保底
                         try:
                             results = await asyncio.wait_for(
                                 asyncio.gather(*tasks, return_exceptions=True),
-                                timeout=300
+                                timeout=kw_timeout
                             )
                         except asyncio.TimeoutError:
-                            return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 搜索超时（5分钟）"]
+                            return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 搜索超时（{kw_timeout}秒）"]
                         kw_rows, kw_errors, kw_post_count = [], [], 0
                         for plat, result in zip(plat_names, results):
                             if isinstance(result, Exception):
@@ -751,20 +757,33 @@ async def batch_search(req: BatchSearchRequest):
                         return kw_rows, {"keyword": kw, "post_count": kw_post_count, "total_rows": len([x for x in results if not isinstance(x, Exception) and x[0]]) if results else 0}, kw_errors
 
                 valid_keywords = [(kw.strip(), i) for i, kw in enumerate(req.keywords) if kw.strip()]
-                # 批量搜索整体超时保护（每关键词3分钟，最多10分钟）
-                batch_timeout = min(len(valid_keywords) * 180, 600)
+                # 批量搜索整体超时保护：按平台分别累加，分别封顶（X:8分钟/R:6分钟）
+                twitter_kw_count = sum(1 for kw, _ in valid_keywords if "twitter" in req.platforms)
+                reddit_kw_count = sum(1 for kw, _ in valid_keywords if "reddit" in req.platforms)
+                twitter_batch_cap = _TC.batch_max_timeout  # 480秒 = 8分钟
+                reddit_batch_cap = _RC.batch_max_timeout    # 360秒 = 6分钟
+                twitter_timeout = min(twitter_kw_count * _TC.single_keyword_timeout, twitter_batch_cap) if twitter_kw_count > 0 else 0
+                reddit_timeout = min(reddit_kw_count * _RC.single_keyword_timeout, reddit_batch_cap) if reddit_kw_count > 0 else 0
+                batch_timeout = max(twitter_timeout + reddit_timeout, 120)  # 最低 2 分钟保底
+                all_kw_results = []
                 try:
                     all_kw_results = await asyncio.wait_for(
                         asyncio.gather(*[_search_one_keyword(kw, idx) for kw, idx in valid_keywords], return_exceptions=True),
                         timeout=batch_timeout
                     )
                 except asyncio.TimeoutError:
-                    _set_task_status(task_id, {"status": "error", "error": f"批量搜索超时（{batch_timeout//60}分钟）"})
-                    return
+                    # 批量超时也要返回已获取的部分数据，而不是直接报错
+                    logger.warning(f"批量搜索超时（{batch_timeout}秒），返回已获取的部分数据")
+                    errors.append(f"批量搜索超时（{batch_timeout}秒），部分关键词可能未完成")
 
                 for result in all_kw_results:
                     if isinstance(result, Exception):
-                        errors.append(str(result)); continue
+                        errors.append(f"关键词任务异常: {result}")
+                        logger.error(f"关键词任务异常: {result}", exc_info=result)
+                        continue
+                    if not isinstance(result, tuple) or len(result) != 3:
+                        errors.append(f"关键词任务返回格式错误: {type(result)}")
+                        continue
                     kw_rows, kw_result, kw_errors = result
                     all_rows.extend(kw_rows); keyword_results.append(kw_result); errors.extend(kw_errors)
                     for p in kw_rows:

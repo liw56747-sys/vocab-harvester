@@ -15,6 +15,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from src.crawlers.platform_config import reddit_config as _RC
+
 logger = logging.getLogger(__name__)
 
 # ── CSV 字段 ──────────────────────────────────────────────
@@ -95,7 +97,7 @@ class RedditCookieFetcher:
 
         try:
             async with httpx.AsyncClient(
-                timeout=30,
+                timeout=_RC.search_load_timeout / 1000,
                 follow_redirects=True,
                 cookies=cookie_dict,
                 headers=headers,
@@ -295,7 +297,7 @@ class RedditCookieFetcher:
 
         try:
             async with httpx.AsyncClient(
-                timeout=20,
+                timeout=_RC.comment_more_wait * 20,
                 follow_redirects=True,
                 cookies=cookie_dict,
                 headers=headers,
