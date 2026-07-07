@@ -314,6 +314,11 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史用于生成 changelog
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -355,6 +360,69 @@ jobs:
           echo "Windows installer: $WIN_EXE"
           echo "macOS DMG:         $MAC_DMG"
 
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO:  ${{ github.repository }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # 获取上一个 tag 用于 changelog 范围
+          PREV_TAG=$(gh release list --limit 2 --json tagName -q '.[1].tagName // ""' 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG=$(git log --pretty=format:%H --max-count=1 --grep="v${VERSION}" --reverse 2>/dev/null | head -1 || echo "")
+          fi
+
+          # 生成动态更新日志（基于 commit 记录）
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges 2>/dev/null || echo "")
+          else
+            CHANGELOG=$(git log -20 --pretty=format:"- %s" --no-merges 2>/dev/null || echo "")
+          fi
+
+          # 如果 changelog 为空，使用 --generate-notes
+          if [ -z "$CHANGELOG" ]; then
+            echo "No commit log available, will use GitHub auto-generated notes"
+            echo "use_auto_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_auto_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # 获取安装包文件名
+          WIN_EXE=$(basename "${{ steps.files.outputs.win_exe }}")
+          MAC_DMG=$(basename "${{ steps.files.outputs.mac_dmg }}")
+
+          # 拼接完整 Release Body
+          cat > /tmp/release_body.md << 'BODY_EOF'
+          ## 更新日志
+
+          BODY_EOF
+
+          if [ -n "$CHANGELOG" ]; then
+            echo "$CHANGELOG" >> /tmp/release_body.md
+          fi
+
+          # 追加静态安装指南模板
+          cat >> /tmp/release_body.md << TEMPLATE_EOF
+
+          ---
+
+          ### 安装包
+
+          | 平台 | 文件 | 说明 |
+          | --- | --- | --- |
+          | macOS | ${MAC_DMG} | 双击打开，拖入 Applications |
+          | Windows | ${WIN_EXE} | 双击安装向导 |
+
+          > 如果下载速度慢，可以尝试使用代理或镜像加速。
+          TEMPLATE_EOF
+
+          echo "body_file=/tmp/release_body.md" >> "$GITHUB_OUTPUT"
+          echo "=== Release body preview ==="
+          cat /tmp/release_body.md
+
       - name: Create GitHub Release & upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -364,16 +432,30 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           WIN_EXE="${{ steps.files.outputs.win_exe }}"
           MAC_DMG="${{ steps.files.outputs.mac_dmg }}"
+          USE_AUTO="${{ steps.notes.outputs.use_auto_notes }}"
+          BODY_FILE="${{ steps.notes.outputs.body_file }}"
 
-          # Check if release already exists (e.g. created by release.sh)
+          # Check if release already exists
           if gh release view "$TAG" &>/dev/null; then
-            echo "Release $TAG already exists, uploading assets..."
+            echo "Release $TAG already exists, updating notes and uploading assets..."
+            if [ "$USE_AUTO" = "true" ]; then
+              gh release edit "$TAG" --generate-notes --latest
+            else
+              gh release edit "$TAG" --notes-file "$BODY_FILE" --latest
+            fi
           else
             echo "Creating release $TAG..."
-            gh release create "$TAG" \
-              --title "vocab-harvester v${VERSION}" \
-              --generate-notes \
-              --latest
+            if [ "$USE_AUTO" = "true" ]; then
+              gh release create "$TAG" \
+                --title "vocab-harvester v${VERSION}" \
+                --generate-notes \
+                --latest
+            else
+              gh release create "$TAG" \
+                --title "vocab-harvester v${VERSION}" \
+                --notes-file "$BODY_FILE" \
+                --latest
+            fi
           fi
 
           # Upload assets (clobber overwrites any existing files)
