@@ -222,8 +222,19 @@ def _start_server(port: int):
                 _SERVER_ERROR = err_msg
                 return
 
+        except ImportError as import_err:
+            # 依赖缺失（如 websockets.exceptions），不应重试端口
+            _log(f"FATAL: 依赖缺失导致启动失败: {import_err}")
+            _log("请检查 requirements.txt 是否完整，或重新安装依赖")
+            _SERVER_ERROR = f"依赖缺失: {import_err}。请重新安装或更新程序。"
+            return
         except (OSError, Exception) as bind_err:
             _log(f"port bind/start failed: {bind_err}")
+            # 如果是模块缺失错误，不要重试端口，直接报错
+            if "No module named" in str(bind_err) or "ImportError" in str(type(bind_err)):
+                _log(f"FATAL: 模块缺失导致启动失败: {bind_err}")
+                _SERVER_ERROR = f"模块缺失: {bind_err}。请重新安装或更新程序。"
+                return
             # 尝试扫描其他端口
             for alt_port in range(8000, 8100):
                 if alt_port == port:
@@ -251,6 +262,10 @@ def _start_server(port: int):
                     finally:
                         loop.close()
                     break
+                except ImportError as alt_import_err:
+                    _log(f"FATAL: 依赖缺失: {alt_import_err}")
+                    _SERVER_ERROR = f"依赖缺失: {alt_import_err}。请重新安装或更新程序。"
+                    return
                 except (OSError, Exception) as alt_err:
                     _log(f"alt port {alt_port} also failed: {alt_err}")
                     continue
