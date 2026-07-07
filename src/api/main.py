@@ -313,52 +313,59 @@ async def analyze_last_data(
 ):
     """分析最近一次搜索抓取的数据（无需上传文件）"""
     import csv as _csv
-    with _LAST_SEARCH_LOCK:
-        if not _LAST_SEARCH_DATA:
-            raise HTTPException(400, "没有可分析的抓取数据，请先完成一次搜索")
-        # 取最新的一份
-        latest_key = list(_LAST_SEARCH_DATA.keys())[-1]
-        csv_data = _LAST_SEARCH_DATA[latest_key]
-
-    # 解析 CSV 为帖子列表
-    reader = _csv.DictReader(io.StringIO(csv_data))
-    posts: list[ParsedPost] = []
-    for row in reader:
-        content = row.get("content", "") or ""
-        if not content.strip():
-            continue
-        posts.append(ParsedPost(
-            platform=row.get("platform", "unknown"),
-            post_id=row.get("post_id", str(uuid.uuid4())[:12]),
-            content=content,
-            author=row.get("author", ""),
-            published_at=_parse_date(row.get("created_at", "")),
-            metrics={},
-            tags=[],
-            raw_data={"type": row.get("type", "post")},
-        ))
-
-    if not posts:
-        raise HTTPException(400, "抓取数据中没有有效内容")
-
-    # 解析工作流参数
+    import traceback as _tb
     try:
-        workflow_list = json.loads(workflows)
-    except Exception:
-        workflow_list = []
+        with _LAST_SEARCH_LOCK:
+            if not _LAST_SEARCH_DATA:
+                raise HTTPException(400, "没有可分析的抓取数据，请先完成一次搜索")
+            # 取最新的一份
+            latest_key = list(_LAST_SEARCH_DATA.keys())[-1]
+            csv_data = _LAST_SEARCH_DATA[latest_key]
 
-    if not (model_api_key and model_base_url):
-        pipeline = Pipeline.from_config()
-    else:
-        pipeline = Pipeline.from_config_with_model(
-            base_url=model_base_url, api_key=model_api_key, model=model_name,
-            backup_model=model_backup_name,
-            backup_base_url=model_backup_base_url or model_base_url,
-            backup_api_key=model_backup_api_key or model_api_key,
-        )
+        # 解析 CSV 为帖子列表
+        reader = _csv.DictReader(io.StringIO(csv_data))
+        posts: list[ParsedPost] = []
+        for row in reader:
+            content = row.get("content", "") or ""
+            if not content.strip():
+                continue
+            posts.append(ParsedPost(
+                platform=row.get("platform", "unknown"),
+                post_id=row.get("post_id", str(uuid.uuid4())[:12]),
+                content=content,
+                author=row.get("author", ""),
+                published_at=_parse_date(row.get("created_at", "")),
+                metrics={},
+                tags=[],
+                raw_data={"type": row.get("type", "post")},
+            ))
 
-    stats = await pipeline.process_posts(posts, source="auto-analyze")
-    return stats
+        if not posts:
+            raise HTTPException(400, "抓取数据中没有有效内容")
+
+        # 解析工作流参数
+        try:
+            workflow_list = json.loads(workflows)
+        except Exception:
+            workflow_list = []
+
+        if not (model_api_key and model_base_url):
+            pipeline = Pipeline.from_config()
+        else:
+            pipeline = Pipeline.from_config_with_model(
+                base_url=model_base_url, api_key=model_api_key, model=model_name,
+                backup_model=model_backup_name,
+                backup_base_url=model_backup_base_url or model_base_url,
+                backup_api_key=model_backup_api_key or model_api_key,
+            )
+
+        stats = await pipeline.process_posts(posts, source="auto-analyze")
+        return stats
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"自动分析异常: {e}\n{_tb.format_exc()}")
+        raise HTTPException(500, f"分析过程出错: {str(e)}")
 
 
 # ── 定时任务 CRUD ──────────────────────────────────────────
@@ -1002,10 +1009,16 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
 
                 for plat, result in zip(platform_names, results):
                     if isinstance(result, Exception):
-                        errors.append(f"{plat}: {result}")
+                        error_msg = f"{plat}: {result}"
+                        errors.append(error_msg)
+                        logger.error(f"平台 {plat} 抓取出错: {result}\n{tb.format_exc()}")
                         tb.print_exc()
                         continue
                     posts, csv_string = result
+                    if not posts:
+                        logger.warning(f"平台 {plat} 返回空结果")
+                    else:
+                        logger.info(f"平台 {plat} 返回 {len(posts)} 条结果")
                     platform_counts[plat] = sum(1 for p in posts if p.get("type", "post") != "comment")
                     for p in posts: p["platform"] = plat
                     all_posts.extend(posts)

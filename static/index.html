@@ -2968,18 +2968,14 @@ async function startAutoAnalyze() {
     }
 
     updateImportProgress(50, '正在调用分析工作流...');
-    const res = await fetch('/api/analyze-last', { method: 'POST', body: formData });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || '分析失败');
-    }
-    const stats = await res.json();
+    const stats = await api('/api/analyze-last', { method: 'POST', body: formData });
     updateImportProgress(100, '分析完成');
     renderImportResult(stats);
     toast('分析完成', 'success');
   } catch (e) {
-    document.getElementById('import-result').innerHTML = `<div class="crawl-result error"><strong>分析失败</strong>: ${esc(e.message)}</div>`;
-    toast(e.message, 'error');
+    const errMsg = e.message || '未知错误';
+    document.getElementById('import-result').innerHTML = `<div class="crawl-result error"><strong>分析失败</strong>: ${esc(errMsg)}</div>`;
+    toast('分析失败: ' + errMsg, 'error');
   } finally {
     btn.disabled = false;
     btn.innerHTML = t('btn_analyze') || '开始分析';
@@ -3633,6 +3629,9 @@ async function startTwitterFetch() {
   }
 }
 
+// 全局变量：当前搜索任务 ID（供取消按钮使用）
+let _currentTaskId = null;
+
 async function startMultiSearch() {
   const keyword = document.getElementById('search-keyword').value.trim();
   const platforms = getSelectedPlatforms();
@@ -3664,12 +3663,13 @@ async function startMultiSearch() {
   btn.disabled = true;
   cancelBtn.style.display = 'inline-block';
   const _startTime = Date.now();
-  let _currentTaskId = null;
+  _currentTaskId = null;
 
   const finishUI = () => {
     btn.disabled = false;
     btn.innerHTML = t('btn_search');
     cancelBtn.style.display = 'none';
+    _currentTaskId = null;
     const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
     const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
@@ -3800,12 +3800,13 @@ async function startBatchSearch(keywords) {
   btn.disabled = true;
   cancelBtn.style.display = 'inline-block';
   const _startTime = Date.now();
-  let _currentTaskId = null;
+  _currentTaskId = null;
 
   const finishUI = () => {
     btn.disabled = false;
     btn.textContent = t('btn_search');
     cancelBtn.style.display = 'none';
+    _currentTaskId = null;
     const _elapsed = Math.floor((Date.now() - _startTime) / 1000);
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
     const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;

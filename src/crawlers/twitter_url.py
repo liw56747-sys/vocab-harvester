@@ -544,7 +544,8 @@ class TwitterCookieFetcher:
             except asyncio.TimeoutError:
                 logger.warning(f"搜索「{keyword}」超时（{_TC.single_keyword_timeout}秒），已获取 {len(tweets)} 条")
             except Exception as e:
-                logger.error(f"搜索「{keyword}」整体失败: {e}")
+                logger.error(f"搜索「{keyword}」整体失败: {type(e).__name__}: {e}", exc_info=True)
+                raise  # 重新抛出异常，让上层处理
             finally:
                 await page.close()
 
