@@ -70,16 +70,40 @@ def _get_github_token() -> str:
     token = os.environ.get("GITHUB_TOKEN", "").strip()
     if token:
         return token
-    # 2. 项目根目录 .env 文件
-    env_file = Path(__file__).parent.parent.parent / ".env"
-    if env_file.exists():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("GITHUB_TOKEN="):
-                val = line.split("=", 1)[1].strip().strip('"').strip("'")
-                if val:
-                    logger.debug("GitHub Token loaded from .env file")
-                    return val
+    # 2. 查找 .env 文件（兼容源码运行和 PyInstaller 打包）
+    env_candidates = []
+    # PyInstaller 打包后: sys._MEIPASS 是临时解压目录
+    if getattr(sys, 'frozen', False):
+        # .app bundle 的 Resources 目录（macOS）
+        if sys.platform == "darwin":
+            bundle_root = Path(sys.executable).parent.parent / "Resources"
+            env_candidates.append(bundle_root / ".env")
+        # Windows _internal 目录
+        env_candidates.append(Path(sys.executable).parent / "_internal" / ".env")
+        env_candidates.append(Path(sys.executable).parent / ".env")
+        # _MEIPASS 临时目录
+        meipass = Path(getattr(sys, '_MEIPASS', ''))
+        if meipass.exists():
+            env_candidates.append(meipass / ".env")
+    # 源码运行: 项目根目录
+    env_candidates.append(Path(__file__).parent.parent.parent / ".env")
+    # 当前工作目录
+    env_candidates.append(Path.cwd() / ".env")
+    # 用户 home 目录
+    env_candidates.append(Path.home() / ".vocab-harvester" / ".env")
+
+    for env_file in env_candidates:
+        if env_file.exists():
+            try:
+                for line in env_file.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line.startswith("GITHUB_TOKEN="):
+                        val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if val:
+                            logger.debug(f"GitHub Token loaded from {env_file}")
+                            return val
+            except Exception:
+                continue
     return ""
 
 

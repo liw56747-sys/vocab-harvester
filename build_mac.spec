@@ -33,7 +33,10 @@ a = Analysis(
         (os.path.join(project_dir, 'icon.icns'), '.'),
         # Version
         (os.path.join(project_dir, 'VERSION'), '.'),
-    ] + pw_datas,
+        # GitHub Token (.env file, if exists)
+    ] + ([
+        (os.path.join(project_dir, '.env'), '.'),
+    ] if os.path.exists(os.path.join(project_dir, '.env')) else []) + pw_datas,
     hiddenimports=[
         # uvicorn submodules (PyInstaller often misses these)
         'uvicorn.logging',
