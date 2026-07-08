@@ -240,7 +240,7 @@ class XingpanAdapter(WorkflowAdapter):
             )
         return self._backup_client
 
-    async def submit(self, posts: list[ParsedPost]) -> str:
+    async def submit(self, posts: list[ParsedPost], opinion_detail: str = "", opinion_rules: str = "") -> str:
         """
         将帖子数据提交给智谱 GLM 进行黑词提取。
 
@@ -253,6 +253,10 @@ class XingpanAdapter(WorkflowAdapter):
         task_id = str(uuid.uuid4())[:12]
         all_keywords: list[ExtractedKeyword] = []
         post_ids = [p.post_id for p in posts]
+
+        # 保存舆情参数供 _call_llm 使用
+        self._opinion_detail = opinion_detail
+        self._opinion_rules = opinion_rules
 
         # 清洗并构建文本列表
         cleaned_items = []
@@ -304,13 +308,22 @@ class XingpanAdapter(WorkflowAdapter):
         )
         user_message = f"待分析 UGC 文本如下：\n\n{texts_block}"
 
+        # 构建 system prompt（注入舆情事件详情和管控规则）
+        system_prompt = _SYSTEM_PROMPT
+        opinion_detail = getattr(self, '_opinion_detail', '')
+        opinion_rules = getattr(self, '_opinion_rules', '')
+        if opinion_detail:
+            system_prompt += f"\n\n## 七、当前舆情事件背景\n\n{opinion_detail}"
+        if opinion_rules:
+            system_prompt += f"\n\n## 八、管控规则要求\n\n{opinion_rules}"
+
         client = self._get_client()
 
         try:
             response = await client.chat.completions.create(
                 model=self.config.model,
                 messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message},
                 ],
                 temperature=self.config.temperature,
@@ -331,7 +344,7 @@ class XingpanAdapter(WorkflowAdapter):
                     response = await backup_client.chat.completions.create(
                         model=self.config.backup_model,
                         messages=[
-                            {"role": "system", "content": _SYSTEM_PROMPT},
+                            {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_message},
                         ],
                         temperature=self.config.temperature,

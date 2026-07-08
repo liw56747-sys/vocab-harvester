@@ -44,7 +44,7 @@ class MockAdapter(WorkflowAdapter):
         self.top_k = top_k
         self._results: dict[str, WorkflowResult] = {}
 
-    async def submit(self, posts: list[ParsedPost]) -> str:
+    async def submit(self, posts: list[ParsedPost], opinion_detail: str = "", opinion_rules: str = "") -> str:
         """模拟提交任务：立即处理并缓存结果"""
         task_id = str(uuid.uuid4())[:12]
 

@@ -310,6 +310,8 @@ async def analyze_last_data(
     model_backup_base_url: str = Form(default=""),
     model_backup_api_key: str = Form(default=""),
     model_backup_name: str = Form(default=""),
+    opinion_detail: str = Form(default=""),
+    opinion_rules: str = Form(default=""),
 ):
     """分析最近一次搜索抓取的数据（无需上传文件）"""
     import csv as _csv
@@ -359,7 +361,10 @@ async def analyze_last_data(
                 backup_api_key=model_backup_api_key or model_api_key,
             )
 
-        stats = await pipeline.process_posts(posts, source="auto-analyze", task_name="自动分析")
+        stats = await pipeline.process_posts(
+            posts, source="auto-analyze", task_name="自动分析",
+            opinion_detail=opinion_detail, opinion_rules=opinion_rules,
+        )
         return stats
     except HTTPException:
         raise
@@ -553,6 +558,9 @@ async def _execute_scheduled_task(task_config: dict):
         keywords = params.get("keywords", [])
         platform_names = params.get("platforms", ["twitter"])
         count = params.get("count", 50)
+        sort_by = params.get("sort", "hot")
+        opinion_detail = params.get("opinion_detail", "")
+        opinion_rules = params.get("opinion_rules", "")
 
         # 构建平台枚举
         platform_map = {"twitter": Platform.TWITTER, "reddit": Platform.REDDIT}
@@ -568,7 +576,10 @@ async def _execute_scheduled_task(task_config: dict):
 
         logger.info(f"[定时任务 {task_id}] 开始抓取，关键词: {query.keywords}")
         pipeline = Pipeline.from_config()
-        stats = await pipeline.run(query, task_name=task_name)
+        stats = await pipeline.run(
+            query, task_name=task_name,
+            opinion_detail=opinion_detail, opinion_rules=opinion_rules,
+        )
 
         await db.execute("UPDATE scheduled_tasks SET last_run_status=?, last_error='' WHERE id=?",
                          (stats.get("status", "unknown"), task_id))
@@ -773,6 +784,7 @@ async def import_data(
     model_backup_name: str = Form(default=""), import_mode: str = Form(default="manual"),
     type_post: str = Form(default="true"), type_comment: str = Form(default="true"),
     include_author: str = Form(default="false"),
+    opinion_detail: str = Form(default=""), opinion_rules: str = Form(default=""),
 ):
     """导入数据文件（JSON/CSV），走工作流提取关键词"""
     filename = file.filename or "upload"
@@ -852,7 +864,10 @@ async def import_data(
             backup_api_key=model_backup_api_key or model_api_key,
         )
 
-    stats = await pipeline.process_posts(posts, source=f"import:{filename}", task_name=f"导入:{filename}")
+    stats = await pipeline.process_posts(
+        posts, source=f"import:{filename}", task_name=f"导入:{filename}",
+        opinion_detail=opinion_detail, opinion_rules=opinion_rules,
+    )
     return stats
 
 def _parse_date(val) -> datetime:

@@ -1652,7 +1652,7 @@ kbd {
           <label>分析工作流</label>
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
             <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="舆情分析工作流">
-              <input type="checkbox" id="wf-opinion" value="public_opinion" checked> <span>舆情</span>
+              <input type="checkbox" id="wf-opinion" value="public_opinion" checked onchange="toggleImportOpinionFields()"> <span>舆情</span>
             </label>
             <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="涉政分析工作流">
               <input type="checkbox" id="wf-politics" value="politics"> <span>涉政</span>
@@ -1665,6 +1665,21 @@ kbd {
             </label>
           </div>
           <div class="settings-hint" style="margin-top:4px">选择需要执行的分析工作流，可多选。未导入的工作流将显示为灰色不可用。</div>
+        </div>
+
+        <!-- 舆情工作流专属字段（勾选舆情时显示） -->
+        <div id="import-opinion-fields" style="margin-top:12px;padding:16px;background:var(--bg-secondary);border-radius:8px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:12px">舆情工作流配置</div>
+          <div class="form-row">
+            <div class="form-group" style="flex:1">
+              <label>舆情事件详情</label>
+              <textarea id="import-opinion-detail" rows="3" style="width:100%" placeholder="描述当前舆情事件的背景、关键人物、核心事件等..."></textarea>
+            </div>
+            <div class="form-group" style="flex:1">
+              <label>舆情事件管控规则</label>
+              <textarea id="import-opinion-rules" rows="3" style="width:100%" placeholder="描述管控要求，例如：不得出现XX关键词、重点关注XX变体词..."></textarea>
+            </div>
+          </div>
         </div>
 
         <!-- 数据筛选 -->
@@ -1865,7 +1880,36 @@ kbd {
           </div>
           <div class="form-group">
             <label data-i18n="label_save_path">保存路径</label>
-            <input type="text" id="schedule-save-path" placeholder="./data/scheduled" style="width:240px">
+            <div style="display:flex;gap:4px;align-items:center">
+              <input type="text" id="schedule-save-path" placeholder="选择保存文件夹" style="flex:1;min-width:200px">
+              <button class="btn btn-secondary btn-sm" onclick="pickScheduleFolder()" style="padding:6px 10px;flex-shrink:0" title="选择文件夹">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>抓取平台</label>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">
+              <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                <input type="checkbox" class="schedule-platform" value="twitter" checked> <span>Twitter/X</span>
+              </label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                <input type="checkbox" class="schedule-platform" value="reddit"> <span>Reddit</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>每平台条数</label>
+            <input type="number" id="schedule-count" value="50" min="10" max="200" style="width:100px">
+          </div>
+          <div class="form-group">
+            <label>排序方式</label>
+            <select id="schedule-sort" style="width:120px">
+              <option value="hot">热门优先</option>
+              <option value="latest">最新优先</option>
+            </select>
           </div>
         </div>
         <div class="form-row">
@@ -1878,7 +1922,7 @@ kbd {
           <div class="form-group">
             <label data-i18n="label_workflows">分析工作流</label>
             <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <label><input type="checkbox" class="schedule-workflow" value="yq"> <span data-i18n="wf_yq">舆情</span></label>
+              <label><input type="checkbox" class="schedule-workflow" value="yq" onchange="toggleScheduleOpinionFields()"> <span data-i18n="wf_yq">舆情</span></label>
               <label><input type="checkbox" class="schedule-workflow" value="sz"> <span data-i18n="wf_sz">涉政</span></label>
               <label><input type="checkbox" class="schedule-workflow" value="wf"> <span data-i18n="wf_wf">违法</span></label>
               <label><input type="checkbox" class="schedule-workflow" value="pqds"> <span data-i18n="wf_pqds">色情低俗</span></label>
@@ -1890,6 +1934,20 @@ kbd {
               <input type="checkbox" id="schedule-enabled" checked>
               <span data-i18n="enabled_yes">启用</span>
             </label>
+          </div>
+        </div>
+        <!-- 舆情工作流专属字段（勾选舆情时显示） -->
+        <div id="schedule-opinion-fields" style="display:none;margin-top:12px;padding:16px;background:var(--bg-secondary);border-radius:8px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:12px">舆情工作流配置</div>
+          <div class="form-row">
+            <div class="form-group" style="flex:1">
+              <label>舆情事件详情</label>
+              <textarea id="schedule-opinion-detail" rows="3" style="width:100%" placeholder="描述当前舆情事件的背景、关键人物、核心事件等..."></textarea>
+            </div>
+            <div class="form-group" style="flex:1">
+              <label>舆情事件管控规则</label>
+              <textarea id="schedule-opinion-rules" rows="3" style="width:100%" placeholder="描述管控要求，例如：不得出现XX关键词、重点关注XX变体词..."></textarea>
+            </div>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:16px">
@@ -2942,6 +3000,32 @@ function toggleImportMode() {
   }
 }
 
+// ── 舆情工作流字段显隐切换 ──
+function toggleScheduleOpinionFields() {
+  const checked = [...document.querySelectorAll('.schedule-workflow:checked')].some(cb => cb.value === 'yq');
+  document.getElementById('schedule-opinion-fields').style.display = checked ? 'block' : 'none';
+}
+function toggleImportOpinionFields() {
+  const checked = document.getElementById('wf-opinion') && document.getElementById('wf-opinion').checked;
+  const el = document.getElementById('import-opinion-fields');
+  if (el) el.style.display = checked ? 'block' : 'none';
+}
+
+// ── 定时任务文件夹选择 ──
+function pickScheduleFolder() {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.choose_folder) {
+    window.pywebview.api.choose_folder().then(path => {
+      if (path) document.getElementById('schedule-save-path').value = path;
+    });
+  } else {
+    fetch('/api/choose-folder', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.path) document.getElementById('schedule-save-path').value = data.path;
+      });
+  }
+}
+
 async function checkAutoModeStatus() {
   const statusText = document.getElementById('auto-status-text');
   const analyzeBtn = document.getElementById('auto-analyze-btn');
@@ -2983,6 +3067,12 @@ async function startAutoAnalyze() {
     const workflows = getSelectedWorkflows();
     const formData = new FormData();
     formData.append('workflows', JSON.stringify(workflows));
+
+    // 附加舆情工作流参数
+    const opinionDetail = document.getElementById('import-opinion-detail');
+    const opinionRules = document.getElementById('import-opinion-rules');
+    if (opinionDetail) formData.append('opinion_detail', opinionDetail.value.trim());
+    if (opinionRules) formData.append('opinion_rules', opinionRules.value.trim());
 
     // 附加模型配置
     const modelCfg = await loadModelConfigFromDB();
@@ -3094,6 +3184,12 @@ async function startImport() {
     // 附加工作流参数
     const workflows = getSelectedWorkflows();
     formData.append('workflows', JSON.stringify(workflows));
+
+    // 附加舆情工作流参数
+    const opinionDetail = document.getElementById('import-opinion-detail');
+    const opinionRules = document.getElementById('import-opinion-rules');
+    if (opinionDetail) formData.append('opinion_detail', opinionDetail.value.trim());
+    if (opinionRules) formData.append('opinion_rules', opinionRules.value.trim());
 
     // 附加模型 API 配置（如有）
     const _mKey = localStorage.getItem('model_api_key') || '';
@@ -3349,10 +3445,16 @@ function showScheduleForm() {
   document.getElementById('schedule-name').value = '';
   document.getElementById('schedule-type').value = 'search';
   document.getElementById('schedule-cron').value = '0 8 * * *';
-  document.getElementById('schedule-save-path').value = './data/scheduled';
+  document.getElementById('schedule-save-path').value = '';
   document.getElementById('schedule-keywords').value = '';
+  document.getElementById('schedule-count').value = '50';
+  document.getElementById('schedule-sort').value = 'hot';
   document.getElementById('schedule-enabled').checked = true;
+  document.getElementById('schedule-opinion-detail').value = '';
+  document.getElementById('schedule-opinion-rules').value = '';
+  document.getElementById('schedule-opinion-fields').style.display = 'none';
   document.querySelectorAll('.schedule-workflow').forEach(cb => cb.checked = false);
+  document.querySelectorAll('.schedule-platform').forEach(cb => cb.checked = (cb.value === 'twitter'));
 }
 
 function hideScheduleForm() {
@@ -3371,10 +3473,18 @@ async function editScheduleTask(taskId) {
     document.getElementById('schedule-cron').value = task.cron_expression || '0 8 * * *';
     document.getElementById('schedule-save-path').value = task.save_path || '';
     document.getElementById('schedule-keywords').value = (task.params?.keywords || []).join('\n');
+    document.getElementById('schedule-count').value = task.params?.count || 50;
+    document.getElementById('schedule-sort').value = task.params?.sort || 'hot';
     document.getElementById('schedule-enabled').checked = task.enabled;
+    document.getElementById('schedule-opinion-detail').value = task.params?.opinion_detail || '';
+    document.getElementById('schedule-opinion-rules').value = task.params?.opinion_rules || '';
     document.querySelectorAll('.schedule-workflow').forEach(cb => {
       cb.checked = (task.workflows || []).includes(cb.value);
     });
+    document.querySelectorAll('.schedule-platform').forEach(cb => {
+      cb.checked = (task.params?.platforms || ['twitter']).includes(cb.value);
+    });
+    toggleScheduleOpinionFields();
   } catch (e) {}
 }
 
@@ -3388,9 +3498,17 @@ async function saveScheduleTask() {
   const keywords = document.getElementById('schedule-keywords').value.split('\n').filter(k => k.trim());
   const enabled = document.getElementById('schedule-enabled').checked;
   const workflows = [...document.querySelectorAll('.schedule-workflow:checked')].map(cb => cb.value);
+  const platforms = [...document.querySelectorAll('.schedule-platform:checked')].map(cb => cb.value);
+  const count = parseInt(document.getElementById('schedule-count').value) || 50;
+  const sort = document.getElementById('schedule-sort').value;
+  const opinionDetail = document.getElementById('schedule-opinion-detail').value.trim();
+  const opinionRules = document.getElementById('schedule-opinion-rules').value.trim();
+  const params = { keywords, platforms, count, sort };
+  if (opinionDetail) params.opinion_detail = opinionDetail;
+  if (opinionRules) params.opinion_rules = opinionRules;
   const body = {
     name, task_type: taskType, cron_expression: cron,
-    enabled, params: { keywords }, save_path: savePath, workflows,
+    enabled, params, save_path: savePath, workflows,
   };
   try {
     const url = taskId ? `/api/scheduled-tasks/${taskId}` : '/api/scheduled-tasks';

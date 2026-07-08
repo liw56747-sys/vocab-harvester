@@ -83,6 +83,8 @@ class Pipeline:
         self,
         query: CrawlQuery,
         task_name: str = "",
+        opinion_detail: str = "",
+        opinion_rules: str = "",
     ) -> dict[str, Any]:
         """
         执行一次完整的数据处理流程。
@@ -167,7 +169,11 @@ class Pipeline:
 
             # ── 阶段二：投递给工作流 ──
             logger.info(f"投递 {len(all_posts)} 条数据到工作流...")
-            result = await self.adapter.submit_and_wait(all_posts)
+            result = await self.adapter.submit_and_wait(
+                all_posts,
+                opinion_detail=opinion_detail,
+                opinion_rules=opinion_rules,
+            )
             stats["total_keywords"] = len(result.keywords)
             stats["workflow_metadata"] = result.metadata
             logger.info(f"工作流提取出 {len(result.keywords)} 个关键词")
@@ -211,6 +217,8 @@ class Pipeline:
         posts: list[ParsedPost],
         source: str = "import",
         task_name: str = "",
+        opinion_detail: str = "",
+        opinion_rules: str = "",
     ) -> dict[str, Any]:
         """
         直接处理已有的帖子数据（跳过采集阶段）。
@@ -251,7 +259,11 @@ class Pipeline:
                 return stats
 
             logger.info(f"导入 {len(posts)} 条数据到工作流...")
-            result = await self.adapter.submit_and_wait(posts)
+            result = await self.adapter.submit_and_wait(
+                posts,
+                opinion_detail=opinion_detail,
+                opinion_rules=opinion_rules,
+            )
             stats["total_keywords"] = len(result.keywords)
             stats["workflow_metadata"] = result.metadata
 

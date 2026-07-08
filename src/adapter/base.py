@@ -11,12 +11,14 @@ class WorkflowAdapter(ABC):
     """与内部工作流对接的抽象适配器"""
 
     @abstractmethod
-    async def submit(self, posts: list[ParsedPost]) -> str:
+    async def submit(self, posts: list[ParsedPost], opinion_detail: str = "", opinion_rules: str = "") -> str:
         """
         将采集到的帖子数据投递给工作流。
 
         Args:
             posts: 采集到的帖子列表
+            opinion_detail: 舆情事件详情
+            opinion_rules: 舆情事件管控规则
 
         Returns:
             任务 ID，用于后续查询结果
@@ -51,7 +53,7 @@ class WorkflowAdapter(ABC):
         """
         raise NotImplementedError("此适配器不支持回调模式")
 
-    async def submit_and_wait(self, posts: list[ParsedPost], poll_interval: float = 2.0, timeout: float = 300.0) -> WorkflowResult:
+    async def submit_and_wait(self, posts: list[ParsedPost], poll_interval: float = 2.0, timeout: float = 300.0, opinion_detail: str = "", opinion_rules: str = "") -> WorkflowResult:
         """
         提交数据并等待结果（便捷方法）。
 
@@ -59,6 +61,8 @@ class WorkflowAdapter(ABC):
             posts: 帖子列表
             poll_interval: 轮询间隔（秒）
             timeout: 超时时间（秒）
+            opinion_detail: 舆情事件详情
+            opinion_rules: 舆情事件管控规则
 
         Returns:
             工作流处理结果
@@ -69,7 +73,7 @@ class WorkflowAdapter(ABC):
         import asyncio
         import time
 
-        task_id = await self.submit(posts)
+        task_id = await self.submit(posts, opinion_detail=opinion_detail, opinion_rules=opinion_rules)
         start = time.time()
 
         while time.time() - start < timeout:
