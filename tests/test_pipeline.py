@@ -7,12 +7,13 @@ from src.orchestrator.pipeline import Pipeline
 
 
 async def test_pipeline_from_config_loads_crawlers():
-    """from_config() 加载三平台爬虫"""
+    """from_config() 加载四平台爬虫"""
     pipeline = Pipeline.from_config()
-    assert len(pipeline.crawlers) == 3
+    assert len(pipeline.crawlers) == 4
     assert "weibo" in pipeline.crawlers
     assert "xiaohongshu" in pipeline.crawlers
     assert "twitter" in pipeline.crawlers
+    assert "reddit" in pipeline.crawlers
 
 
 async def test_mock_pipeline_run(mock_pipeline, crawl_query):
@@ -22,7 +23,7 @@ async def test_mock_pipeline_run(mock_pipeline, crawl_query):
     assert stats["status"] == "success"
     assert stats["total_posts"] > 0
     assert isinstance(stats.get("platforms"), list)
-    assert len(stats["platforms"]) == 3
+    assert len(stats["platforms"]) == 4
 
 
 async def test_mock_pipeline_keywords_extracted(mock_pipeline, crawl_query):
@@ -53,4 +54,4 @@ async def test_mock_pipeline_platform_breakdown(mock_pipeline, crawl_query):
     for p in stats["platforms"]:
         assert "name" in p
         assert "post_count" in p
-        assert p["name"] in ("weibo", "xiaohongshu", "twitter")
+        assert p["name"] in ("weibo", "xiaohongshu", "twitter", "reddit")
