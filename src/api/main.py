@@ -33,6 +33,121 @@ from src.orchestrator.pipeline import Pipeline
 from src.vocabulary.manager import VocabManager
 
 
+# ── 文件命名工具函数 ──────────────────────────────────────
+
+def generate_export_filename(task_name: str, ext: str = "csv") -> str:
+    """
+    生成规范化的导出文件名。
+    
+    格式：任务名-日期-编号.扩展名
+    例：Twitter抓取-20260708-001.csv
+    
+    Args:
+        task_name: 任务名称
+        ext: 文件扩展名（不含点号）
+    
+    Returns:
+        规范化的文件名
+    """
+    import re
+    
+    # 净化任务名：移除操作系统不支持的特殊字符
+    # 不支持的字符：\ / : * ? " < > |
+    sanitized_name = re.sub(r'[\\/:*?"<>|]', '', task_name)
+    # 移除前后空白
+    sanitized_name = sanitized_name.strip()
+    # 如果净化后为空，使用默认名称
+    if not sanitized_name:
+        sanitized_name = "数据导出"
+    
+    # 日期格式化为 YYYYMMDD
+    date_str = datetime.now().strftime("%Y%m%d")
+    
+    # 编号使用精确到秒的时间戳（HHMMSS）
+    time_str = datetime.now().strftime("%H%M%S")
+    
+    # 组装文件名
+    filename = f"{sanitized_name}-{date_str}-{time_str}.{ext}"
+    return filename
+
+
+async def save_task_results_to_file(
+    save_path: str,
+    task_name: str,
+    stats: dict,
+    results: list[dict] | None = None
+) -> str | None:
+    """
+    将任务结果保存到指定路径。
+    
+    Args:
+        save_path: 保存目录的绝对路径
+        task_name: 任务名称
+        stats: 任务统计信息
+        results: 详细结果数据（可选）
+    
+    Returns:
+        保存的文件路径，如果保存失败返回 None
+    """
+    import os
+    
+    if not save_path:
+        logger.warning("未指定保存路径，跳过文件保存")
+        return None
+    
+    try:
+        # 检查目录是否存在，不存在则创建
+        if not os.path.exists(save_path):
+            os.makedirs(save_path, exist_ok=True)
+            logger.info(f"已创建保存目录: {save_path}")
+        
+        # 生成文件名
+        filename = generate_export_filename(task_name, "csv")
+        file_path = os.path.join(save_path, filename)
+        
+        # 保存为 CSV 格式
+        with open(file_path, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f)
+            
+            # 写入统计信息头部
+            writer.writerow(["任务统计信息"])
+            writer.writerow(["任务名称", task_name])
+            writer.writerow(["执行时间", datetime.now().isoformat()])
+            writer.writerow(["状态", stats.get("status", "unknown")])
+            writer.writerow(["总帖子数", stats.get("total_posts", 0)])
+            writer.writerow(["总关键词数", stats.get("total_keywords", 0)])
+            writer.writerow([])  # 空行
+            
+            # 写入平台详情
+            writer.writerow(["平台详情"])
+            writer.writerow(["平台", "帖子数", "关键词数"])
+            for platform_name, platform_stats in stats.get("platforms", {}).items():
+                writer.writerow([
+                    platform_name,
+                    platform_stats.get("posts", 0),
+                    platform_stats.get("keywords", 0)
+                ])
+            
+            # 如果有详细结果，写入详细数据
+            if results:
+                writer.writerow([])  # 空行
+                writer.writerow(["详细数据"])
+                if results:
+                    # 写入表头
+                    headers = list(results[0].keys())
+                    writer.writerow(headers)
+                    # 写入数据行
+                    for row in results:
+                        writer.writerow([row.get(h, "") for h in headers])
+        
+        logger.info(f"任务结果已保存: {file_path}")
+        return file_path
+    
+    except Exception as e:
+        logger.error(f"保存任务结果失败: {e}")
+        return None
+
+
 # ── Lifespan ──────────────────────────────────────────────
 
 @asynccontextmanager
@@ -582,6 +697,18 @@ async def _execute_scheduled_task(task_config: dict):
             query, task_name=task_name,
             opinion_detail=opinion_detail, opinion_rules=opinion_rules,
         )
+
+        # 保存结果到指定路径
+        save_path = task_config.get("save_path", "")
+        if save_path:
+            saved_file = await save_task_results_to_file(
+                save_path=save_path,
+                task_name=task_name,
+                stats=stats,
+                results=None  # 暂时不保存详细结果，只保存统计信息
+            )
+            if saved_file:
+                logger.info(f"[定时任务 {task_id}] 结果已保存: {saved_file}")
 
         await db.execute("UPDATE scheduled_tasks SET last_run_status=?, last_error='' WHERE id=?",
                          (stats.get("status", "unknown"), task_id))
