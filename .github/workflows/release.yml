@@ -37,8 +37,8 @@ jobs:
       - name: Inject GitHub Token into .env
         shell: pwsh
         run: |
-          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" > .env
-          echo ".env created with GITHUB_TOKEN"
+          echo "GITHUB_TOKEN=${{ secrets.GH_PAT }}" > .env
+          echo ".env created with GH_PAT"
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -187,8 +187,8 @@ jobs:
 
       - name: Inject GitHub Token into .env
         run: |
-          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" > .env
-          echo ".env created with GITHUB_TOKEN"
+          echo "GITHUB_TOKEN=${{ secrets.GH_PAT }}" > .env
+          echo ".env created with GH_PAT"
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
