@@ -33,6 +33,13 @@ _SAMPLE_TEMPLATES = {
         "{keyword} adoption is growing rapidly. The data speaks for itself.",
         "Interesting thread on {keyword}. What do you all think about the potential?",
     ],
+    Platform.REDDIT: [
+        "Has anyone else noticed the rise of {keyword}? Really interesting trend.",
+        "Deep dive into {keyword} - here's my analysis after months of research",
+        "AMA: I've been studying {keyword} for 5 years, ask me anything",
+        "The {keyword} community is growing fast. Here are some resources to get started.",
+        "Unpopular opinion: {keyword} is overhyped and here's why",
+    ],
 }
 
 

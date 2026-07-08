@@ -12,6 +12,7 @@ class Platform(str, Enum):
     WEIBO = "weibo"
     XIAOHONGSHU = "xiaohongshu"
     TWITTER = "twitter"
+    REDDIT = "reddit"
 
 
 @dataclass
