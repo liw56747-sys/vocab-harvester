@@ -241,7 +241,7 @@ class VocabStorage:
         }
 
     async def get_filter_options(self) -> dict[str, Any]:
-        """获取筛选器选项（分类、候选类型、任务名）"""
+        """获取筛选器选项（分类、候选类型、任务名、激活工作流）"""
         db = await get_db()
 
         cursor = await db.execute("SELECT DISTINCT category FROM vocabulary WHERE category != '' ORDER BY category")
@@ -253,10 +253,26 @@ class VocabStorage:
         cursor = await db.execute("SELECT DISTINCT task_name FROM vocabulary WHERE task_name != '' ORDER BY task_name")
         task_names = [row["task_name"] for row in await cursor.fetchall()]
 
+        # 获取已激活的工作流列表（从定时任务中提取）
+        cursor = await db.execute("SELECT workflows FROM scheduled_tasks WHERE enabled = 1")
+        rows = await cursor.fetchall()
+        active_workflows_set = set()
+        for row in rows:
+            workflows_json = row["workflows"]
+            if workflows_json:
+                try:
+                    workflows_list = json.loads(workflows_json)
+                    for wf in workflows_list:
+                        if isinstance(wf, dict) and "name" in wf:
+                            active_workflows_set.add(wf["name"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
         return {
             "categories": categories,
             "candidate_types": candidate_types,
             "task_names": task_names,
+            "active_workflows": list(active_workflows_set),
         }
 
     @staticmethod

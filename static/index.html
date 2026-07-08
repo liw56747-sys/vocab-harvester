@@ -1872,6 +1872,16 @@ kbd {
             </select>
           </div>
           <div class="form-group">
+            <label>工作流</label>
+            <select id="filter-workflow" onchange="onWorkflowChange()" style="width:140px">
+              <option value="">全部</option>
+              <option value="舆情">舆情</option>
+              <option value="涉政">涉政</option>
+              <option value="违法">违法</option>
+              <option value="色情低俗">色情低俗</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>分类</label>
             <select id="filter-category" onchange="loadVocab()" style="width:130px">
               <option value="">全部</option>
@@ -3338,6 +3348,7 @@ async function loadVocab() {
   const search = document.getElementById('filter-search').value.trim();
   const status = document.getElementById('filter-status').value;
   const action = document.getElementById('filter-action').value;
+  const workflow = document.getElementById('filter-workflow').value;
   const category = document.getElementById('filter-category').value;
   const candidateType = document.getElementById('filter-candidate-type').value;
   const scoreRange = document.getElementById('filter-score').value;
@@ -3348,6 +3359,7 @@ async function loadVocab() {
   if (search) url += `&search=${encodeURIComponent(search)}`;
   if (status) url += `&status=${status}`;
   if (action) url += `&action=${action}`;
+  if (workflow) url += `&workflow=${encodeURIComponent(workflow)}`;
   if (category) url += `&category=${encodeURIComponent(category)}`;
   if (candidateType) url += `&candidate_type=${encodeURIComponent(candidateType)}`;
   if (scoreRange) {
@@ -3397,22 +3409,135 @@ async function loadVocab() {
   } catch (e) { console.error(e); }
 }
 
+// 工作流到分类的映射（从系统提示词中提取）
+const WORKFLOW_CATEGORY_MAP = {
+  '舆情': ['事件核心词', '相关主体', '风险观点口号', '隐晦影射', '传播扩散', '规避变体', '上下文依赖', '其他'],
+  '涉政': ['政治人物', '政治事件', '敏感机构', '政策争议', '意识形态', '其他'],
+  '违法': ['犯罪行为', '违法主体', '涉案物品', '作案手段', '受害群体', '其他'],
+  '色情低俗': ['色情内容', '低俗表达', '擦边球词汇', '相关主体', '其他']
+};
+
+// 当前已激活的工作流列表（从后端获取）
+let activeWorkflows = [];
+
 async function loadVocabFilterOptions() {
   try {
     const opts = await api('/api/vocabulary/filter-options');
-    const catSel = document.getElementById('filter-category');
+    
+    // 保存激活的工作流列表
+    activeWorkflows = opts.active_workflows || [];
+    
+    // 更新工作流下拉框的禁用状态
+    updateWorkflowFilterState();
+    
+    // 根据当前选中的工作流更新分类选项
+    updateCategoryFilterByWorkflow();
+    
     const ctSel = document.getElementById('filter-candidate-type');
     const tnSel = document.getElementById('filter-task-name');
-    if (catSel && opts.categories) {
-      opts.categories.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; catSel.appendChild(o); });
-    }
+    
+    // 候选类型去重并填充
     if (ctSel && opts.candidate_types) {
-      opts.candidate_types.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; ctSel.appendChild(o); });
+      ctSel.innerHTML = '<option value="">全部</option>';
+      const uniqueTypes = Array.from(new Set(opts.candidate_types));
+      uniqueTypes.forEach(c => { 
+        const o = document.createElement('option'); 
+        o.value = c; 
+        o.textContent = c; 
+        ctSel.appendChild(o); 
+      });
     }
+    
+    // 任务名去重并填充
     if (tnSel && opts.task_names) {
-      opts.task_names.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; tnSel.appendChild(o); });
+      tnSel.innerHTML = '<option value="">全部</option>';
+      const uniqueNames = Array.from(new Set(opts.task_names));
+      uniqueNames.forEach(n => { 
+        const o = document.createElement('option'); 
+        o.value = n; 
+        o.textContent = n; 
+        tnSel.appendChild(o); 
+      });
     }
-  } catch (e) { console.error('load filter options failed:', e); }
+  } catch (e) { 
+    console.error('load filter options failed:', e); 
+  }
+}
+
+// 更新工作流下拉框的禁用状态
+function updateWorkflowFilterState() {
+  const workflowSel = document.getElementById('filter-workflow');
+  if (!workflowSel) return;
+  
+  const options = workflowSel.querySelectorAll('option[value]:not([value=""])');
+  options.forEach(opt => {
+    const workflowName = opt.value;
+    if (activeWorkflows.length > 0 && !activeWorkflows.includes(workflowName)) {
+      opt.disabled = true;
+      opt.title = '该工作流尚未导入';
+    } else {
+      opt.disabled = false;
+      opt.title = '';
+    }
+  });
+}
+
+// 根据工作流更新分类选项（级联联动）
+function updateCategoryFilterByWorkflow() {
+  const workflowSel = document.getElementById('filter-workflow');
+  const categorySel = document.getElementById('filter-category');
+  if (!workflowSel || !categorySel) return;
+  
+  const selectedWorkflow = workflowSel.value;
+  
+  // 清空分类选项
+  categorySel.innerHTML = '<option value="">全部</option>';
+  
+  if (selectedWorkflow && WORKFLOW_CATEGORY_MAP[selectedWorkflow]) {
+    // 根据选中的工作流填充分类
+    const categories = WORKFLOW_CATEGORY_MAP[selectedWorkflow];
+    categories.forEach(cat => {
+      const o = document.createElement('option');
+      o.value = cat;
+      o.textContent = cat;
+      categorySel.appendChild(o);
+    });
+  } else {
+    // 如果未选择工作流或工作流无映射，从后端获取所有分类（去重）
+    loadAllCategories();
+  }
+}
+
+// 从后端加载所有分类（去重）
+async function loadAllCategories() {
+  try {
+    const opts = await api('/api/vocabulary/filter-options');
+    const categorySel = document.getElementById('filter-category');
+    if (categorySel && opts.categories) {
+      const uniqueCategories = Array.from(new Set(opts.categories));
+      uniqueCategories.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c;
+        o.textContent = c;
+        categorySel.appendChild(o);
+      });
+    }
+  } catch (e) {
+    console.error('load categories failed:', e);
+  }
+}
+
+// 工作流改变时的处理
+function onWorkflowChange() {
+  // 重置分类筛选
+  const categorySel = document.getElementById('filter-category');
+  if (categorySel) {
+    categorySel.value = '';
+  }
+  // 更新分类选项
+  updateCategoryFilterByWorkflow();
+  // 重新加载词库
+  loadVocab();
 }
 
 function prevPage() { if (currentPage > 0) { currentPage--; loadVocab(); } }
