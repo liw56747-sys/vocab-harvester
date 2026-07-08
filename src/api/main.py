@@ -1136,7 +1136,7 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                             continue
                         fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=req.block_resources)
                         cookies = {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}
-                        tasks.append(fetcher.search_tweets(req.keyword.strip(), count=req.count, include_replies=req.include_replies, cookies=cookies, sort_by=req.sort_by))
+                        tasks.append(fetcher.search_tweets(req.keyword.strip(), count=req.count, include_replies=req.include_replies, cookies=cookies, sort_by=req.sort_by, task_id=task_id))
                         platform_names.append("twitter")
 
                     elif platform == "reddit":
@@ -1146,7 +1146,7 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                         fetcher = RedditCookieFetcher(proxy=proxy)
                         cookies = {k: pc[k] for k in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout") if pc.get(k)}
                         if pc.get("extra_cookies"): cookies.update(pc["extra_cookies"])
-                        tasks.append(fetcher.search_posts(req.keyword.strip(), count=req.count, cookies=cookies, include_replies=req.include_replies, sort="hot" if req.sort_by == "top" else "new"))
+                        tasks.append(fetcher.search_posts(req.keyword.strip(), count=req.count, cookies=cookies, include_replies=req.include_replies, sort="hot" if req.sort_by == "top" else "new", task_id=task_id))
                         platform_names.append("reddit")
 
                 if not tasks:

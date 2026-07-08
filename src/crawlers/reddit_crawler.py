@@ -49,6 +49,7 @@ class RedditCookieFetcher:
         sort: str = "new",
         time_filter: str = "all",
         include_replies: bool = True,
+        task_id: str | None = None,
     ) -> tuple[list[dict], str]:
         """异步搜索 Reddit（原生 async，使用 httpx.AsyncClient）"""
         if not cookies:
@@ -104,6 +105,13 @@ class RedditCookieFetcher:
                 proxy=proxy_url,
             ) as client:
                 for page_num in range(max_pages):
+                    # 检查取消信号
+                    if task_id:
+                        from src.api.main import _is_task_cancelled
+                        if _is_task_cancelled(task_id):
+                            logger.info(f"Reddit 搜索「{keyword}」: 检测到取消信号，停止抓取，已获取 {len(all_posts)} 条")
+                            break
+                    
                     remaining = count - len(all_posts)
                     if remaining <= 0:
                         break

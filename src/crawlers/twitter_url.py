@@ -518,6 +518,7 @@ class TwitterCookieFetcher:
     async def search_tweets(
         self, keyword: str, count: int = 50, include_replies: bool = False,
         cookies: dict | None = None, sort_by: str = "top",
+        task_id: str | None = None,
     ) -> tuple[list[dict], str]:
         """通过 Twitter 搜索页按关键词抓取推文（异步 + 并发评论）"""
         if cookies is None:
@@ -537,12 +538,14 @@ class TwitterCookieFetcher:
                 await apply_resource_blocking(page)
             try:
                 tweets = await asyncio.wait_for(
-                    self._scrape_search(page, keyword, count, sort_by=sort_by),
+                    self._scrape_search(page, keyword, count, sort_by=sort_by, task_id=task_id),
                     timeout=_TC.single_keyword_timeout
                 )
                 logger.info(f"搜索「{keyword}」: 获取 {len(tweets)} 条推文")
             except asyncio.TimeoutError:
                 logger.warning(f"搜索「{keyword}」超时（{_TC.single_keyword_timeout}秒），已获取 {len(tweets)} 条")
+            except asyncio.CancelledError:
+                logger.info(f"搜索「{keyword}」被取消，已获取 {len(tweets)} 条")
             except Exception as e:
                 logger.error(f"搜索「{keyword}」整体失败: {type(e).__name__}: {e}", exc_info=True)
                 raise  # 重新抛出异常，让上层处理
@@ -734,7 +737,7 @@ class TwitterCookieFetcher:
         logger.info(f"@{username}: 最终提取 {len(tweets)} 条推文")
         return tweets
 
-    async def _scrape_search(self, page, keyword: str, count: int, sort_by: str = "top") -> list[dict]:
+    async def _scrape_search(self, page, keyword: str, count: int, sort_by: str = "top", task_id: str | None = None) -> list[dict]:
         """用 Playwright 抓取 Twitter 搜索结果（逐轮滚动+提取+去重）"""
         from urllib.parse import quote_plus
 
@@ -849,6 +852,13 @@ class TwitterCookieFetcher:
         }"""
         
         for round_num in range(SEARCH_MAX_ROUNDS):
+            # 检查取消信号
+            if task_id:
+                from src.api.main import _is_task_cancelled
+                if _is_task_cancelled(task_id):
+                    logger.info(f"搜索「{keyword}」: 检测到取消信号，停止抓取，已获取 {len(all_tweets)} 条")
+                    break
+            
             # 条件 A（主要）：已抓取数量 >= 目标数量，立即停止
             if len(all_tweets) >= count:
                 logger.info(f"搜索「{keyword}」: 已达到目标数量 {count} 条，停止滚动")
