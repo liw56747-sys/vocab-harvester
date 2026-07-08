@@ -1889,27 +1889,21 @@ kbd {
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group">
-            <label>抓取平台</label>
-            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">
-              <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                <input type="checkbox" class="schedule-platform" value="twitter" checked> <span>Twitter/X</span>
-              </label>
-              <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                <input type="checkbox" class="schedule-platform" value="reddit"> <span>Reddit</span>
-              </label>
+          <div class="form-group" style="flex:1">
+            <label>抓取参数配置</label>
+            <div style="padding:12px;background:var(--bg-secondary);border-radius:8px;margin-top:4px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <span style="font-size:13px;color:var(--text-secondary)">定时任务将使用「数据抓取」页面的配置参数</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+                包括：搜索平台、每平台条数、排序方式、是否抓取评论等
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="showPage('scrape')" style="padding:6px 12px;font-size:12px">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                前往数据抓取页面配置
+              </button>
             </div>
-          </div>
-          <div class="form-group">
-            <label>每平台条数</label>
-            <input type="number" id="schedule-count" value="50" min="10" max="200" style="width:100px">
-          </div>
-          <div class="form-group">
-            <label>排序方式</label>
-            <select id="schedule-sort" style="width:120px">
-              <option value="hot">热门优先</option>
-              <option value="latest">最新优先</option>
-            </select>
           </div>
         </div>
         <div class="form-row">
@@ -3447,14 +3441,11 @@ function showScheduleForm() {
   document.getElementById('schedule-cron').value = '0 8 * * *';
   document.getElementById('schedule-save-path').value = '';
   document.getElementById('schedule-keywords').value = '';
-  document.getElementById('schedule-count').value = '50';
-  document.getElementById('schedule-sort').value = 'hot';
   document.getElementById('schedule-enabled').checked = true;
   document.getElementById('schedule-opinion-detail').value = '';
   document.getElementById('schedule-opinion-rules').value = '';
   document.getElementById('schedule-opinion-fields').style.display = 'none';
   document.querySelectorAll('.schedule-workflow').forEach(cb => cb.checked = false);
-  document.querySelectorAll('.schedule-platform').forEach(cb => cb.checked = (cb.value === 'twitter'));
 }
 
 function hideScheduleForm() {
@@ -3473,16 +3464,11 @@ async function editScheduleTask(taskId) {
     document.getElementById('schedule-cron').value = task.cron_expression || '0 8 * * *';
     document.getElementById('schedule-save-path').value = task.save_path || '';
     document.getElementById('schedule-keywords').value = (task.params?.keywords || []).join('\n');
-    document.getElementById('schedule-count').value = task.params?.count || 50;
-    document.getElementById('schedule-sort').value = task.params?.sort || 'hot';
     document.getElementById('schedule-enabled').checked = task.enabled;
     document.getElementById('schedule-opinion-detail').value = task.params?.opinion_detail || '';
     document.getElementById('schedule-opinion-rules').value = task.params?.opinion_rules || '';
     document.querySelectorAll('.schedule-workflow').forEach(cb => {
       cb.checked = (task.workflows || []).includes(cb.value);
-    });
-    document.querySelectorAll('.schedule-platform').forEach(cb => {
-      cb.checked = (task.params?.platforms || ['twitter']).includes(cb.value);
     });
     toggleScheduleOpinionFields();
   } catch (e) {}
@@ -3498,12 +3484,17 @@ async function saveScheduleTask() {
   const keywords = document.getElementById('schedule-keywords').value.split('\n').filter(k => k.trim());
   const enabled = document.getElementById('schedule-enabled').checked;
   const workflows = [...document.querySelectorAll('.schedule-workflow:checked')].map(cb => cb.value);
-  const platforms = [...document.querySelectorAll('.schedule-platform:checked')].map(cb => cb.value);
-  const count = parseInt(document.getElementById('schedule-count').value) || 50;
-  const sort = document.getElementById('schedule-sort').value;
+  
+  // 从数据抓取页面读取配置参数
+  const platforms = [...document.querySelectorAll('#platform-checks input:checked')].map(cb => cb.value);
+  const count = parseInt(document.getElementById('search-count').value) || 50;
+  const sortBtn = document.querySelector('#sort-top.active');
+  const sort = sortBtn ? 'hot' : 'latest';
+  const includeReplies = document.getElementById('search-include-replies')?.checked || false;
+  
+  const params = { keywords, platforms, count, sort, include_replies: includeReplies };
   const opinionDetail = document.getElementById('schedule-opinion-detail').value.trim();
   const opinionRules = document.getElementById('schedule-opinion-rules').value.trim();
-  const params = { keywords, platforms, count, sort };
   if (opinionDetail) params.opinion_detail = opinionDetail;
   if (opinionRules) params.opinion_rules = opinionRules;
   const body = {

@@ -559,6 +559,7 @@ async def _execute_scheduled_task(task_config: dict):
         platform_names = params.get("platforms", ["twitter"])
         count = params.get("count", 50)
         sort_by = params.get("sort", "hot")
+        include_replies = params.get("include_replies", False)
         opinion_detail = params.get("opinion_detail", "")
         opinion_rules = params.get("opinion_rules", "")
 
@@ -572,6 +573,7 @@ async def _execute_scheduled_task(task_config: dict):
             platforms=platform_list,
             keywords=keywords or ["技术", "科技"],
             max_results=count,
+            extra={"sort": sort_by, "include_replies": include_replies},
         )
 
         logger.info(f"[定时任务 {task_id}] 开始抓取，关键词: {query.keywords}")
