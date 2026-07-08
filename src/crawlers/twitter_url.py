@@ -746,8 +746,27 @@ class TwitterCookieFetcher:
 
         # 检查是否被重定向到登录页
         current_url = page.url
-        if "login" in current_url or "flow" in current_url:
+        if "login" in current_url or "flow" in current_url or "logout" in current_url:
+            logger.error(f"搜索「{keyword}」: 被重定向到登录页: {current_url}")
             raise RuntimeError("Cookie 已过期，请重新从浏览器导出")
+
+        # 检查是否有登录弹窗遮罩（Twitter 常在页面加载后弹出登录墙）
+        try:
+            login_modal = await page.query_selector('[data-testid="login-drawer"], form[action="https://x.com/account/login"]')
+            if login_modal:
+                logger.warning(f"搜索「{keyword}」: 检测到登录弹窗，尝试关闭...")
+                # 尝试点击关闭按钮
+                close_btn = await page.query_selector('[data-testid="sheetDialog"] [role="button"]:first-child, [aria-label="Close"]')
+                if close_btn:
+                    await close_btn.click()
+                    await asyncio.sleep(1)
+                else:
+                    logger.warning(f"搜索「{keyword}」: 无法关闭登录弹窗，Cookie 可能已失效")
+                    raise RuntimeError("Cookie 已过期，登录弹窗无法关闭，请重新导出 Cookie")
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.debug(f"登录弹窗检测异常（可忽略）: {e}")
 
         # 检查是否有错误提示
         body_text = ""
@@ -785,6 +804,20 @@ class TwitterCookieFetcher:
                     logger.info(f"搜索「{keyword}」: Twitter 无匹配结果")
                 else:
                     logger.warning(f"搜索「{keyword}」: 等待推文超时（页面可能加载异常），页面内容前300字: {diag[:150]}")
+                # 调试截图：当 0 条结果时保存页面截图
+                try:
+                    import os
+                    from datetime import datetime as _dt
+                    debug_dir = os.path.join(os.path.expanduser("~"), ".vocab-harvester", "debug")
+                    os.makedirs(debug_dir, exist_ok=True)
+                    ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+                    screenshot_path = os.path.join(debug_dir, f"twitter_search_empty_{ts}.png")
+                    await page.screenshot(path=screenshot_path, full_page=False)
+                    logger.info(f"调试截图已保存: {screenshot_path}")
+                    # 同时记录页面 URL
+                    logger.info(f"调试信息: 当前页面 URL={page.url}, 页面内容前200字={diag[:200]}")
+                except Exception as ss_err:
+                    logger.warning(f"保存调试截图失败: {ss_err}")
                 return []
 
         # 逐轮滚动 + 提取 + 去重（虚拟滚动：DOM 同时仅保留 ~15-25 条）
@@ -861,6 +894,21 @@ class TwitterCookieFetcher:
 
         tweets = list(all_tweets.values())[:count]
         logger.info(f"搜索「{keyword}」: 最终提取 {len(tweets)} 条推文")
+        
+        # 调试截图：滚动结束后仍然 0 条结果
+        if not tweets:
+            try:
+                import os
+                from datetime import datetime as _dt
+                debug_dir = os.path.join(os.path.expanduser("~"), ".vocab-harvester", "debug")
+                os.makedirs(debug_dir, exist_ok=True)
+                ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+                screenshot_path = os.path.join(debug_dir, f"twitter_search_empty_after_scroll_{ts}.png")
+                await page.screenshot(path=screenshot_path, full_page=False)
+                logger.info(f"调试截图(滚动后)已保存: {screenshot_path}, URL={page.url}")
+            except Exception as ss_err:
+                logger.warning(f"保存调试截图失败: {ss_err}")
+        
         return tweets
 
     # ── 评论/回复抓取 ─────────────────────────────────────

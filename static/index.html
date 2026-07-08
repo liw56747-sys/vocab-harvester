@@ -4112,6 +4112,8 @@ async function startMultiSearch() {
 
     const poll = async () => {
       if (!isPolling) return;
+      // 如果任务已被取消，停止轮询
+      if (!_currentTaskId || _currentTaskId !== taskId) { isPolling = false; return; }
       const elapsed = Math.floor((Date.now() - _startTime) / 1000);
       const m = Math.floor(elapsed / 60), s = elapsed % 60;
       btn.innerHTML = `<span class="loading"></span> ${t('searching', {t: m + ':' + String(s).padStart(2,'0')})}`;
@@ -4142,11 +4144,17 @@ async function cancelCurrentSearch() {
   }
   
   const cancelBtn = document.getElementById('cancel-search-btn');
+  const btn = document.getElementById('multi-search-btn');
   cancelBtn.disabled = true;
   cancelBtn.textContent = '正在取消...';
   
   try {
     await api(`/api/cancel-search?task_id=${_currentTaskId}`, { method: 'POST' });
+    // 取消成功后立即重置 UI（不等轮询）
+    btn.disabled = false;
+    btn.innerHTML = t('btn_search');
+    cancelBtn.style.display = 'none';
+    _currentTaskId = null;
     toast('已发送取消请求，正在保存数据...', 'info');
   } catch (e) {
     toast('取消失败: ' + e.message, 'error');

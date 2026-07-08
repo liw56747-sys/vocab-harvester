@@ -1033,25 +1033,51 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                 )
                 search_timeout = max(search_timeout, 120)  # 最低 2 分钟保底
                 
-                # 使用 asyncio.gather 保持结果顺序（asyncio.wait 返回无序 set 会导致平台结果错位）
+                # 使用可中断的循环代替 asyncio.gather（支持取消操作）
                 was_cancelled = False
-                try:
-                    results = await asyncio.wait_for(
-                        asyncio.gather(*tasks, return_exceptions=True),
-                        timeout=search_timeout
-                    )
-                except asyncio.TimeoutError:
-                    # 超时也要检查是否有已完成的结果
-                    logger.warning(f"搜索超时（{search_timeout}秒）")
-                    was_cancelled = _is_task_cancelled(task_id)
-                    if not was_cancelled:
-                        _set_task_status(task_id, {"status": "error", "error": f"搜索超时（{search_timeout}秒），请减少关键词数量或稍后重试"})
-                        return
-                    results = []
+                results = [None] * len(tasks)
+                task_to_idx = {}
+                pending_tasks = set()
+                for i, t in enumerate(tasks):
+                    atask = asyncio.create_task(t)
+                    task_to_idx[atask] = i
+                    pending_tasks.add(atask)
                 
-                # 检查是否被用户取消
-                if not was_cancelled:
-                    was_cancelled = _is_task_cancelled(task_id)
+                while pending_tasks:
+                    # 检查取消标记
+                    if _is_task_cancelled(task_id):
+                        was_cancelled = True
+                        logger.info(f"搜索任务被取消，正在终止 {len(pending_tasks)} 个进行中子任务: {task_id}")
+                        for task in pending_tasks:
+                            task.cancel()
+                        # 等待已取消任务清理（给 3 秒）
+                        try:
+                            await asyncio.wait_for(
+                                asyncio.gather(*pending_tasks, return_exceptions=True),
+                                timeout=3.0
+                            )
+                        except asyncio.TimeoutError:
+                            pass
+                        break
+                    
+                    # 等待任意一个任务完成（最多等 2 秒后再次检查取消标记）
+                    done, pending_tasks = await asyncio.wait(
+                        pending_tasks,
+                        timeout=2.0,
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+                    
+                    for completed_task in done:
+                        idx = task_to_idx.get(completed_task)
+                        if idx is not None:
+                            try:
+                                results[idx] = completed_task.result()
+                            except asyncio.CancelledError:
+                                logger.info(f"子任务 {idx} 已被取消")
+                                results[idx] = None
+                            except Exception as e:
+                                logger.error(f"子任务 {idx} 异常: {e}")
+                                results[idx] = e
                 
                 if was_cancelled:
                     # 取消时保存已获取的数据
