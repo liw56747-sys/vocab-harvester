@@ -3,6 +3,9 @@
 
 name: Release
 
+# 统一 Actions 运行名称格式
+run-name: "Release ${{ github.ref_name || inputs.version }}"
+
 on:
   push:
     tags:
