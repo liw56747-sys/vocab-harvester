@@ -3409,13 +3409,8 @@ async function loadVocab() {
   } catch (e) { console.error(e); }
 }
 
-// 工作流到分类的映射（从系统提示词中提取）
-const WORKFLOW_CATEGORY_MAP = {
-  '舆情': ['事件核心词', '相关主体', '风险观点口号', '隐晦影射', '传播扩散', '规避变体', '上下文依赖', '其他'],
-  '涉政': ['政治人物', '政治事件', '敏感机构', '政策争议', '意识形态', '其他'],
-  '违法': ['犯罪行为', '违法主体', '涉案物品', '作案手段', '受害群体', '其他'],
-  '色情低俗': ['色情内容', '低俗表达', '擦边球词汇', '相关主体', '其他']
-};
+// 工作流到分类的映射（从后端动态获取）
+let WORKFLOW_CATEGORY_MAP = {};
 
 // 当前已激活的工作流列表（从后端获取）
 let activeWorkflows = [];
@@ -3426,6 +3421,9 @@ async function loadVocabFilterOptions() {
     
     // 保存激活的工作流列表
     activeWorkflows = opts.active_workflows || [];
+    
+    // 保存工作流到分类的映射（从后端动态获取）
+    WORKFLOW_CATEGORY_MAP = opts.workflow_category_map || {};
     
     // 更新工作流下拉框的禁用状态
     updateWorkflowFilterState();

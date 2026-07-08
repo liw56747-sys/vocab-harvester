@@ -241,7 +241,7 @@ class VocabStorage:
         }
 
     async def get_filter_options(self) -> dict[str, Any]:
-        """获取筛选器选项（分类、候选类型、任务名、激活工作流）"""
+        """获取筛选器选项（分类、候选类型、任务名、激活工作流、工作流分类映射）"""
         db = await get_db()
 
         cursor = await db.execute("SELECT DISTINCT category FROM vocabulary WHERE category != '' ORDER BY category")
@@ -268,12 +268,45 @@ class VocabStorage:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
+        # 提取工作流分类映射（从工作流的提示词中获取）
+        workflow_category_map = await self._extract_workflow_category_map(active_workflows_set)
+
         return {
             "categories": categories,
             "candidate_types": candidate_types,
             "task_names": task_names,
             "active_workflows": list(active_workflows_set),
+            "workflow_category_map": workflow_category_map,
         }
+
+    async def _extract_workflow_category_map(self, active_workflows: set[str]) -> dict[str, list[str]]:
+        """从工作流的提示词配置中提取分类映射"""
+        # 目前只支持舆情工作流，其他工作流待后续添加
+        workflow_map = {}
+        
+        if "舆情" in active_workflows:
+            # 舆情工作流的分类从其系统提示词中提取
+            # 这些分类来自 xingpan.py 中的 _SYSTEM_PROMPT
+            workflow_map["舆情"] = [
+                "事件核心词",
+                "相关主体",
+                "风险观点口号",
+                "隐晦影射",
+                "传播扩散",
+                "规避变体",
+                "上下文依赖",
+                "其他",
+            ]
+        
+        # TODO: 后续添加其他工作流时，从其对应的提示词中提取分类
+        # if "涉政" in active_workflows:
+        #     workflow_map["涉政"] = [...]
+        # if "违法" in active_workflows:
+        #     workflow_map["违法"] = [...]
+        # if "色情低俗" in active_workflows:
+        #     workflow_map["色情低俗"] = [...]
+        
+        return workflow_map
 
     @staticmethod
     def _row_to_dict(row) -> dict[str, Any]:
