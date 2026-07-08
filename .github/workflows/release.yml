@@ -346,6 +346,32 @@ jobs:
           echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
           echo "Release version: $VER (tag: $TAG)"
 
+      - name: Extract release summary from commit
+        id: summary
+        run: |
+          # 提取当前 tag 对应的 commit message 第一行作为更新摘要
+          TAG="${{ steps.version.outputs.tag }}"
+          
+          # 获取 tag 对应的 commit message
+          COMMIT_MSG=$(git log -1 --pretty=format:%s "$TAG" 2>/dev/null || echo "")
+          
+          # 如果为空，尝试获取最新的 commit
+          if [ -z "$COMMIT_MSG" ]; then
+            COMMIT_MSG=$(git log -1 --pretty=format:%s 2>/dev/null || echo "版本更新")
+          fi
+          
+          # 移除可能的版本号前缀（如 "v1.5.0: " 或 "feat: "）
+          # 保留核心摘要文本
+          SUMMARY=$(echo "$COMMIT_MSG" | sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+[:：]?\s*)//' | sed -E 's/^(feat|fix|refactor|chore|docs|style|perf|test)[:：]?\s*/\1: /')
+          
+          # 如果摘要为空或太短，使用默认值
+          if [ -z "$SUMMARY" ] || [ ${#SUMMARY} -lt 3 ]; then
+            SUMMARY="版本更新"
+          fi
+          
+          echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
+          echo "Release summary: $SUMMARY"
+
       - name: Locate release files
         id: files
         run: |
@@ -430,29 +456,34 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="${{ steps.version.outputs.tag }}"
+          SUMMARY="${{ steps.summary.outputs.summary }}"
           WIN_EXE="${{ steps.files.outputs.win_exe }}"
           MAC_DMG="${{ steps.files.outputs.mac_dmg }}"
           USE_AUTO="${{ steps.notes.outputs.use_auto_notes }}"
           BODY_FILE="${{ steps.notes.outputs.body_file }}"
 
+          # 组装 Release 名称：版本号 + 更新摘要
+          RELEASE_NAME="${TAG}: ${SUMMARY}"
+          echo "Release name: $RELEASE_NAME"
+
           # Check if release already exists
           if gh release view "$TAG" &>/dev/null; then
             echo "Release $TAG already exists, updating notes and uploading assets..."
             if [ "$USE_AUTO" = "true" ]; then
-              gh release edit "$TAG" --generate-notes --latest
+              gh release edit "$TAG" --title "$RELEASE_NAME" --generate-notes --latest
             else
-              gh release edit "$TAG" --notes-file "$BODY_FILE" --latest
+              gh release edit "$TAG" --title "$RELEASE_NAME" --notes-file "$BODY_FILE" --latest
             fi
           else
             echo "Creating release $TAG..."
             if [ "$USE_AUTO" = "true" ]; then
               gh release create "$TAG" \
-                --title "vocab-harvester v${VERSION}" \
+                --title "$RELEASE_NAME" \
                 --generate-notes \
                 --latest
             else
               gh release create "$TAG" \
-                --title "vocab-harvester v${VERSION}" \
+                --title "$RELEASE_NAME" \
                 --notes-file "$BODY_FILE" \
                 --latest
             fi
