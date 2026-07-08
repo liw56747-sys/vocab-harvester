@@ -43,9 +43,9 @@ async def init_test_db():
 
 @pytest.fixture
 def crawl_query():
-    """标准四平台查询"""
+    """标准两平台查询（Twitter 和 Reddit）"""
     return CrawlQuery(
-        platforms=[Platform.WEIBO, Platform.XIAOHONGSHU, Platform.TWITTER, Platform.REDDIT],
+        platforms=[Platform.TWITTER, Platform.REDDIT],
         keywords=["避坑军校"],
         max_results=10,
     )
@@ -55,8 +55,6 @@ def crawl_query():
 async def mock_pipeline(init_test_db):
     """MockCrawler + MockAdapter 构造的完整 Pipeline（数据库已初始化）"""
     crawlers = {
-        "weibo": MockCrawler(Platform.WEIBO),
-        "xiaohongshu": MockCrawler(Platform.XIAOHONGSHU),
         "twitter": MockCrawler(Platform.TWITTER),
         "reddit": MockCrawler(Platform.REDDIT),
     }

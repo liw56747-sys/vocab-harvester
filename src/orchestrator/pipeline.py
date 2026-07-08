@@ -37,9 +37,10 @@ class Pipeline:
         """根据配置创建流水线"""
         settings = get_settings()
 
-        # 创建爬虫实例 —— Mock 模式下为所有平台都创建爬虫
+        # 创建爬虫实例 —— 仅加载已实现的平台（Twitter 和 Reddit）
         crawlers: dict[str, BaseCrawler] = {}
-        for platform in Platform:
+        available_platforms = [Platform.TWITTER, Platform.REDDIT]
+        for platform in available_platforms:
             crawlers[platform.value] = MockCrawler(platform)
             logger.info(f"已加载爬虫: {platform.value} (mock)")
 
