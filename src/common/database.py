@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS vocabulary (
     reason          TEXT DEFAULT '',        -- 提取原因
     action          TEXT DEFAULT '',        -- add_temp_kb/observe/need_human_review/reject
     match_type      TEXT DEFAULT '',        -- exact/contains/regex/context_only/...
+    task_name       TEXT DEFAULT '',        -- 关联的定时任务名称
     UNIQUE(word, category)
 );
 """
@@ -92,6 +93,7 @@ MIGRATE_COLUMNS = [
     ("reason", "TEXT DEFAULT ''"),
     ("action", "TEXT DEFAULT ''"),
     ("match_type", "TEXT DEFAULT ''"),
+    ("task_name", "TEXT DEFAULT ''"),
 ]
 
 

@@ -184,3 +184,4 @@ class VocabEntry:
     reason: str = ""                 # 提取原因
     action: str = ""                 # add_temp_kb/observe/need_human_review/reject
     match_type: str = ""             # exact/contains/regex/context_only/...
+    task_name: str = ""              # 关联的定时任务名称

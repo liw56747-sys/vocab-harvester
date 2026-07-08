@@ -82,6 +82,7 @@ class Pipeline:
     async def run(
         self,
         query: CrawlQuery,
+        task_name: str = "",
     ) -> dict[str, Any]:
         """
         执行一次完整的数据处理流程。
@@ -90,6 +91,7 @@ class Pipeline:
 
         Args:
             query: 采集查询参数
+            task_name: 关联的定时任务名称
 
         Returns:
             本次运行统计信息
@@ -172,7 +174,7 @@ class Pipeline:
 
             # ── 阶段三：写入词库 ──
             logger.info("写入词库...")
-            ingested = await self.vocab_manager.ingest(result, source_posts=all_posts)
+            ingested = await self.vocab_manager.ingest(result, source_posts=all_posts, task_name=task_name)
             stats["ingested_count"] = ingested
             logger.info(f"词库更新 {ingested} 条记录")
 
@@ -208,6 +210,7 @@ class Pipeline:
         self,
         posts: list[ParsedPost],
         source: str = "import",
+        task_name: str = "",
     ) -> dict[str, Any]:
         """
         直接处理已有的帖子数据（跳过采集阶段）。
@@ -253,7 +256,7 @@ class Pipeline:
             stats["workflow_metadata"] = result.metadata
 
             logger.info("写入词库...")
-            ingested = await self.vocab_manager.ingest(result, source_posts=posts)
+            ingested = await self.vocab_manager.ingest(result, source_posts=posts, task_name=task_name)
             stats["ingested_count"] = ingested
 
             stats["status"] = "success"

@@ -27,6 +27,16 @@ import src.common.version
 _BUNDLED_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 _EXE_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
 
+# ── 用户数据目录（持久化，不受版本更新影响） ──
+# 打包后：数据存到用户主目录 ~/.vocab-harvester/，与安装目录分离
+# 开发时：数据存到项目根目录 ./data/
+if getattr(sys, "frozen", False):
+    _DATA_DIR = Path.home() / ".vocab-harvester"
+else:
+    _DATA_DIR = _EXE_DIR / "data"
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
+os.environ["VOCAB_DATA_DIR"] = str(_DATA_DIR)
+
 # 日志文件写到 exe 旁边，方便排查问题
 _LOG_FILE = _EXE_DIR / "vocab-harvester.log"
 
@@ -186,9 +196,7 @@ def _start_server(port: int):
         from src.common.config import load_settings
 
         settings = load_settings()
-        db_dir = _EXE_DIR / "data"
-        db_dir.mkdir(exist_ok=True)
-        _log(f"database dir ready: {db_dir}")
+        _log(f"database dir ready: {_DATA_DIR}")
 
         # 尝试启动 uvicorn，如果端口绑定失败则尝试备选端口
         actual_port = port
@@ -404,7 +412,7 @@ def main():
     js_api.window = window
 
     # 持久化浏览器数据目录（localStorage 等跨次启动保留）
-    webview_data = _EXE_DIR / "data" / "webview"
+    webview_data = _DATA_DIR / "webview"
     webview_data.mkdir(parents=True, exist_ok=True)
 
     webview.start(

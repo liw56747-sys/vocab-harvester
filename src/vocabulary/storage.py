@@ -41,13 +41,13 @@ class VocabStorage:
                 """UPDATE vocabulary
                    SET frequency = ?, platforms = ?, context_samples = ?, last_seen = ?,
                        score = ?, candidate_type = ?, source_type = ?, evidence = ?,
-                       reason = ?, action = ?, match_type = ?
+                       reason = ?, action = ?, match_type = ?, task_name = ?
                    WHERE id = ?""",
                 (
                     new_freq, json.dumps(platforms), json.dumps(samples), now,
                     entry.score, entry.candidate_type, entry.source_type,
                     entry.evidence, entry.reason, entry.action, entry.match_type,
-                    existing["id"],
+                    entry.task_name, existing["id"],
                 ),
             )
         else:
@@ -56,8 +56,8 @@ class VocabStorage:
                 """INSERT INTO vocabulary
                    (word, category, frequency, score, platforms, first_seen, last_seen,
                     context_samples, status, candidate_type, source_type, evidence,
-                    reason, action, match_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    reason, action, match_type, task_name)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     entry.word,
                     entry.category,
@@ -74,6 +74,7 @@ class VocabStorage:
                     entry.reason,
                     entry.action,
                     entry.match_type,
+                    entry.task_name,
                 ),
             )
 
@@ -86,6 +87,10 @@ class VocabStorage:
         status: VocabStatus | None = None,
         platform: str | None = None,
         action: str | None = None,
+        candidate_type: str | None = None,
+        score_min: float | None = None,
+        score_max: float | None = None,
+        task_name: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -109,6 +114,18 @@ class VocabStorage:
         if action:
             conditions.append("action = ?")
             params.append(action)
+        if candidate_type:
+            conditions.append("candidate_type = ?")
+            params.append(candidate_type)
+        if score_min is not None:
+            conditions.append("score >= ?")
+            params.append(score_min)
+        if score_max is not None:
+            conditions.append("score <= ?")
+            params.append(score_max)
+        if task_name:
+            conditions.append("task_name = ?")
+            params.append(task_name)
 
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         params.extend([limit, offset])
@@ -120,13 +137,53 @@ class VocabStorage:
         rows = await cursor.fetchall()
         return [self._row_to_dict(row) for row in rows]
 
-    async def count(self, status: VocabStatus | None = None) -> int:
-        """统计词条总数"""
+    async def count(
+        self,
+        keyword: str | None = None,
+        category: str | None = None,
+        status: VocabStatus | None = None,
+        platform: str | None = None,
+        action: str | None = None,
+        candidate_type: str | None = None,
+        score_min: float | None = None,
+        score_max: float | None = None,
+        task_name: str | None = None,
+    ) -> int:
+        """统计词条总数（支持多条件筛选）"""
         db = await get_db()
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if keyword:
+            conditions.append("word LIKE ?")
+            params.append(f"%{keyword}%")
+        if category:
+            conditions.append("category = ?")
+            params.append(category)
         if status:
-            cursor = await db.execute("SELECT COUNT(*) as cnt FROM vocabulary WHERE status = ?", (status.value,))
-        else:
-            cursor = await db.execute("SELECT COUNT(*) as cnt FROM vocabulary")
+            conditions.append("status = ?")
+            params.append(status.value)
+        if platform:
+            conditions.append("platforms LIKE ?")
+            params.append(f'%"{platform}"%')
+        if action:
+            conditions.append("action = ?")
+            params.append(action)
+        if candidate_type:
+            conditions.append("candidate_type = ?")
+            params.append(candidate_type)
+        if score_min is not None:
+            conditions.append("score >= ?")
+            params.append(score_min)
+        if score_max is not None:
+            conditions.append("score <= ?")
+            params.append(score_max)
+        if task_name:
+            conditions.append("task_name = ?")
+            params.append(task_name)
+
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        cursor = await db.execute(f"SELECT COUNT(*) as cnt FROM vocabulary{where}", params)
         row = await cursor.fetchone()
         return row["cnt"]
 
@@ -183,6 +240,25 @@ class VocabStorage:
             "categories": categories,
         }
 
+    async def get_filter_options(self) -> dict[str, Any]:
+        """获取筛选器选项（分类、候选类型、任务名）"""
+        db = await get_db()
+
+        cursor = await db.execute("SELECT DISTINCT category FROM vocabulary WHERE category != '' ORDER BY category")
+        categories = [row["category"] for row in await cursor.fetchall()]
+
+        cursor = await db.execute("SELECT DISTINCT candidate_type FROM vocabulary WHERE candidate_type != '' ORDER BY candidate_type")
+        candidate_types = [row["candidate_type"] for row in await cursor.fetchall()]
+
+        cursor = await db.execute("SELECT DISTINCT task_name FROM vocabulary WHERE task_name != '' ORDER BY task_name")
+        task_names = [row["task_name"] for row in await cursor.fetchall()]
+
+        return {
+            "categories": categories,
+            "candidate_types": candidate_types,
+            "task_names": task_names,
+        }
+
     @staticmethod
     def _row_to_dict(row) -> dict[str, Any]:
         """将数据库行转换为字典"""
@@ -199,7 +275,7 @@ class VocabStorage:
             "status": row["status"],
         }
         # 新列可能不存在于旧数据库，安全读取
-        for col in ("candidate_type", "source_type", "evidence", "reason", "action", "match_type"):
+        for col in ("candidate_type", "source_type", "evidence", "reason", "action", "match_type", "task_name"):
             try:
                 result[col] = row[col]
             except (IndexError, KeyError):

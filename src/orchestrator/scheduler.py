@@ -70,7 +70,7 @@ class Scheduler:
         )
 
         logger.info(f"[定时任务] 开始采集，关键词: {queries}")
-        stats = await self.pipeline.run(query)
+        stats = await self.pipeline.run(query, task_name="定时任务")
         logger.info(f"[定时任务] 完成: {stats['status']}, "
                      f"帖子: {stats['total_posts']}, "
                      f"关键词: {stats['total_keywords']}")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -9,12 +10,24 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 
+def _resolve_data_dir() -> str:
+    """解析数据目录：优先使用环境变量 VOCAB_DATA_DIR，否则使用默认 ./data"""
+    env_dir = os.environ.get("VOCAB_DATA_DIR")
+    if env_dir:
+        return env_dir
+    return "./data"
+
+
 # ── Pydantic 配置模型 ──────────────────────────────────────
 
 class AppConfig(BaseModel):
     name: str = "vocab-harvester"
     log_level: str = "INFO"
-    data_dir: str = "./data"
+    data_dir: str = ""
+
+    def model_post_init(self, __context):
+        if not self.data_dir:
+            self.data_dir = _resolve_data_dir()
 
 
 class DatabaseConfig(BaseModel):

@@ -359,7 +359,7 @@ async def analyze_last_data(
                 backup_api_key=model_backup_api_key or model_api_key,
             )
 
-        stats = await pipeline.process_posts(posts, source="auto-analyze")
+        stats = await pipeline.process_posts(posts, source="auto-analyze", task_name="自动分析")
         return stats
     except HTTPException:
         raise
@@ -475,7 +475,8 @@ async def run_scheduled_task_now(task_id: str):
         if not row:
             return {"status": "error", "error": "任务不存在"}
         task = {
-            "id": row[0], "task_type": row[2], "params": json.loads(row[5]) if row[5] else {},
+            "id": row[0], "name": row[1], "task_type": row[2],
+            "params": json.loads(row[5]) if row[5] else {},
             "save_path": row[6], "workflows": json.loads(row[7]) if row[7] else [],
         }
         # 异步执行
@@ -511,12 +512,13 @@ async def _load_scheduled_jobs():
     try:
         from src.common.database import get_db
         db = await get_db()
-        cursor = await db.execute("SELECT id, cron_expression, params, save_path, workflows FROM scheduled_tasks WHERE enabled=1")
+        cursor = await db.execute("SELECT id, name, cron_expression, params, save_path, workflows FROM scheduled_tasks WHERE enabled=1")
         rows = await cursor.fetchall()
         for row in rows:
-            task_id, cron_expr, params_json, save_path, workflows_json = row
+            task_id, task_name, cron_expr, params_json, save_path, workflows_json = row
             task_config = {
-                "id": task_id, "params": json.loads(params_json) if params_json else {},
+                "id": task_id, "name": task_name,
+                "params": json.loads(params_json) if params_json else {},
                 "save_path": save_path, "workflows": json.loads(workflows_json) if workflows_json else [],
             }
             # 解析 cron
@@ -537,7 +539,8 @@ async def _load_scheduled_jobs():
 async def _execute_scheduled_task(task_config: dict):
     """执行单个定时任务：抓取 → 保存 → 分析"""
     task_id = task_config.get("id", "unknown")
-    logger.info(f"[定时任务 {task_id}] 开始执行")
+    task_name = task_config.get("name", "") or task_id
+    logger.info(f"[定时任务 {task_id}] 开始执行，任务名: {task_name}")
     try:
         from src.common.database import get_db
         db = await get_db()
@@ -548,17 +551,30 @@ async def _execute_scheduled_task(task_config: dict):
 
         params = task_config.get("params", {})
         keywords = params.get("keywords", [])
-        platforms = params.get("platforms", ["twitter"])
+        platform_names = params.get("platforms", ["twitter"])
         count = params.get("count", 50)
-        save_path = task_config.get("save_path", "")
 
-        # 阶段 A: 抓取
-        logger.info(f"[定时任务 {task_id}] 开始抓取，关键词: {keywords}")
-        # 这里复用现有的搜索逻辑
-        # 简化版：记录日志并保存
-        await db.execute("UPDATE scheduled_tasks SET last_run_status='success', last_error='' WHERE id=?", (task_id,))
+        # 构建平台枚举
+        platform_map = {"twitter": Platform.TWITTER, "reddit": Platform.REDDIT}
+        platform_list = [platform_map[p] for p in platform_names if p in platform_map]
+        if not platform_list:
+            platform_list = [Platform.TWITTER]
+
+        query = CrawlQuery(
+            platforms=platform_list,
+            keywords=keywords or ["技术", "科技"],
+            max_results=count,
+        )
+
+        logger.info(f"[定时任务 {task_id}] 开始抓取，关键词: {query.keywords}")
+        pipeline = Pipeline.from_config()
+        stats = await pipeline.run(query, task_name=task_name)
+
+        await db.execute("UPDATE scheduled_tasks SET last_run_status=?, last_error='' WHERE id=?",
+                         (stats.get("status", "unknown"), task_id))
         await db.commit()
-        logger.info(f"[定时任务 {task_id}] 执行完成")
+        logger.info(f"[定时任务 {task_id}] 执行完成: {stats.get('status')}, "
+                     f"帖子: {stats.get('total_posts', 0)}, 关键词: {stats.get('total_keywords', 0)}")
     except Exception as e:
         logger.error(f"[定时任务 {task_id}] 执行失败: {e}")
         try:
@@ -602,7 +618,7 @@ async def trigger_crawl(req: CrawlRequest):
     query = CrawlQuery(platforms=platforms, keywords=keywords, max_results=req.max_results)
 
     pipeline = Pipeline.from_config()
-    stats = await pipeline.run(query)
+    stats = await pipeline.run(query, task_name="手动搜索")
     return stats
 
 
@@ -613,6 +629,10 @@ async def query_vocabulary(
     status: str | None = None,
     platform: str | None = None,
     action: str | None = None,
+    candidate_type: str | None = None,
+    score_min: float | None = None,
+    score_max: float | None = None,
+    task_name: str | None = None,
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -625,12 +645,33 @@ async def query_vocabulary(
         status=vocab_status,
         platform=platform,
         action=action,
+        candidate_type=candidate_type,
+        score_min=score_min,
+        score_max=score_max,
+        task_name=task_name,
         limit=limit,
         offset=offset,
     )
 
-    total = await manager.storage.count(vocab_status)
+    total = await manager.storage.count(
+        keyword=search,
+        category=category,
+        status=vocab_status,
+        platform=platform,
+        action=action,
+        candidate_type=candidate_type,
+        score_min=score_min,
+        score_max=score_max,
+        task_name=task_name,
+    )
     return {"items": entries, "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/vocabulary/filter-options")
+async def vocabulary_filter_options():
+    """获取词库筛选器选项（分类、候选类型、任务名）"""
+    manager = VocabManager()
+    return await manager.get_filter_options()
 
 
 @app.post("/api/vocabulary/review")
@@ -811,7 +852,7 @@ async def import_data(
             backup_api_key=model_backup_api_key or model_api_key,
         )
 
-    stats = await pipeline.process_posts(posts, source=f"import:{filename}")
+    stats = await pipeline.process_posts(posts, source=f"import:{filename}", task_name=f"导入:{filename}")
     return stats
 
 def _parse_date(val) -> datetime:

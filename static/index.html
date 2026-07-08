@@ -1728,7 +1728,7 @@ kbd {
         <div class="filters">
           <div class="form-group">
             <label data-i18n="search_label">搜索</label>
-            <input type="text" id="filter-search" placeholder="搜索词条..." oninput="debounceLoad()" style="width:180px">
+            <input type="text" id="filter-search" placeholder="搜索词条..." oninput="debounceLoad()" style="width:160px">
           </div>
           <div class="form-group">
             <label data-i18n="status_label">状态</label>
@@ -1743,10 +1743,38 @@ kbd {
             <label data-i18n="action_label">动作</label>
             <select id="filter-action" onchange="loadVocab()" style="width:140px">
               <option value="" data-i18n="all">全部</option>
-              <option value="need_human_review" data-i18n="action_review">需人工审核</option>
-              <option value="observe" data-i18n="action_watch">观察</option>
-              <option value="add_temp_kb" data-i18n="action_suggest_add">建议入库</option>
-              <option value="reject" data-i18n="action_suggest_reject">建议拒绝</option>
+              <option value="need_human_review">需人工审核</option>
+              <option value="observe">观察</option>
+              <option value="add_temp_kb">建议入库</option>
+              <option value="reject">建议拒绝</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>分类</label>
+            <select id="filter-category" onchange="loadVocab()" style="width:130px">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>候选类型</label>
+            <select id="filter-candidate-type" onchange="loadVocab()" style="width:140px">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>评分</label>
+            <select id="filter-score" onchange="loadVocab()" style="width:120px">
+              <option value="">全部</option>
+              <option value="0-0.3">0-30</option>
+              <option value="0.3-0.6">30-60</option>
+              <option value="0.6-0.8">60-80</option>
+              <option value="0.8-1">80-100</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>任务名</label>
+            <select id="filter-task-name" onchange="loadVocab()" style="width:140px">
+              <option value="">全部</option>
             </select>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="loadVocab()">
@@ -1767,7 +1795,7 @@ kbd {
           <table id="vocab-table">
             <thead><tr>
               <th><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)"></th>
-              <th data-i18n="th_num">#</th><th data-i18n="th_word">词条</th><th data-i18n="th_category">分类</th><th data-i18n="th_score">评分</th><th data-i18n="th_candidate">候选类型</th><th data-i18n="th_action">动作</th><th data-i18n="th_evidence">原文证据</th><th data-i18n="th_reason">原因</th><th data-i18n="th_platform">平台</th><th data-i18n="th_status">状态</th><th data-i18n="th_ops">操作</th>
+              <th data-i18n="th_num">#</th><th data-i18n="th_word">词条</th><th data-i18n="th_category">分类</th><th data-i18n="th_score">评分</th><th data-i18n="th_candidate">候选类型</th><th data-i18n="th_action">动作</th><th>任务名</th><th data-i18n="th_evidence">原文证据</th><th data-i18n="th_reason">原因</th><th data-i18n="th_platform">平台</th><th data-i18n="th_status">状态</th><th data-i18n="th_ops">操作</th>
             </tr></thead>
             <tbody></tbody>
           </table>
@@ -2817,7 +2845,7 @@ function showPage(name, el) {
   document.getElementById('page-' + name).classList.add('active');
   el.classList.add('active');
   if (name === 'dashboard') loadStats();
-  if (name === 'vocabulary') loadVocab();
+  if (name === 'vocabulary') { loadVocab(); loadVocabFilterOptions(); }
   if (name === 'schedule') loadScheduleTasks();
   if (name === 'twitter') loadAllCookies();
   if (name === 'import') {
@@ -3115,12 +3143,23 @@ async function loadVocab() {
   const search = document.getElementById('filter-search').value.trim();
   const status = document.getElementById('filter-status').value;
   const action = document.getElementById('filter-action').value;
+  const category = document.getElementById('filter-category').value;
+  const candidateType = document.getElementById('filter-candidate-type').value;
+  const scoreRange = document.getElementById('filter-score').value;
+  const taskName = document.getElementById('filter-task-name').value;
   const offset = currentPage * pageSize;
 
   let url = `/api/vocabulary?limit=${pageSize}&offset=${offset}`;
   if (search) url += `&search=${encodeURIComponent(search)}`;
   if (status) url += `&status=${status}`;
   if (action) url += `&action=${action}`;
+  if (category) url += `&category=${encodeURIComponent(category)}`;
+  if (candidateType) url += `&candidate_type=${encodeURIComponent(candidateType)}`;
+  if (scoreRange) {
+    const [smin, smax] = scoreRange.split('-');
+    url += `&score_min=${smin}&score_max=${smax}`;
+  }
+  if (taskName) url += `&task_name=${encodeURIComponent(taskName)}`;
 
   try {
     const data = await api(url);
@@ -3129,12 +3168,13 @@ async function loadVocab() {
     tbody.innerHTML = '';
 
     if (data.items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--text-muted);padding:48px">' + t('no_data') + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text-muted);padding:48px">' + t('no_data') + '</td></tr>';
     }
 
     data.items.forEach((item, i) => {
       const score = (item.score * 100).toFixed(0);
       const actionBadge = item.action === 'observe' ? 'observe' : item.action === 'add_temp_kb' ? 'add' : item.action === 'reject' ? 'reject-action' : 'action';
+      const actionLabel = item.action === 'need_human_review' ? '需审核' : item.action === 'observe' ? '观察' : item.action === 'add_temp_kb' ? '入库' : item.action === 'reject' ? '拒绝' : (item.action || '-');
       tbody.innerHTML += `<tr>
         <td><input type="checkbox" class="row-check" value="${esc(item.word)}" data-category="${esc(item.category)}" onchange="updateBatchBar()"></td>
         <td>${offset + i + 1}</td>
@@ -3142,7 +3182,8 @@ async function loadVocab() {
         <td>${esc(item.category)}</td>
         <td>${score}</td>
         <td>${esc(item.candidate_type || '')}</td>
-        <td><span class="badge badge-${actionBadge}">${esc(item.action || '')}</span></td>
+        <td><span class="badge badge-${actionBadge}">${esc(actionLabel)}</span></td>
+        <td>${esc(item.task_name || '-')}</td>
         <td class="evidence-cell" title="${esc(item.evidence || '')}">${esc(item.evidence || '-')}</td>
         <td title="${esc(item.reason || '')}">${esc((item.reason || '').slice(0, 20))}</td>
         <td>${(item.platforms || []).join(', ')}</td>
@@ -3159,6 +3200,24 @@ async function loadVocab() {
     const totalPages = Math.ceil(totalItems / pageSize);
     document.getElementById('page-info').textContent = t('page_info_tpl', {x: currentPage + 1, y: totalPages || 1, z: totalItems});
   } catch (e) { console.error(e); }
+}
+
+async function loadVocabFilterOptions() {
+  try {
+    const opts = await api('/api/vocabulary/filter-options');
+    const catSel = document.getElementById('filter-category');
+    const ctSel = document.getElementById('filter-candidate-type');
+    const tnSel = document.getElementById('filter-task-name');
+    if (catSel && opts.categories) {
+      opts.categories.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; catSel.appendChild(o); });
+    }
+    if (ctSel && opts.candidate_types) {
+      opts.candidate_types.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; ctSel.appendChild(o); });
+    }
+    if (tnSel && opts.task_names) {
+      opts.task_names.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; tnSel.appendChild(o); });
+    }
+  } catch (e) { console.error('load filter options failed:', e); }
 }
 
 function prevPage() { if (currentPage > 0) { currentPage--; loadVocab(); } }

@@ -24,13 +24,14 @@ class VocabManager:
         self.storage = VocabStorage()
         self._config = get_settings().vocabulary
 
-    async def ingest(self, result: WorkflowResult, source_posts: list[ParsedPost] | None = None) -> int:
+    async def ingest(self, result: WorkflowResult, source_posts: list[ParsedPost] | None = None, task_name: str = "") -> int:
         """
         将工作流提取结果写入词库。
 
         Args:
             result: 工作流处理结果
             source_posts: 原始帖子列表（用于提取上下文例句）
+            task_name: 关联的定时任务名称
 
         Returns:
             新增/更新的词条数
@@ -82,6 +83,7 @@ class VocabManager:
                 reason=kw.reason,
                 action=kw.action,
                 match_type=kw.match_type,
+                task_name=task_name,
             )
 
             await self.storage.upsert(entry)
@@ -96,6 +98,10 @@ class VocabManager:
         status: VocabStatus | None = None,
         platform: str | None = None,
         action: str | None = None,
+        candidate_type: str | None = None,
+        score_min: float | None = None,
+        score_max: float | None = None,
+        task_name: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
@@ -106,6 +112,10 @@ class VocabManager:
             status=status,
             platform=platform,
             action=action,
+            candidate_type=candidate_type,
+            score_min=score_min,
+            score_max=score_max,
+            task_name=task_name,
             limit=limit,
             offset=offset,
         )
@@ -125,6 +135,10 @@ class VocabManager:
     async def get_stats(self) -> dict:
         """获取词库统计"""
         return await self.storage.get_stats()
+
+    async def get_filter_options(self) -> dict:
+        """获取筛选器选项"""
+        return await self.storage.get_filter_options()
 
     async def export_json(self, status: VocabStatus | None = None) -> str:
         """导出为 JSON"""
