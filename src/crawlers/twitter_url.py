@@ -808,7 +808,7 @@ class TwitterCookieFetcher:
                 try:
                     import os
                     from datetime import datetime as _dt
-                    debug_dir = os.path.join(os.path.expanduser("~"), ".vocab-harvester", "debug")
+                    debug_dir = os.path.join(os.path.expanduser("~"), "Desktop", "爬虫数据收集")
                     os.makedirs(debug_dir, exist_ok=True)
                     ts = _dt.now().strftime("%Y%m%d_%H%M%S")
                     screenshot_path = os.path.join(debug_dir, f"twitter_search_empty_{ts}.png")
@@ -900,7 +900,7 @@ class TwitterCookieFetcher:
             try:
                 import os
                 from datetime import datetime as _dt
-                debug_dir = os.path.join(os.path.expanduser("~"), ".vocab-harvester", "debug")
+                debug_dir = os.path.join(os.path.expanduser("~"), "Desktop", "爬虫数据收集")
                 os.makedirs(debug_dir, exist_ok=True)
                 ts = _dt.now().strftime("%Y%m%d_%H%M%S")
                 screenshot_path = os.path.join(debug_dir, f"twitter_search_empty_after_scroll_{ts}.png")
