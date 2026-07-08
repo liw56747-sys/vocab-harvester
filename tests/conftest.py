@@ -43,9 +43,9 @@ async def init_test_db():
 
 @pytest.fixture
 def crawl_query():
-    """标准三平台查询"""
+    """标准四平台查询"""
     return CrawlQuery(
-        platforms=[Platform.WEIBO, Platform.XIAOHONGSHU, Platform.TWITTER],
+        platforms=[Platform.WEIBO, Platform.XIAOHONGSHU, Platform.TWITTER, Platform.REDDIT],
         keywords=["避坑军校"],
         max_results=10,
     )
@@ -58,5 +58,6 @@ async def mock_pipeline(init_test_db):
         "weibo": MockCrawler(Platform.WEIBO),
         "xiaohongshu": MockCrawler(Platform.XIAOHONGSHU),
         "twitter": MockCrawler(Platform.TWITTER),
+        "reddit": MockCrawler(Platform.REDDIT),
     }
     return Pipeline(crawlers=crawlers, adapter=MockAdapter())
