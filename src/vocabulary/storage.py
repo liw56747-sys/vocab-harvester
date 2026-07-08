@@ -103,8 +103,11 @@ class VocabStorage:
             conditions.append("word LIKE ?")
             params.append(f"%{keyword}%")
         if category:
-            conditions.append("category = ?")
-            params.append(category)
+            # 清洗分类参数：去除所有空白符和换行符
+            sanitized_category = category.replace('\n', '').replace('\r', '').strip()
+            # 使用 TRIM 函数清洗数据库字段后进行比对
+            conditions.append("TRIM(REPLACE(REPLACE(category, CHAR(10), ''), CHAR(13), '')) = ?")
+            params.append(sanitized_category)
         if status:
             conditions.append("status = ?")
             params.append(status.value)
@@ -158,8 +161,11 @@ class VocabStorage:
             conditions.append("word LIKE ?")
             params.append(f"%{keyword}%")
         if category:
-            conditions.append("category = ?")
-            params.append(category)
+            # 清洗分类参数：去除所有空白符和换行符
+            sanitized_category = category.replace('\n', '').replace('\r', '').strip()
+            # 使用 TRIM 函数清洗数据库字段后进行比对
+            conditions.append("TRIM(REPLACE(REPLACE(category, CHAR(10), ''), CHAR(13), '')) = ?")
+            params.append(sanitized_category)
         if status:
             conditions.append("status = ?")
             params.append(status.value)
@@ -311,10 +317,14 @@ class VocabStorage:
     @staticmethod
     def _row_to_dict(row) -> dict[str, Any]:
         """将数据库行转换为字典"""
+        # 清洗分类字段：去除换行符和多余空白
+        raw_category = row["category"] or ""
+        sanitized_category = raw_category.replace('\n', '').replace('\r', '').strip()
+        
         result = {
             "id": row["id"],
             "word": row["word"],
-            "category": row["category"],
+            "category": sanitized_category,  # 使用清洗后的分类
             "frequency": row["frequency"],
             "score": row["score"],
             "platforms": json.loads(row["platforms"]),
