@@ -311,6 +311,113 @@ body {
   transition: background 0.2s;
 }
 .chromium-overlay-btn:hover { background: var(--primary-hover, #4338CA); }
+
+/* ── Fetch Config Modal ── */
+.fetch-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  animation: modalOverlayIn 0.2s ease;
+}
+.fetch-modal-overlay.show { display: flex; }
+@keyframes modalOverlayIn { from { opacity: 0; } to { opacity: 1; } }
+.fetch-modal {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  width: 640px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: modalSlideIn 0.25s ease;
+}
+@keyframes modalSlideIn { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.fetch-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+.fetch-modal-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.fetch-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: 6px;
+  transition: all var(--transition);
+}
+.fetch-modal-close:hover { background: var(--border-light); color: var(--text-primary); }
+.fetch-modal-body {
+  padding: 20px 24px;
+}
+.fetch-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-light);
+}
+/* ── Fetch Config Summary ── */
+.fetch-config-summary {
+  display: none;
+  padding: 12px 16px;
+  background: var(--primary-light);
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  align-items: center;
+  gap: 8px;
+}
+.fetch-config-summary.show { display: flex; }
+.fetch-config-summary .summary-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+.fetch-config-summary .summary-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.fetch-config-summary .summary-tag .tag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.fetch-config-summary .summary-tag .tag-dot.twitter { background: #1DA1F2; }
+.fetch-config-summary .summary-tag .tag-dot.reddit { background: #FF4500; }
+.fetch-config-summary .btn-modify {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition);
+}
+.fetch-config-summary .btn-modify:hover { border-color: var(--primary); background: var(--surface); }
 .main.has-banner { padding-top: 72px; }
 
 /* ── Main Content ── */
@@ -1891,18 +1998,16 @@ kbd {
         <div class="form-row">
           <div class="form-group" style="flex:1">
             <label>抓取参数配置</label>
-            <div style="padding:12px;background:var(--bg-secondary);border-radius:8px;margin-top:4px">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                <span style="font-size:13px;color:var(--text-secondary)">定时任务将使用「数据抓取」页面的配置参数</span>
-              </div>
-              <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
-                包括：搜索平台、每平台条数、排序方式、是否抓取评论等
-              </div>
-              <button type="button" class="btn btn-secondary btn-sm" onclick="showPage('scrape')" style="padding:6px 12px;font-size:12px">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                前往数据抓取页面配置
+            <div style="margin-top:4px">
+              <button type="button" class="btn btn-primary btn-sm" onclick="openFetchConfigModal()" style="padding:8px 16px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                配置抓取参数
               </button>
+            </div>
+            <div class="fetch-config-summary" id="fetch-config-summary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <div class="summary-tags" id="fetch-summary-tags"></div>
+              <button type="button" class="btn-modify" onclick="openFetchConfigModal()">修改</button>
             </div>
           </div>
         </div>
@@ -3446,6 +3551,10 @@ function showScheduleForm() {
   document.getElementById('schedule-opinion-rules').value = '';
   document.getElementById('schedule-opinion-fields').style.display = 'none';
   document.querySelectorAll('.schedule-workflow').forEach(cb => cb.checked = false);
+  // 重置抓取配置
+  _fetchConfig = null;
+  const summaryEl = document.getElementById('fetch-config-summary');
+  if (summaryEl) summaryEl.classList.remove('show');
 }
 
 function hideScheduleForm() {
@@ -3471,7 +3580,109 @@ async function editScheduleTask(taskId) {
       cb.checked = (task.workflows || []).includes(cb.value);
     });
     toggleScheduleOpinionFields();
+    
+    // 回填抓取配置参数
+    _fetchConfig = {
+      platforms: task.params?.platforms || ['twitter'],
+      count: task.params?.count || 50,
+      sort: task.params?.sort || 'hot',
+      include_replies: task.params?.include_replies || false,
+      block_resources: task.params?.block_resources || false,
+    };
+    updateFetchConfigSummary();
   } catch (e) {}
+}
+
+// ── Fetch Config Modal ──
+let _fetchConfig = null; // 存储抓取配置参数
+
+function openFetchConfigModal() {
+  const modal = document.getElementById('fetch-config-modal');
+  if (!modal) return;
+  
+  // 如果有已保存的配置，回填到 Modal 表单
+  if (_fetchConfig) {
+    // 回填平台
+    document.querySelectorAll('#modal-platform-checks input').forEach(cb => {
+      cb.checked = (_fetchConfig.platforms || []).includes(cb.value);
+      cb.closest('.platform-check')?.classList.toggle('selected', cb.checked);
+    });
+    // 回填条数
+    document.getElementById('modal-search-count').value = _fetchConfig.count || 50;
+    // 回填排序
+    const isHot = (_fetchConfig.sort || 'hot') === 'hot';
+    document.getElementById('modal-sort-top').classList.toggle('active', isHot);
+    document.getElementById('modal-sort-live').classList.toggle('active', !isHot);
+    // 回填评论
+    document.getElementById('modal-include-replies').checked = _fetchConfig.include_replies || false;
+    // 回填加速模式
+    document.getElementById('modal-block-resources').checked = _fetchConfig.block_resources || false;
+  }
+  
+  modal.classList.add('show');
+}
+
+function closeFetchConfigModal() {
+  const modal = document.getElementById('fetch-config-modal');
+  if (modal) modal.classList.remove('show');
+}
+
+function setModalSortBy(type) {
+  document.getElementById('modal-sort-top').classList.toggle('active', type === 'top');
+  document.getElementById('modal-sort-live').classList.toggle('active', type === 'live');
+}
+
+function confirmFetchConfig() {
+  // 从 Modal 表单收集参数
+  const platforms = [...document.querySelectorAll('#modal-platform-checks input:checked')].map(cb => cb.value);
+  if (platforms.length === 0) {
+    toast('请至少选择一个搜索平台', 'error');
+    return;
+  }
+  
+  const count = parseInt(document.getElementById('modal-search-count').value) || 50;
+  const sortBtn = document.querySelector('#modal-sort-top.active');
+  const sort = sortBtn ? 'hot' : 'latest';
+  const includeReplies = document.getElementById('modal-include-replies')?.checked || false;
+  const blockResources = document.getElementById('modal-block-resources')?.checked || false;
+  
+  _fetchConfig = { platforms, count, sort, include_replies: includeReplies, block_resources: blockResources };
+  
+  // 更新摘要显示
+  updateFetchConfigSummary();
+  
+  // 关闭 Modal
+  closeFetchConfigModal();
+  toast('抓取参数已配置', 'success');
+}
+
+function updateFetchConfigSummary() {
+  const summaryEl = document.getElementById('fetch-config-summary');
+  const tagsEl = document.getElementById('fetch-summary-tags');
+  if (!summaryEl || !tagsEl || !_fetchConfig) return;
+  
+  const tags = [];
+  // 平台标签
+  (_fetchConfig.platforms || []).forEach(p => {
+    const label = p === 'twitter' ? 'Twitter/X' : p === 'reddit' ? 'Reddit' : p;
+    tags.push(`<span class="summary-tag"><span class="tag-dot ${p}"></span>${label}</span>`);
+  });
+  // 条数
+  tags.push(`<span class="summary-tag">${_fetchConfig.count || 50} 条/平台</span>`);
+  // 排序
+  const sortLabel = (_fetchConfig.sort || 'hot') === 'hot' ? '热门优先' : '最新优先';
+  tags.push(`<span class="summary-tag">${sortLabel}</span>`);
+  // 评论
+  if (_fetchConfig.include_replies) {
+    tags.push(`<span class="summary-tag">含评论</span>`);
+  }
+  // 加速模式
+  if (_fetchConfig.block_resources) {
+    tags.push(`<span class="summary-tag">加速模式</span>`);
+  }
+  
+  tagsEl.innerHTML = tags.join('');
+  summaryEl.classList.add('show');
 }
 
 async function saveScheduleTask() {
@@ -3485,14 +3696,18 @@ async function saveScheduleTask() {
   const enabled = document.getElementById('schedule-enabled').checked;
   const workflows = [...document.querySelectorAll('.schedule-workflow:checked')].map(cb => cb.value);
   
-  // 从数据抓取页面读取配置参数
-  const platforms = [...document.querySelectorAll('#platform-checks input:checked')].map(cb => cb.value);
-  const count = parseInt(document.getElementById('search-count').value) || 50;
-  const sortBtn = document.querySelector('#sort-top.active');
-  const sort = sortBtn ? 'hot' : 'latest';
-  const includeReplies = document.getElementById('search-include-replies')?.checked || false;
+  // 使用 Modal 弹窗中配置的抓取参数
+  if (!_fetchConfig) {
+    toast('请先配置抓取参数', 'error');
+    return;
+  }
+  const platforms = _fetchConfig.platforms || [];
+  const count = _fetchConfig.count || 50;
+  const sort = _fetchConfig.sort || 'hot';
+  const includeReplies = _fetchConfig.include_replies || false;
+  const blockResources = _fetchConfig.block_resources || false;
   
-  const params = { keywords, platforms, count, sort, include_replies: includeReplies };
+  const params = { keywords, platforms, count, sort, include_replies: includeReplies, block_resources: blockResources };
   const opinionDetail = document.getElementById('schedule-opinion-detail').value.trim();
   const opinionRules = document.getElementById('schedule-opinion-rules').value.trim();
   if (opinionDetail) params.opinion_detail = opinionDetail;
@@ -4229,6 +4444,64 @@ function togglePostContent(btn, id) { var el = document.getElementById(id); if (
         <p style="margin-top:12px" data-i18n="chromium_retry">安装完成后刷新页面即可使用。</p>
       </div>
       <button class="chromium-overlay-btn" onclick="location.reload()" data-i18n="chromium_refresh">刷新页面</button>
+    </div>
+  </div>
+</div>
+
+<!-- 抓取配置 Modal 弹窗 -->
+<div class="fetch-modal-overlay" id="fetch-config-modal">
+  <div class="fetch-modal">
+    <div class="fetch-modal-header">
+      <h3>配置抓取参数</h3>
+      <button class="fetch-modal-close" onclick="closeFetchConfigModal()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="fetch-modal-body">
+      <div class="form-group mb-16">
+        <label>搜索平台 <span style="color:var(--text-muted);font-size:11px">（至少选一个）</span></label>
+        <div class="platform-checks" id="modal-platform-checks">
+          <label class="platform-check selected" onclick="togglePlatform(this)">
+            <input type="checkbox" value="twitter" checked>
+            <span class="platform-dot twitter"></span>
+            Twitter / X
+          </label>
+          <label class="platform-check selected" onclick="togglePlatform(this)">
+            <input type="checkbox" value="reddit" checked>
+            <span class="platform-dot reddit"></span>
+            Reddit
+          </label>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>每平台条数</label>
+          <input type="number" id="modal-search-count" value="50" min="1" max="200" style="width:120px">
+        </div>
+        <div class="form-group">
+          <label>排序方式</label>
+          <div class="sort-toggle">
+            <button class="sort-btn active" id="modal-sort-top" onclick="setModalSortBy('top')">热门</button>
+            <button class="sort-btn" id="modal-sort-live" onclick="setModalSortBy('live')">最新</button>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="modal-include-replies">
+          <span>同时抓取评论</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-secondary)">
+          <input type="checkbox" id="modal-block-resources">
+          <span>加速模式（屏蔽图片/CSS，页面加载更快）</span>
+        </label>
+      </div>
+    </div>
+    <div class="fetch-modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeFetchConfigModal()">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmFetchConfig()">确认配置</button>
     </div>
   </div>
 </div>
