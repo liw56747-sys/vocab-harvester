@@ -11,10 +11,14 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def _resolve_data_dir() -> str:
-    """解析数据目录：优先使用环境变量 VOCAB_DATA_DIR，否则使用默认 ./data"""
+    """解析数据目录：优先使用环境变量 VOCAB_DATA_DIR，否则使用默认用户数据目录"""
     env_dir = os.environ.get("VOCAB_DATA_DIR")
     if env_dir:
         return env_dir
+    # 打包后使用用户主目录，开发时使用项目根目录
+    import sys
+    if getattr(sys, "frozen", False):
+        return str(Path.home() / ".vocab-harvester")
     return "./data"
 
 
@@ -26,12 +30,26 @@ class AppConfig(BaseModel):
     data_dir: str = ""
 
     def model_post_init(self, __context):
-        if not self.data_dir:
+        # 环境变量始终优先（确保打包后数据目录不受 settings.yaml 影响）
+        env_dir = os.environ.get("VOCAB_DATA_DIR")
+        if env_dir:
+            self.data_dir = env_dir
+        elif not self.data_dir or self.data_dir == "./data":
             self.data_dir = _resolve_data_dir()
 
 
 class DatabaseConfig(BaseModel):
-    url: str = "sqlite+aiosqlite:///./data/vocab.db"
+    url: str = ""
+
+    def model_post_init(self, __context):
+        # 动态生成数据库 URL，确保路径跟随 data_dir 而非硬编码
+        if not self.url:
+            import sys
+            if getattr(sys, "frozen", False):
+                db_path = Path.home() / ".vocab-harvester" / "vocab.db"
+            else:
+                db_path = Path("./data") / "vocab.db"
+            self.url = f"sqlite+aiosqlite:///{db_path}"
 
 
 class CrawlerPlatformConfig(BaseModel):

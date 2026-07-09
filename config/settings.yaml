@@ -3,10 +3,12 @@
 app:
   name: "vocab-harvester"
   log_level: "INFO"
-  data_dir: "./data"
+  # data_dir 由环境变量 VOCAB_DATA_DIR 动态决定，不要在此硬编码
+  # 打包后: ~/.vocab-harvester/  开发时: ./data/
 
 database:
-  url: "sqlite+aiosqlite:///./data/vocab.db"
+  # url 由 DatabaseConfig.model_post_init 动态生成，确保路径跟随用户数据目录
+  url: ""
 
 # 平台采集配置
 crawlers:

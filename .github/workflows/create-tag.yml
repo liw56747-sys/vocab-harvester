@@ -1,0 +1,73 @@
+# 自动化打 Tag 工作流
+# 手动触发，在 main 分支最新 commit 上创建 Tag 并推送，级联触发 Release 流水线
+
+name: Create Release Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（例如 1.4.6，会自动添加 v 前缀）'
+        required: true
+        type: string
+
+jobs:
+  create-tag:
+    name: Create and push tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          # 使用 PAT 确保后续 push tag 能触发下游 workflow
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Validate version input
+        id: validate
+        run: |
+          # 去除可能的 v 前缀，统一格式
+          RAW="${{ inputs.version }}"
+          VER="${RAW#v}"
+          
+          # 校验版本号格式（语义化版本）
+          if ! echo "$VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::版本号格式无效: '$VER'，应为 semver 格式（如 1.4.6）"
+            exit 1
+          fi
+          
+          TAG="v${VER}"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "将创建 Tag: $TAG"
+
+      - name: Check if tag already exists
+        run: |
+          TAG="${{ steps.validate.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG 已存在，请使用其他版本号"
+            exit 1
+          fi
+          echo "Tag $TAG 不存在，可以继续创建"
+
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.validate.outputs.tag }}"
+          VER="${{ steps.validate.outputs.version }}"
+          
+          # 配置 git 用户信息
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 在 main 分支最新 commit 上创建 tag
+          git tag -a "$TAG" -m "Release $TAG"
+          
+          # 推送 tag（级联触发 Release 工作流）
+          git push origin "$TAG"
+          
+          echo "✅ Tag $TAG 已创建并推送到 main 分支最新 commit"
+          echo "✅ Release 工作流已自动触发"
