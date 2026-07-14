@@ -1351,14 +1351,14 @@ async def batch_search(req: BatchSearchRequest):
                             if platform == "twitter" and pc.get("ct0") and pc.get("auth_token"):
                                 fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=req.block_resources)
                                 cookies = {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}
-                                tasks.append(fetcher.search_tweets(kw, count=req.count, include_replies=req.include_replies, cookies=cookies, sort_by=req.sort_by))
+                                tasks.append(fetcher.search_tweets(kw, count=req.count, include_replies=req.include_replies, cookies=cookies, sort_by=req.sort_by, task_id=task_id))
                                 plat_names.append("twitter")
 
                             elif platform == "reddit" and pc.get("reddit_session"):
                                 fetcher = RedditCookieFetcher(proxy=proxy)
                                 cookies = {k: pc[k] for k in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout") if pc.get(k)}
                                 if pc.get("extra_cookies"): cookies.update(pc["extra_cookies"])
-                                tasks.append(fetcher.search_posts(kw, count=req.count, cookies=cookies, include_replies=req.include_replies, sort="hot" if req.sort_by == "top" else "new"))
+                                tasks.append(fetcher.search_posts(kw, count=req.count, cookies=cookies, include_replies=req.include_replies, sort="hot" if req.sort_by == "top" else "new", task_id=task_id))
                                 plat_names.append("reddit")
 
                         if not tasks: return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 无可用平台 Cookie"]
@@ -1399,32 +1399,62 @@ async def batch_search(req: BatchSearchRequest):
                 all_kw_results = []
                 was_cancelled = False
                 try:
-                    # 使用 asyncio.wait 以便在取消时能立即返回已完成的结果
+                    # 使用轮询循环以便每 2 秒检查取消信号
                     batch_tasks = [asyncio.create_task(_search_one_keyword(kw, idx)) for kw, idx in valid_keywords]
-                    done_batch, pending_batch = await asyncio.wait(
-                        batch_tasks,
-                        timeout=batch_timeout
-                    )
-                    # 取消未完成的任务
-                    for t in pending_batch:
-                        t.cancel()
-                    if pending_batch:
-                        await asyncio.gather(*pending_batch, return_exceptions=True)
-                    
-                    # 检查是否被用户取消
-                    was_cancelled = _is_task_cancelled(task_id)
+                    pending_batch = set(batch_tasks)
+                    done_batch: set = set()
+                    _batch_start = time.time()
+
+                    while pending_batch:
+                        # 检查用户是否取消
+                        if _is_task_cancelled(task_id):
+                            was_cancelled = True
+                            logger.info(f"批量搜索被用户取消，正在终止 {len(pending_batch)} 个子任务: {task_id}")
+                            for t in pending_batch:
+                                t.cancel()
+                            try:
+                                await asyncio.wait_for(
+                                    asyncio.gather(*pending_batch, return_exceptions=True),
+                                    timeout=5.0,
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning("取消后子任务 5 秒内未全部退出，强制跳过")
+                            break
+
+                        # 等待任意一个任务完成（最多 2 秒后再次检查取消标记）
+                        done, pending_batch = await asyncio.wait(
+                            pending_batch,
+                            timeout=2.0,
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        done_batch.update(done)
+
+                        # 超时兜底
+                        if not done and not was_cancelled:
+                            elapsed = time.time() - _batch_start
+                            if elapsed >= batch_timeout:
+                                logger.warning(f"批量搜索超时（{batch_timeout}秒），终止剩余 {len(pending_batch)} 个子任务")
+                                for t in pending_batch:
+                                    t.cancel()
+                                try:
+                                    await asyncio.wait_for(
+                                        asyncio.gather(*pending_batch, return_exceptions=True),
+                                        timeout=5.0,
+                                    )
+                                except asyncio.TimeoutError:
+                                    logger.warning("超时后子任务 5 秒内未全部退出，强制跳过")
+                                errors.append(f"批量搜索超时（{batch_timeout}秒），部分关键词可能未完成")
+                                break
+
                     if was_cancelled:
                         logger.info(f"批量搜索任务已取消，保存已获取的数据: {task_id}")
-                    
+
                     # 收集已完成的结果
                     for t in done_batch:
                         try:
                             all_kw_results.append(t.result())
                         except Exception as e:
                             all_kw_results.append(e)
-                    
-                    if not was_cancelled and not all_kw_results and pending_batch:
-                        errors.append(f"批量搜索超时（{batch_timeout}秒），部分关键词可能未完成")
                 except asyncio.TimeoutError:
                     # 批量超时也要返回已获取的部分数据，而不是直接报错
                     logger.warning(f"批量搜索超时（{batch_timeout}秒），返回已获取的部分数据")

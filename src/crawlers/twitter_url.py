@@ -317,6 +317,16 @@ class TwitterCookieFetcher:
         self.block_resources = block_resources
         logger.info(f"TwitterCookieFetcher 初始化, proxy={self.proxy}, block_resources={block_resources}")
 
+    @staticmethod
+    async def _safe_close(resource, timeout: float = 10.0, label: str = "resource"):
+        """带超时保护地关闭 Playwright 资源（page/context），防止 cleanup 卡死"""
+        try:
+            await asyncio.wait_for(resource.close(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f"{label}.close() 超时（{timeout}秒），强制跳过")
+        except Exception as e:
+            logger.warning(f"{label}.close() 异常: {e}")
+
     def _strip_media_urls(self, tweets: list[dict]) -> None:
         """加速模式时清除媒体 URL（图片/视频链接），因为页面已屏蔽加载这些资源"""
         if not self.block_resources:
@@ -466,7 +476,7 @@ class TwitterCookieFetcher:
                         logger.error(msg)
                         return []
                     finally:
-                        await page.close()
+                        await self._safe_close(page, label="page(user)")
 
             user_results = await asyncio.wait_for(
                 asyncio.gather(
@@ -496,7 +506,7 @@ class TwitterCookieFetcher:
         except Exception as e:
             logger.error(f"用户主页抓取整体失败: {e}")
         finally:
-            await context.close()
+            await self._safe_close(context, label="context(user)")
 
         # 设置默认值
         for tweet in all_tweets:
@@ -550,7 +560,7 @@ class TwitterCookieFetcher:
                 logger.error(f"搜索「{keyword}」整体失败: {type(e).__name__}: {e}", exc_info=True)
                 raise  # 重新抛出异常，让上层处理
             finally:
-                await page.close()
+                await self._safe_close(page, label="page(search)")
 
             # 并发抓取评论（添加超时保护）
             if include_replies and tweets:
@@ -567,7 +577,7 @@ class TwitterCookieFetcher:
         except Exception as e:
             logger.error(f"搜索「{keyword}」整体失败: {e}")
         finally:
-            await context.close()
+            await self._safe_close(context, label="context(search)")
 
         # 设置默认值
         for tweet in tweets:
@@ -609,7 +619,7 @@ class TwitterCookieFetcher:
                     tweet["replies_count"] = 0
                     tweet["replies_data"] = "[]"
                 finally:
-                    await page.close()
+                    await self._safe_close(page, label="page(reply)")
 
         await asyncio.gather(
             *[_scrape_one_reply(t) for t in tweets],
