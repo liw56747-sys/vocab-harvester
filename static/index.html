@@ -2749,9 +2749,12 @@ async function doExport(format) {
 async function manualCheckUpdate() {
   toast(t('checking_update'), 'info');
   try {
+    // 手动检查时清除 dismiss 记录，确保一键更新按钮与横幅正常出现
+    localStorage.removeItem('update_dismissed_version');
     const info = await api('/api/check-update', { method: 'POST' });
     if (info.latest_version) {
-      showUpdateBanner(info);
+      // 强制显示横幅（含"一键更新"按钮），忽略之前的 dismiss 状态
+      showUpdateBanner(info, true);
       toast(t('update_available', { version: info.latest_version }), 'success');
     } else if (info.up_to_date) {
       toast(t('no_update'), 'info');
@@ -2765,17 +2768,30 @@ async function manualCheckUpdate() {
   }
 }
 
-function showUpdateBanner(info) {
-  // 如果用户已关闭此版本的横幅，不再重复弹出
-  if (localStorage.getItem('update_dismissed_version') === info.latest_version) return;
+function showUpdateBanner(info, force) {
+  // 如果用户已关闭此版本的横幅，不再自动重复弹出；但手动检查（force=true）时强制显示
+  if (!force && localStorage.getItem('update_dismissed_version') === info.latest_version) return;
   const banner = document.getElementById('update-banner');
   const versionEl = document.getElementById('update-version');
   const linkEl = document.getElementById('update-download-link');
+  const actionBtn = document.getElementById('update-action-btn');
+  const progressBar = document.getElementById('update-progress-bar');
+  const progressText = document.getElementById('update-progress-text');
   if (versionEl) versionEl.textContent = 'v' + info.latest_version;
   if (linkEl) {
     linkEl.href = info.download_url || info.release_page || '#';
     linkEl.target = '_blank';
   }
+  // 重置一键更新按钮状态（防止之前下载后被禁用/改文案后再次点击版本号无按钮）
+  if (actionBtn) {
+    actionBtn.disabled = false;
+    actionBtn.style.opacity = '1';
+    actionBtn.style.display = '';
+    actionBtn.textContent = t('one_click_update');
+    actionBtn.onclick = startOneClickUpdate;
+  }
+  if (progressBar) progressBar.style.display = 'none';
+  if (progressText) progressText.style.display = 'none';
   if (banner) banner.classList.add('show');
 }
 

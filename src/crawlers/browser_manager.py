@@ -52,7 +52,12 @@ class BrowserManager:
                         return self._browser
                 except Exception:
                     pass
-            await self._launch(proxy)
+            # 启动浏览器带超时兜底（防止 Playwright 挂起导致前端一直"搜索中"）
+            try:
+                await asyncio.wait_for(self._launch(proxy), timeout=60.0)
+            except asyncio.TimeoutError as e:
+                logger.error("BrowserManager: 启动浏览器超时（60秒）")
+                raise RuntimeError("浏览器启动超时，请检查代理配置或重启应用") from e
             return self._browser
 
     async def new_context(
@@ -62,14 +67,22 @@ class BrowserManager:
     ) -> "BrowserContext":
         """在共享浏览器上创建隔离的 context（独立 cookie 和会话）"""
         browser = await self.ensure_browser(proxy=proxy)
-        context = await browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-        )
+        # 创建 context 带超时保护（防止 CDP 命令挂死）
+        try:
+            context = await asyncio.wait_for(
+                browser.new_context(
+                    viewport={"width": 1280, "height": 900},
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                ),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError as e:
+            logger.error("BrowserManager: new_context 超时（30秒）")
+            raise RuntimeError("创建浏览器上下文超时，请重启应用") from e
         if cookies:
             ct0_value = cookies.get("ct0", "")
             cookie_list = []

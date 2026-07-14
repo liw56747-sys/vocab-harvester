@@ -288,8 +288,11 @@ def _version_gt(a: str, b: str) -> bool:
         # 拆分核心版本和预发布后缀：1.2.0-rc1 → (1,2,0), "rc1"
         m = re.match(r'^(\d+(?:\.\d+)*)[\-._]?(.*)$', str(v).strip())
         if not m:
-            return (0,)
+            return (0, 0, 0, 1, '')
         nums = tuple(int(x) for x in m.group(1).split('.'))
+        # 归一化到 3 段，避免不同长度元组比较时预发布位错位
+        while len(nums) < 3:
+            nums = nums + (0,)
         pre = m.group(2)
         # 无后缀 > 有后缀（1.0.0 > 1.0.0-rc1）
         # 后缀按字典序比较（alpha < beta < rc）

@@ -1199,6 +1199,7 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                 
                 # 使用可中断的循环代替 asyncio.gather（支持取消操作）
                 was_cancelled = False
+                errors_from_timeout = False
                 results = [None] * len(tasks)
                 task_to_idx = {}
                 pending_tasks = set()
@@ -1206,7 +1207,9 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                     atask = asyncio.create_task(t)
                     task_to_idx[atask] = i
                     pending_tasks.add(atask)
-                
+
+                _search_start = time.time()
+
                 while pending_tasks:
                     # 检查取消标记
                     if _is_task_cancelled(task_id):
@@ -1223,14 +1226,14 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                         except asyncio.TimeoutError:
                             pass
                         break
-                    
+
                     # 等待任意一个任务完成（最多等 2 秒后再次检查取消标记）
                     done, pending_tasks = await asyncio.wait(
                         pending_tasks,
                         timeout=2.0,
                         return_when=asyncio.FIRST_COMPLETED
                     )
-                    
+
                     for completed_task in done:
                         idx = task_to_idx.get(completed_task)
                         if idx is not None:
@@ -1242,6 +1245,26 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                             except Exception as e:
                                 logger.error(f"子任务 {idx} 异常: {e}")
                                 results[idx] = e
+
+                    # 总体超时兜底：防止子任务本身出现死锁导致前端一直显示"搜索中"
+                    if pending_tasks and not done:
+                        elapsed = time.time() - _search_start
+                        if elapsed >= search_timeout:
+                            logger.warning(
+                                f"多平台搜索总超时（{search_timeout}秒），"
+                                f"强制终止剩余 {len(pending_tasks)} 个子任务"
+                            )
+                            for task in pending_tasks:
+                                task.cancel()
+                            try:
+                                await asyncio.wait_for(
+                                    asyncio.gather(*pending_tasks, return_exceptions=True),
+                                    timeout=5.0
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning("超时后子任务 5 秒内未全部退出，强制跳过")
+                            errors_from_timeout = True
+                            break
                 
                 if was_cancelled:
                     # 取消时保存已获取的数据
@@ -1261,6 +1284,11 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                         errors.append(error_msg)
                         logger.error(f"平台 {plat} 抓取出错: {result}\n{tb.format_exc()}")
                         tb.print_exc()
+                        continue
+                    if result is None:
+                        # 子任务被取消或总体超时兜底触发时未产生结果
+                        if errors_from_timeout:
+                            errors.append(f"{plat}: 搜索总超时（{search_timeout}秒），已强制终止")
                         continue
                     posts, csv_string = result
                     if not posts:
