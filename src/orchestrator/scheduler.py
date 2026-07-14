@@ -63,13 +63,22 @@ class Scheduler:
         settings = get_settings()
         queries = settings.scheduler.default_queries or ["技术", "科技", "互联网"]
 
+        # 从 pipeline 实际加载的爬虫动态获取可用平台，避免硬编码不存在的平台
+        available_platforms = [
+            Platform(p) for p in self.pipeline.crawlers.keys()
+            if p in {plat.value for plat in Platform}
+        ]
+        if not available_platforms:
+            logger.warning("[定时任务] 无可用的爬虫平台，跳过本次执行")
+            return
+
         query = CrawlQuery(
-            platforms=[Platform.WEIBO, Platform.XIAOHONGSHU, Platform.TWITTER],
+            platforms=available_platforms,
             keywords=queries,
             max_results=50,
         )
 
-        logger.info(f"[定时任务] 开始采集，关键词: {queries}")
+        logger.info(f"[定时任务] 开始采集，平台: {[p.value for p in available_platforms]}，关键词: {queries}")
         stats = await self.pipeline.run(query, task_name="定时任务")
         logger.info(f"[定时任务] 完成: {stats['status']}, "
                      f"帖子: {stats['total_posts']}, "

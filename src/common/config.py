@@ -68,6 +68,7 @@ class CrawlersConfig(BaseModel):
     weibo: CrawlerPlatformConfig = Field(default_factory=CrawlerPlatformConfig)
     xiaohongshu: CrawlerPlatformConfig = Field(default_factory=CrawlerPlatformConfig)
     twitter: CrawlerPlatformConfig = Field(default_factory=CrawlerPlatformConfig)
+    reddit: CrawlerPlatformConfig = Field(default_factory=CrawlerPlatformConfig)
 
 
 class WorkflowApiConfig(BaseModel):

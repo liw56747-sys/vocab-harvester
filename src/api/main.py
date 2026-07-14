@@ -358,6 +358,7 @@ async def search_running():
 # ── 模型配置持久化 ──────────────────────────────────────────
 
 class ModelConfigData(BaseModel):
+    model_config = {"extra": "forbid"}
     model_base_url: str = ""
     model_api_key: str = ""
     model_name: str = ""
@@ -746,7 +747,7 @@ async def get_stats():
 
 @app.post("/api/crawl")
 async def trigger_crawl(req: CrawlRequest):
-    """触发采集流水线"""
+    """触发采集流水线（后台线程执行，通过 task_id 轮询结果）"""
     platforms = []
     for p in req.platforms:
         try:
@@ -757,9 +758,37 @@ async def trigger_crawl(req: CrawlRequest):
     keywords = req.keywords or ["技术", "科技"]
     query = CrawlQuery(platforms=platforms, keywords=keywords, max_results=req.max_results)
 
-    pipeline = Pipeline.from_config()
-    stats = await pipeline.run(query, task_name="手动搜索")
-    return stats
+    task_id = str(uuid.uuid4())
+    _set_task_status(task_id, {"status": "running", "result": None})
+
+    def _thread_target():
+        import asyncio as _asyncio
+        import traceback as _tb
+        _loop = _asyncio.new_event_loop()
+        _asyncio.set_event_loop(_loop)
+
+        async def _run():
+            try:
+                from src.common.database import init_db as _init_db, close_db as _close_db
+                from src.common.config import load_settings as _load_settings
+                _settings = _load_settings()
+                _db_path = Path(_settings.app.data_dir) / "vocab.db"
+                _db_path.parent.mkdir(parents=True, exist_ok=True)
+                await _init_db(_db_path)
+
+                pipeline = Pipeline.from_config()
+                stats = await pipeline.run(query, task_name="手动搜索")
+                _set_task_status(task_id, {"status": "success", "result": stats})
+                await _close_db()
+            except Exception as e:
+                _tb.print_exc()
+                _set_task_status(task_id, {"status": "error", "error": str(e)})
+
+        _loop.run_until_complete(_run())
+        _loop.close()
+
+    threading.Thread(target=_thread_target, daemon=True).start()
+    return {"status": "started", "task_id": task_id}
 
 
 @app.get("/api/vocabulary")
@@ -896,10 +925,18 @@ async def export_vocabulary(format: str = "json", status: str | None = None):
         return JSONResponse(json.loads(content))
     elif format == "csv":
         content = await manager.export_csv(vocab_status)
-        return HTMLResponse(f"<pre>{content}</pre>")
+        return Response(
+            content=content,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="vocabulary_export.csv"'},
+        )
     elif format == "txt":
         content = await manager.export_txt(vocab_status)
-        return HTMLResponse(f"<pre>{content}</pre>")
+        return Response(
+            content=content,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="vocabulary_export.txt"'},
+        )
     else:
         raise HTTPException(400, f"不支持的格式: {format}")
 

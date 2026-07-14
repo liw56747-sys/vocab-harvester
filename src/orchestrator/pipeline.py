@@ -11,7 +11,7 @@ from src.adapter.mock import MockAdapter
 from src.adapter.xingpan import XingpanAdapter
 from src.common.config import get_settings
 from src.common.database import get_db
-from src.common.models import CrawlQuery, Platform
+from src.common.models import CrawlQuery, ParsedPost, Platform
 from src.crawlers.base import BaseCrawler
 from src.crawlers.mock import MockCrawler
 from src.vocabulary.manager import VocabManager

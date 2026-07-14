@@ -32,6 +32,11 @@ crawlers:
     rate_limit: 10
     search_queries: []
 
+  reddit:
+    enabled: false
+    rate_limit: 5
+    search_queries: []
+
 # 工作流适配器配置
 workflow:
   adapter: "mock"            # mock | xingpan（模型配置优先从前端 UI 传入）
