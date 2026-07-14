@@ -446,7 +446,7 @@ class TwitterCookieFetcher:
         if not cookies:
             raise RuntimeError("未配置 Cookie，请先导入浏览器 Cookie")
 
-        from src.crawlers.browser_manager import BrowserManager, apply_resource_blocking
+        from src.crawlers.browser_manager import BrowserManager, apply_request_interceptors
 
         mgr = BrowserManager.get()
         context = await mgr.new_context(cookies=cookies, proxy=self.proxy)
@@ -462,8 +462,10 @@ class TwitterCookieFetcher:
                 async with sem_user:
                     page = await context.new_page()
                     page.set_default_timeout(30000)  # 30 秒兜底：防止 CDP 命令无限挂起
-                    if self.block_resources:
-                        await apply_resource_blocking(page)
+                    await apply_request_interceptors(
+                        page, block_resources=self.block_resources,
+                        ct0_token=cookies.get("ct0", ""),
+                    )
                     try:
                         tweets = await self._scrape_user(page, username, count)
                         logger.info(f"@{username}: 抓取 {len(tweets)} 条推文")
@@ -498,7 +500,10 @@ class TwitterCookieFetcher:
             if include_replies and all_tweets:
                 try:
                     await asyncio.wait_for(
-                        self._parallel_scrape_replies(context, all_tweets),
+                        self._parallel_scrape_replies(
+                            context, all_tweets,
+                            ct0_token=cookies.get("ct0", ""),
+                        ),
                         timeout=_TC.single_keyword_timeout
                     )
                 except asyncio.TimeoutError:
@@ -539,7 +544,7 @@ class TwitterCookieFetcher:
         if not cookies:
             raise RuntimeError("未配置 Cookie，请先导入浏览器 Cookie")
 
-        from src.crawlers.browser_manager import BrowserManager, apply_resource_blocking
+        from src.crawlers.browser_manager import BrowserManager, apply_request_interceptors
 
         mgr = BrowserManager.get()
         context = await mgr.new_context(cookies=cookies, proxy=self.proxy)
@@ -548,8 +553,10 @@ class TwitterCookieFetcher:
         try:
             page = await context.new_page()
             page.set_default_timeout(30000)  # 30 秒兜底：防止 CDP 命令无限挂起
-            if self.block_resources:
-                await apply_resource_blocking(page)
+            await apply_request_interceptors(
+                page, block_resources=self.block_resources,
+                ct0_token=cookies.get("ct0", ""),
+            )
             try:
                 tweets = await asyncio.wait_for(
                     self._scrape_search(page, keyword, count, sort_by=sort_by, task_id=task_id),
@@ -570,7 +577,10 @@ class TwitterCookieFetcher:
             if include_replies and tweets:
                 try:
                     await asyncio.wait_for(
-                        self._parallel_scrape_replies(context, tweets),
+                        self._parallel_scrape_replies(
+                            context, tweets,
+                            ct0_token=cookies.get("ct0", ""),
+                        ),
                         timeout=_TC.single_keyword_timeout
                     )
                 except asyncio.TimeoutError:
@@ -598,10 +608,10 @@ class TwitterCookieFetcher:
     # ── 并发评论抓取 ──────────────────────────────────────
 
     async def _parallel_scrape_replies(
-        self, context, tweets: list[dict],
+        self, context, tweets: list[dict], ct0_token: str = "",
     ):
         """并发抓取多条推文的评论（Semaphore 限制 5 个并发标签页）"""
-        from src.crawlers.browser_manager import apply_resource_blocking
+        from src.crawlers.browser_manager import apply_request_interceptors
 
         sem = asyncio.Semaphore(5)
 
@@ -613,8 +623,10 @@ class TwitterCookieFetcher:
                     return
                 page = await context.new_page()
                 page.set_default_timeout(30000)  # 30 秒兜底：防止 CDP 命令无限挂起
-                if self.block_resources:
-                    await apply_resource_blocking(page)
+                await apply_request_interceptors(
+                    page, block_resources=self.block_resources,
+                    ct0_token=ct0_token,
+                )
                 try:
                     replies = await self._scrape_replies_page(page, tweet["url"])
                     tweet["replies_count"] = len(replies)

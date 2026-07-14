@@ -85,12 +85,9 @@ class BrowserManager:
                      "secure": True, "httpOnly": True, "sameSite": "None"}
                 )
             await context.add_cookies(cookie_list)
-
-            # 注入 x-csrf-token 请求头，Twitter 的 GraphQL API 要求此 header 与 ct0 cookie 一致
-            if ct0_value:
-                await context.route("**/*", lambda route, ct0=ct0_value: route.continue_(
-                    headers={**route.request.headers, "x-csrf-token": ct0}
-                ))
+        # 注意：不在此处注册 context.route()
+        # 所有请求拦截统一由 apply_request_interceptors() 在 page 级别处理，
+        # 避免 context.route 和 page.route 使用相同 pattern 时后者覆盖前者
         return context
 
     async def close(self):
@@ -137,17 +134,55 @@ class BrowserManager:
         logger.info(f"BrowserManager: 浏览器已启动 (proxy={proxy or 'none'})")
 
 
-# ── 网络拦截工具 ──────────────────────────────────────────
+# ── 统一请求拦截 ──────────────────────────────────────────
 
 _BLOCKED_RESOURCE_TYPES = frozenset({"image", "font", "media"})
 
 
-async def apply_resource_blocking(page):
-    """拦截图片/CSS/字体/媒体请求，加速页面加载"""
-    async def _handler(route):
-        if route.request.resource_type in _BLOCKED_RESOURCE_TYPES:
-            await route.abort()
-        else:
-            await route.continue_()
+async def apply_request_interceptors(
+    page,
+    *,
+    block_resources: bool = False,
+    ct0_token: str = "",
+):
+    """
+    统一注册请求拦截器：header 注入 + 可选的资源屏蔽。
 
-    await page.route("**/*", _handler)
+    必须在 page 级别只调用一次，不能和 context.route() 混用，
+    否则同 pattern 的 handler 会互相覆盖。
+
+    Args:
+        page: Playwright Page 对象
+        block_resources: 是否屏蔽图片/字体/媒体请求（加速模式）
+        ct0_token: Twitter ct0 cookie 值，用于注入 x-csrf-token 请求头
+    """
+    async def _handler(route):
+        request = route.request
+
+        # 1. 资源屏蔽（加速模式）
+        if block_resources and request.resource_type in _BLOCKED_RESOURCE_TYPES:
+            try:
+                await route.abort()
+            except Exception:
+                pass
+            return
+
+        # 2. 注入 x-csrf-token 请求头（Twitter GraphQL API 必需）
+        if ct0_token:
+            headers = {**request.headers, "x-csrf-token": ct0_token}
+            try:
+                await route.continue_(headers=headers)
+            except Exception:
+                try:
+                    await route.continue_()
+                except Exception:
+                    pass
+        else:
+            try:
+                await route.continue_()
+            except Exception:
+                pass
+
+    # 只在有实际拦截需求时才注册 route
+    if block_resources or ct0_token:
+        await page.route("**/*", _handler)
