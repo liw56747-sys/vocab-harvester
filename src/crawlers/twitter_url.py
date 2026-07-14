@@ -86,7 +86,9 @@ _CSV_FIELDS = [
 # ── 共享的推文提取 JS ────────────────────────────────────
 # 用于 _scrape_user / _scrape_search 的每轮滚动提取
 # 参数: (alreadySeenIds: string[])  →  返回: tweet object[]
-_EXTRACT_TWEETS_JS = r"""(alreadySeenIds, skipMedia) => {
+_EXTRACT_TWEETS_JS = r"""(args) => {
+    const alreadySeenIds = args.alreadySeenIds || [];
+    const skipMedia = args.skipMedia || false;
     const seenSet = new Set(alreadySeenIds);
 
     function extractText(container) {
@@ -708,7 +710,7 @@ class TwitterCookieFetcher:
                 await asyncio.sleep(_TC.user_expand_wait)
             
             # 提取当前 DOM 中的推文（排除已见过的 ID）
-            new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()), self.block_resources)
+            new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, {"alreadySeenIds": list(all_tweets.keys()), "skipMedia": self.block_resources})
             for t in new_tweets:
                 tid = t.get("tweet_id", "")
                 if tid and tid not in all_tweets:
@@ -756,7 +758,7 @@ class TwitterCookieFetcher:
         from urllib.parse import quote_plus
 
         f_param = "live" if sort_by == "live" else "top"
-        url = f"https://x.com/search?q={quote_plus(keyword)}&f={f_param}"
+        url = f"https://x.com/search?q={quote_plus(keyword)}&src=typed_query&f={f_param}"
         logger.info(f"搜索 {url} ...")
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(_TC.search_initial_wait)
@@ -885,7 +887,7 @@ class TwitterCookieFetcher:
                     await asyncio.sleep(_TC.search_expand_wait)
 
                 # 提取当前 DOM 中的推文
-                new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()), self.block_resources)
+                new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, {"alreadySeenIds": list(all_tweets.keys()), "skipMedia": self.block_resources})
                 for t in new_tweets:
                     tid = t.get("tweet_id", "")
                     if tid and tid not in all_tweets:

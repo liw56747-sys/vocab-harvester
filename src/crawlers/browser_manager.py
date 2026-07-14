@@ -71,17 +71,26 @@ class BrowserManager:
             ),
         )
         if cookies:
+            ct0_value = cookies.get("ct0", "")
             cookie_list = []
             for domain in [".x.com", ".twitter.com"]:
                 cookie_list.append(
-                    {"name": "ct0", "value": cookies.get("ct0", ""),
-                     "domain": domain, "path": "/"}
+                    {"name": "ct0", "value": ct0_value,
+                     "domain": domain, "path": "/",
+                     "secure": True, "httpOnly": True, "sameSite": "None"}
                 )
                 cookie_list.append(
                     {"name": "auth_token", "value": cookies.get("auth_token", ""),
-                     "domain": domain, "path": "/"}
+                     "domain": domain, "path": "/",
+                     "secure": True, "httpOnly": True, "sameSite": "None"}
                 )
             await context.add_cookies(cookie_list)
+
+            # 注入 x-csrf-token 请求头，Twitter 的 GraphQL API 要求此 header 与 ct0 cookie 一致
+            if ct0_value:
+                await context.route("**/*", lambda route, ct0=ct0_value: route.continue_(
+                    headers={**route.request.headers, "x-csrf-token": ct0}
+                ))
         return context
 
     async def close(self):
@@ -130,7 +139,7 @@ class BrowserManager:
 
 # ── 网络拦截工具 ──────────────────────────────────────────
 
-_BLOCKED_RESOURCE_TYPES = frozenset({"image", "stylesheet", "font", "media"})
+_BLOCKED_RESOURCE_TYPES = frozenset({"image", "font", "media"})
 
 
 async def apply_resource_blocking(page):
