@@ -459,6 +459,7 @@ class TwitterCookieFetcher:
             async def _scrape_one_user(username: str):
                 async with sem_user:
                     page = await context.new_page()
+                    page.set_default_timeout(30000)  # 30 秒兜底：防止 CDP 命令无限挂起
                     if self.block_resources:
                         await apply_resource_blocking(page)
                     try:
@@ -544,6 +545,7 @@ class TwitterCookieFetcher:
         tweets: list[dict] = []
         try:
             page = await context.new_page()
+            page.set_default_timeout(30000)  # 30 秒兜底：防止 CDP 命令无限挂起
             if self.block_resources:
                 await apply_resource_blocking(page)
             try:
@@ -608,6 +610,7 @@ class TwitterCookieFetcher:
                     tweet["replies_data"] = "[]"
                     return
                 page = await context.new_page()
+                page.set_default_timeout(30000)  # 30 秒兜底：防止 CDP 命令无限挂起
                 if self.block_resources:
                     await apply_resource_blocking(page)
                 try:
@@ -732,8 +735,9 @@ class TwitterCookieFetcher:
                 if stall_count >= 2:
                     logger.info(f"@{username}: 滚动加载完成 ({len(all_tweets)} 条，连续 {stall_count} 轮无新增)")
                     break
-            else:
-                stall_count = 0
+                else:
+                    stall_count = 0
+
 
         tweets = list(all_tweets.values())[:count]
 
@@ -862,55 +866,71 @@ class TwitterCookieFetcher:
         }"""
         
         for round_num in range(SEARCH_MAX_ROUNDS):
-            # 检查取消信号
-            if task_id:
-                from src.api.main import _is_task_cancelled
-                if _is_task_cancelled(task_id):
-                    logger.info(f"搜索「{keyword}」: 检测到取消信号，停止抓取，已获取 {len(all_tweets)} 条")
+            try:
+                # 检查取消信号
+                if task_id:
+                    from src.api.main import _is_task_cancelled
+                    if _is_task_cancelled(task_id):
+                        logger.info(f"搜索「{keyword}」: 检测到取消信号，停止抓取，已获取 {len(all_tweets)} 条")
+                        break
+
+                # 条件 A（主要）：已抓取数量 >= 目标数量，立即停止
+                if len(all_tweets) >= count:
+                    logger.info(f"搜索「{keyword}」: 已达到目标数量 {count} 条，停止滚动")
                     break
-            
-            # 条件 A（主要）：已抓取数量 >= 目标数量，立即停止
-            if len(all_tweets) >= count:
-                logger.info(f"搜索「{keyword}」: 已达到目标数量 {count} 条，停止滚动")
+
+                # 展开截断的长推文
+                expanded = await page.evaluate(_EXPAND_TWEETS_JS)
+                if expanded > 0:
+                    await asyncio.sleep(_TC.search_expand_wait)
+
+                # 提取当前 DOM 中的推文
+                new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()), self.block_resources)
+                for t in new_tweets:
+                    tid = t.get("tweet_id", "")
+                    if tid and tid not in all_tweets:
+                        all_tweets[tid] = t
+
+                prev_count = len(all_tweets)
+
+                # 滚动到页面底部（触底加载）
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                # 随机等待
+                await asyncio.sleep(_TC.scroll_wait("search"))
+
+                # 条件 B（保底/触底检测）：连续 2 次无新增即停止
+                if len(all_tweets) == prev_count:
+                    stall_count += 1
+
+                    # 停滞时尝试点击"加载更多"
+                    if stall_count >= 1:
+                        clicked = await page.evaluate(_CLICK_MORE_JS)
+                        if clicked:
+                            logger.info(f"搜索「{keyword}」第{round_num+1}轮: 点击了加载更多按钮")
+                            await asyncio.sleep(_TC.scroll_wait("search"))
+                            stall_count = 0
+                            continue
+
+                    if stall_count >= MAX_STALLS:
+                        logger.info(f"搜索「{keyword}」({sort_by}): 触底停止 ({len(all_tweets)} 条，连续 {stall_count} 轮无新增)")
+                        break
+                else:
+                    stall_count = 0
+
+            except Exception as _pw_err:
+                # Playwright CDP 超时或浏览器崩溃：保留已采集数据，优雅退出滚动
+                _err_name = type(_pw_err).__name__
+                if "Timeout" in _err_name or "timeout" in str(_pw_err).lower():
+                    logger.warning(
+                        f"搜索「{keyword}」第{round_num+1}轮: 浏览器操作超时（{_err_name}），"
+                        f"保留已获取的 {len(all_tweets)} 条数据"
+                    )
+                else:
+                    logger.warning(
+                        f"搜索「{keyword}」第{round_num+1}轮: 浏览器异常（{_err_name}: {_pw_err}），"
+                        f"保留已获取的 {len(all_tweets)} 条数据"
+                    )
                 break
-        
-            # 展开截断的长推文
-            expanded = await page.evaluate(_EXPAND_TWEETS_JS)
-            if expanded > 0:
-                await asyncio.sleep(_TC.search_expand_wait)
-                    
-            # 提取当前 DOM 中的推文
-            new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, list(all_tweets.keys()), self.block_resources)
-            for t in new_tweets:
-                tid = t.get("tweet_id", "")
-                if tid and tid not in all_tweets:
-                    all_tweets[tid] = t
-                    
-            prev_count = len(all_tweets)
-                    
-            # 滚动到页面底部（触底加载）
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            # 随机等待
-            await asyncio.sleep(_TC.scroll_wait("search"))
-                    
-            # 条件 B（保底/触底检测）：连续 2 次无新增即停止
-            if len(all_tweets) == prev_count:
-                stall_count += 1
-                    
-                # 停滞时尝试点击"加载更多"
-                if stall_count >= 1:
-                    clicked = await page.evaluate(_CLICK_MORE_JS)
-                    if clicked:
-                        logger.info(f"搜索「{keyword}」第{round_num+1}轮: 点击了加载更多按钮")
-                        await asyncio.sleep(_TC.scroll_wait("search"))
-                        stall_count = 0
-                        continue
-        
-                if stall_count >= MAX_STALLS:
-                    logger.info(f"搜索「{keyword}」({sort_by}): 触底停止 ({len(all_tweets)} 条，连续 {stall_count} 轮无新增)")
-                    break
-            else:
-                stall_count = 0
 
         tweets = list(all_tweets.values())[:count]
         logger.info(f"搜索「{keyword}」: 最终提取 {len(tweets)} 条推文")
