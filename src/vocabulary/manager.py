@@ -183,3 +183,30 @@ class VocabManager:
                 if len(samples) >= max_samples:
                     break
         return samples
+
+    def process_blacklist(self, results: list, task_name: str):
+        """处理黑词提取任务"""
+        blacklist_items = self._extract_blacklist_items(results)
+        if not blacklist_items:
+            return
+
+        self._save_blacklist(blacklist_items, task_name)
+        self._notify_blacklist(task_name, len(blacklist_items))
+
+    def _extract_blacklist_items(self, results: list) -> list:
+        """核心黑词提取逻辑"""
+        patterns = ["密码", "账号", "泄露"]  # 可从配置加载
+        return [
+            item['text']
+            for item in results
+            if any(p in item['text'] for p in patterns)
+        ]
+
+    def _save_blacklist(self, items, task_name):
+        """存储到数据库（具体实现）"""
+        # 执行 INSERT 操作
+        pass
+
+    def _notify_blacklist(self, task_name, count):
+        """通知黑词提取结果"""
+        logger.info(f"[黑词提取] 任务 '{task_name}' 检测到 {count} 条黑词")

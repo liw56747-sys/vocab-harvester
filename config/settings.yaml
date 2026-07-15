@@ -64,3 +64,20 @@ scheduler:
   enabled: false
   cron: "0 */6 * * *"         # 默认每6小时执行一次
   default_queries: []
+
+scheduled_tasks:
+  - name: "日常抓取任务"
+    cron: "0 0 * * *"
+    platform: "twitter"
+    keywords: 
+      - "keyword1"
+      - "keyword2"
+    # 无 task_type 默认为 standard
+
+  - name: "黑词监控任务"
+    cron: "0 8 * * *"
+    platform: "twitter"
+    keywords: 
+      - "敏感词1"
+      - "敏感词2"
+    task_type: "blacklist_extraction"  # 新增类型标识
