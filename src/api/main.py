@@ -265,6 +265,10 @@ class BatchSearchRequest(BaseModel):
     include_replies: bool = False
     block_resources: bool = False
     cookies: list[PlatformCookieConfig] = []
+    # v1.5.3 新增
+    stagger_platforms: bool = True         # 平台错峰：先跑 Reddit（快）再跑 Twitter（慢）
+    worker_concurrency: int = 3            # 关键词级并发（每平台）
+    max_retries: int = 2                   # 单关键词失败时的最大重试次数
 
 
 # ── API 路由 ─────────────────────────────────────────────
@@ -1369,12 +1373,19 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
 
 @app.post("/api/batch-search")
 async def batch_search(req: BatchSearchRequest):
-    """物理隔离线程池版：批量关键词搜索"""
+    """
+    批量关键词搜索（v1.5.3 引入关键词级 Job 队列）
+
+    - 每 (keyword, platform) 独立成一个 job：失败可单独重试
+    - 支持平台错峰（stagger_platforms=True 时先跑 Reddit 再跑 Twitter）
+    - 进度实时上报到 /api/task-status 的 progress 字段
+    - 关键词上限 30（前端亦已同步）
+    """
     if not req.keywords: raise HTTPException(400, "请提供至少一个关键词")
-    if len(req.keywords) > 10: raise HTTPException(400, f"关键词数量过多（{len(req.keywords)} 个），单次最多 10 个")
+    if len(req.keywords) > 30: raise HTTPException(400, f"关键词数量过多（{len(req.keywords)} 个），单次最多 30 个")
 
     task_id = str(uuid.uuid4())
-    _set_task_status(task_id, {"status": "running", "result": None})
+    _set_task_status(task_id, {"status": "running", "result": None, "progress": {"total": 0, "completed": 0, "percent": 0}})
 
     def _thread_target():
         import asyncio
@@ -1385,6 +1396,7 @@ async def batch_search(req: BatchSearchRequest):
         import csv
         from src.crawlers.twitter_url import TwitterCookieFetcher
         from src.crawlers.reddit_crawler import RedditCookieFetcher
+        from src.orchestrator.job_queue import KeywordJobQueue, JobStatus
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -1395,152 +1407,130 @@ async def batch_search(req: BatchSearchRequest):
                 for cfg in req.cookies:
                     cookie_map[cfg.platform] = {"ct0": cfg.ct0 or "", "auth_token": cfg.auth_token or "", "reddit_session": cfg.reddit_session or "", "reddit_token": cfg.reddit_token or "", "edgebucket": cfg.edgebucket or "", "redesign_optout": cfg.redesign_optout or "", "extra_cookies": cfg.extra_cookies or {}, "proxy": cfg.proxy or ""}
 
-                all_rows: list[dict] = []; keyword_results: list[dict] = []; errors: list[str] = []; platform_counts: dict[str, int] = {}; skipped_platforms: list[dict] = []
+                all_rows: list[dict] = []
+                keyword_results: list[dict] = []
+                errors: list[str] = []
+                platform_counts: dict[str, int] = {}
+                skipped_platforms: list[dict] = []
 
+                # ── Cookie 校验 & 跳过平台 ──
+                active_platforms = []
                 for platform in req.platforms:
                     pc = cookie_map.get(platform, {})
-                    if platform == "twitter" and (not pc.get("ct0") or not pc.get("auth_token")): skipped_platforms.append({"platform": "twitter", "reason": "Cookie 未配置"})
-                    elif platform == "reddit" and not pc.get("reddit_session"): skipped_platforms.append({"platform": "reddit", "reason": "Cookie 未配置"})
+                    if platform == "twitter" and (not pc.get("ct0") or not pc.get("auth_token")):
+                        skipped_platforms.append({"platform": "twitter", "reason": "Cookie 未配置"})
+                    elif platform == "reddit" and not pc.get("reddit_session"):
+                        skipped_platforms.append({"platform": "reddit", "reason": "Cookie 未配置"})
+                    else:
+                        active_platforms.append(platform)
 
-                total_keywords = len(req.keywords)
-                sem = asyncio.Semaphore(3)
+                if not active_platforms:
+                    _set_task_status(task_id, {"status": "success", "result": {
+                        "status": "empty", "total_posts": 0, "total_rows": 0,
+                        "keyword_results": [], "sampled_posts": [],
+                        "csv_data": "", "csv_filename": "",
+                        "error": "所选平台均未配置 Cookie，请先填写",
+                        "skipped_platforms": skipped_platforms,
+                    }})
+                    return
 
-                async def _search_one_keyword(kw: str, idx: int):
-                    async with sem:
-                        tasks = []; plat_names = []
-                        for platform in req.platforms:
-                            pc = cookie_map.get(platform, {})
-                            proxy = pc.get("proxy") or None
-                            if proxy and not proxy.startswith(("http://", "https://", "socks5://")): proxy = f"http://{proxy}"
+                valid_keywords = [kw.strip() for kw in req.keywords if kw.strip()]
 
-                            if platform == "twitter" and pc.get("ct0") and pc.get("auth_token"):
-                                fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=req.block_resources)
-                                cookies = {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}
-                                tasks.append(fetcher.search_tweets(kw, count=req.count, include_replies=req.include_replies, cookies=cookies, sort_by=req.sort_by, task_id=task_id))
-                                plat_names.append("twitter")
+                # ── Worker：单个 (keyword, platform) 抓取 ──
+                async def _worker(keyword: str, platform: str):
+                    pc = cookie_map.get(platform, {})
+                    proxy = pc.get("proxy") or None
+                    if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
+                        proxy = f"http://{proxy}"
 
-                            elif platform == "reddit" and pc.get("reddit_session"):
-                                fetcher = RedditCookieFetcher(proxy=proxy)
-                                cookies = {k: pc[k] for k in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout") if pc.get(k)}
-                                if pc.get("extra_cookies"): cookies.update(pc["extra_cookies"])
-                                tasks.append(fetcher.search_posts(kw, count=req.count, cookies=cookies, include_replies=req.include_replies, sort="hot" if req.sort_by == "top" else "new", task_id=task_id))
-                                plat_names.append("reddit")
-
-                        if not tasks: return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 无可用平台 Cookie"]
-                        # 根据涉及的平台累加超时时间（双平台时给足两平台时间）
-                        kw_timeout = (
-                            (_TC.single_keyword_timeout if "twitter" in plat_names else 0)
-                            + (_RC.single_keyword_timeout if "reddit" in plat_names else 0)
+                    if platform == "twitter":
+                        fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=req.block_resources)
+                        cookies = {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}
+                        posts, _csv = await asyncio.wait_for(
+                            fetcher.search_tweets(keyword, count=req.count, include_replies=req.include_replies,
+                                                  cookies=cookies, sort_by=req.sort_by, task_id=task_id),
+                            timeout=_TC.single_keyword_timeout,
                         )
-                        kw_timeout = max(kw_timeout, 60)  # 最低 60 秒保底
-                        try:
-                            results = await asyncio.wait_for(
-                                asyncio.gather(*tasks, return_exceptions=True),
-                                timeout=kw_timeout
-                            )
-                        except asyncio.TimeoutError:
-                            return [], {"keyword": kw, "post_count": 0, "total_rows": 0}, [f"「{kw}」: 搜索超时（{kw_timeout}秒）"]
-                        kw_rows, kw_errors, kw_post_count = [], [], 0
-                        for plat, result in zip(plat_names, results):
-                            if isinstance(result, Exception):
-                                kw_errors.append(f"「{kw}」{plat}: {result}")
-                                continue
-                            posts, csv_string = result
-                            for p in posts:
-                                p["platform"] = plat; p["keyword"] = kw
-                            kw_rows.extend(posts)
-                            kw_post_count += sum(1 for p in posts if p.get("type", "post") != "comment")
-                        return kw_rows, {"keyword": kw, "post_count": kw_post_count, "total_rows": len([x for x in results if not isinstance(x, Exception) and x[0]]) if results else 0}, kw_errors
-
-                valid_keywords = [(kw.strip(), i) for i, kw in enumerate(req.keywords) if kw.strip()]
-                # 批量搜索整体超时保护：按平台分别累加，分别封顶（X:60分钟/R:40分钟）
-                twitter_kw_count = sum(1 for kw, _ in valid_keywords if "twitter" in req.platforms)
-                reddit_kw_count = sum(1 for kw, _ in valid_keywords if "reddit" in req.platforms)
-                twitter_batch_cap = _TC.batch_max_timeout  # 3600秒 = 60分钟
-                reddit_batch_cap = _RC.batch_max_timeout    # 2400秒 = 40分钟
-                twitter_timeout = min(twitter_kw_count * _TC.single_keyword_timeout, twitter_batch_cap) if twitter_kw_count > 0 else 0
-                reddit_timeout = min(reddit_kw_count * _RC.single_keyword_timeout, reddit_batch_cap) if reddit_kw_count > 0 else 0
-                batch_timeout = max(twitter_timeout + reddit_timeout, 120)  # 最低 2 分钟保底
-                all_kw_results = []
-                was_cancelled = False
-                try:
-                    # 使用轮询循环以便每 2 秒检查取消信号
-                    batch_tasks = [asyncio.create_task(_search_one_keyword(kw, idx)) for kw, idx in valid_keywords]
-                    pending_batch = set(batch_tasks)
-                    done_batch: set = set()
-                    _batch_start = time.time()
-
-                    while pending_batch:
-                        # 检查用户是否取消
-                        if _is_task_cancelled(task_id):
-                            was_cancelled = True
-                            logger.info(f"批量搜索被用户取消，正在终止 {len(pending_batch)} 个子任务: {task_id}")
-                            for t in pending_batch:
-                                t.cancel()
-                            try:
-                                await asyncio.wait_for(
-                                    asyncio.gather(*pending_batch, return_exceptions=True),
-                                    timeout=5.0,
-                                )
-                            except asyncio.TimeoutError:
-                                logger.warning("取消后子任务 5 秒内未全部退出，强制跳过")
-                            break
-
-                        # 等待任意一个任务完成（最多 2 秒后再次检查取消标记）
-                        done, pending_batch = await asyncio.wait(
-                            pending_batch,
-                            timeout=2.0,
-                            return_when=asyncio.FIRST_COMPLETED,
+                    elif platform == "reddit":
+                        fetcher = RedditCookieFetcher(proxy=proxy)
+                        cookies = {k: pc[k] for k in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout") if pc.get(k)}
+                        if pc.get("extra_cookies"): cookies.update(pc["extra_cookies"])
+                        posts, _csv = await asyncio.wait_for(
+                            fetcher.search_posts(keyword, count=req.count, cookies=cookies,
+                                                 include_replies=req.include_replies,
+                                                 sort="hot" if req.sort_by == "top" else "new",
+                                                 task_id=task_id),
+                            timeout=_RC.single_keyword_timeout,
                         )
-                        done_batch.update(done)
+                    else:
+                        return []
 
-                        # 超时兜底
-                        if not done and not was_cancelled:
-                            elapsed = time.time() - _batch_start
-                            if elapsed >= batch_timeout:
-                                logger.warning(f"批量搜索超时（{batch_timeout}秒），终止剩余 {len(pending_batch)} 个子任务")
-                                for t in pending_batch:
-                                    t.cancel()
-                                try:
-                                    await asyncio.wait_for(
-                                        asyncio.gather(*pending_batch, return_exceptions=True),
-                                        timeout=5.0,
-                                    )
-                                except asyncio.TimeoutError:
-                                    logger.warning("超时后子任务 5 秒内未全部退出，强制跳过")
-                                errors.append(f"批量搜索超时（{batch_timeout}秒），部分关键词可能未完成")
-                                break
+                    for p in posts:
+                        p["platform"] = platform
+                        p["keyword"] = keyword
+                    return posts
 
-                    if was_cancelled:
-                        logger.info(f"批量搜索任务已取消，保存已获取的数据: {task_id}")
+                # ── 构建 Job 队列 ──
+                platform_order = None
+                if req.stagger_platforms and set(active_platforms) == {"twitter", "reddit"}:
+                    # Reddit 用 JSON API 极快，先跑完；Twitter 用浏览器较慢，后跑
+                    platform_order = ["reddit", "twitter"]
 
-                    # 收集已完成的结果
-                    for t in done_batch:
-                        try:
-                            all_kw_results.append(t.result())
-                        except Exception as e:
-                            all_kw_results.append(e)
-                except asyncio.TimeoutError:
-                    # 批量超时也要返回已获取的部分数据，而不是直接报错
-                    logger.warning(f"批量搜索超时（{batch_timeout}秒），返回已获取的部分数据")
-                    errors.append(f"批量搜索超时（{batch_timeout}秒），部分关键词可能未完成")
+                queue = KeywordJobQueue(
+                    concurrency=max(1, min(req.worker_concurrency, 5)),
+                    is_cancelled=lambda: _is_task_cancelled(task_id),
+                    platform_order=platform_order or [],
+                )
+                for kw in valid_keywords:
+                    for plat in active_platforms:
+                        queue.enqueue(kw, plat, worker=_worker, max_retries=max(0, min(req.max_retries, 3)))
 
-                for result in all_kw_results:
-                    if isinstance(result, Exception):
-                        errors.append(f"关键词任务异常: {result}")
-                        logger.error(f"关键词任务异常: {result}", exc_info=result)
-                        continue
-                    if not isinstance(result, tuple) or len(result) != 3:
-                        errors.append(f"关键词任务返回格式错误: {type(result)}")
-                        continue
-                    kw_rows, kw_result, kw_errors = result
-                    all_rows.extend(kw_rows); keyword_results.append(kw_result); errors.extend(kw_errors)
-                    for p in kw_rows:
-                        plat = p.get("platform", "")
-                        if p.get("type", "post") != "comment": platform_counts[plat] = platform_counts.get(plat, 0) + 1
+                # ── 进度回调：写入任务状态供前端轮询 ──
+                def _progress_cb(snap):
+                    prev = _get_task_status(task_id) or {}
+                    prev["progress"] = snap.as_dict()
+                    _set_task_status(task_id, prev)
+
+                logger.info(
+                    f"[batch-search {task_id}] queue={len(valid_keywords)}kw × {len(active_platforms)}plat = "
+                    f"{len(valid_keywords) * len(active_platforms)} jobs, concurrency={queue.concurrency}, "
+                    f"stagger={platform_order}"
+                )
+                await queue.run(progress_callback=_progress_cb)
+
+                # ── 汇总结果 ──
+                jobs = queue.results()
+                was_cancelled = any(j.status == JobStatus.CANCELLED for j in jobs) and not any(j.status == JobStatus.SUCCESS for j in jobs[:1])
+                # 更严谨判定：若任务确实被外部取消 且 存在 CANCELLED job，则视为取消
+                if _is_task_cancelled(task_id):
+                    was_cancelled = True
+
+                # 按关键词汇总
+                by_keyword: dict[str, dict] = {kw: {"keyword": kw, "post_count": 0, "total_rows": 0} for kw in valid_keywords}
+                for j in jobs:
+                    if j.status == JobStatus.SUCCESS:
+                        posts = j.result or []
+                        all_rows.extend(posts)
+                        post_cnt = sum(1 for p in posts if p.get("type", "post") != "comment")
+                        by_keyword[j.keyword]["post_count"] += post_cnt
+                        by_keyword[j.keyword]["total_rows"] += len(posts)
+                        for p in posts:
+                            if p.get("type", "post") != "comment":
+                                platform_counts[j.platform] = platform_counts.get(j.platform, 0) + 1
+                    elif j.status == JobStatus.FAILED:
+                        errors.append(f"「{j.keyword}」{j.platform}: {j.error} (已重试 {j.retries} 次)")
+                    elif j.status == JobStatus.CANCELLED:
+                        errors.append(f"「{j.keyword}」{j.platform}: 已取消") if _is_task_cancelled(task_id) else None
+                keyword_results = list(by_keyword.values())
 
                 if not all_rows:
-                    _set_task_status(task_id, {"status": "success", "result": {"status": "empty", "total_posts": 0, "total_rows": 0, "keyword_results": keyword_results, "sampled_posts": [], "csv_data": "", "csv_filename": "", "error": f"批量搜索无结果。{'、'.join(errors)}", "skipped_platforms": skipped_platforms}})
+                    _set_task_status(task_id, {"status": "success", "result": {
+                        "status": "empty", "total_posts": 0, "total_rows": 0,
+                        "keyword_results": keyword_results, "sampled_posts": [],
+                        "csv_data": "", "csv_filename": "",
+                        "error": f"批量搜索无结果。{'、'.join(errors)}" if errors else "批量搜索无结果",
+                        "skipped_platforms": skipped_platforms,
+                    }})
                     return
 
                 sampled = []
@@ -1579,9 +1569,24 @@ async def batch_search(req: BatchSearchRequest):
                     while len(_LAST_SEARCH_DATA) > 3:
                         _LAST_SEARCH_DATA.pop(next(iter(_LAST_SEARCH_DATA)))
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                result_status = "cancelled" if was_cancelled else "success"
-                result_msg = "搜索已取消，数据已保存" if was_cancelled else None
-                _set_task_status(task_id, {"status": "success", "result": {"status": result_status, "total_posts": sum(1 for p in all_rows if p.get("type", "post") != "comment"), "total_rows": len(all_rows), "keyword_results": keyword_results, "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"batch_search_{timestamp}.csv", "skipped_platforms": skipped_platforms, "errors": errors, "message": result_msg}})
+                # 有取消 job 且触发取消标记 → cancelled；否则 success
+                result_status = "cancelled" if _is_task_cancelled(task_id) else "success"
+                result_msg = "搜索已取消，数据已保存" if result_status == "cancelled" else None
+                # 组装最终 progress 快照供前端最后展示
+                final_snap = queue.snapshot().as_dict()
+                _set_task_status(task_id, {"status": "success", "progress": final_snap, "result": {
+                    "status": result_status,
+                    "total_posts": sum(1 for p in all_rows if p.get("type", "post") != "comment"),
+                    "total_rows": len(all_rows),
+                    "keyword_results": keyword_results,
+                    "sampled_posts": sampled,
+                    "csv_data": csv_b64,
+                    "csv_filename": f"batch_search_{timestamp}.csv",
+                    "skipped_platforms": skipped_platforms,
+                    "errors": errors,
+                    "progress": final_snap,
+                    "message": result_msg,
+                }})
             except Exception as e:
                 tb.print_exc()
                 _set_task_status(task_id, {"status": "error", "error": str(e)})
@@ -1844,3 +1849,36 @@ async def choose_folder():
 @app.get("/api/platforms")
 async def get_platforms():
     return [p.value for p in Platform]
+
+
+# ── 代理 Preflight（v1.5.3 新增）────────────────────────
+
+class ProxyPreflightRequest(BaseModel):
+    proxy: str = ""     # 代理 URL，如 http://127.0.0.1:7890
+    target: str = "https://www.google.com/generate_204"  # 探测目标
+
+
+@app.post("/api/preflight-proxy")
+async def preflight_proxy(req: ProxyPreflightRequest):
+    """
+    在批量搜索前探测代理连通性，快速失败避免陷入 30 分钟超时。
+    3 秒未响应视为失败。
+    """
+    import httpx as _hx
+    proxy = req.proxy.strip()
+    if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
+        proxy = f"http://{proxy}"
+    try:
+        async with _hx.AsyncClient(
+            timeout=3.0,
+            proxy=proxy or None,
+            verify=False,
+        ) as client:
+            resp = await client.head(req.target)
+            return {"status": "ok", "code": resp.status_code, "proxy": proxy}
+    except _hx.ProxyError as e:
+        return {"status": "error", "error": f"代理连接失败: {e}"}
+    except _hx.ConnectError as e:
+        return {"status": "error", "error": f"目标不可达: {e}"}
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}

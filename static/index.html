@@ -2378,7 +2378,8 @@ const I18N = {
     no_keywords_in_file: '文件中没有找到有效关键词',
     file_read_failed: '文件读取失败',
     imported_n_links: '已从文件导入 {n} 个链接',
-    too_many_keywords: '关键词过多（最多 10 个），请精简后重试',
+    too_many_keywords: '关键词过多（最多 30 个），请精简后重试',
+    retry_count: '重试 {n} 次',
     batch_search_n: '批量搜索 {n} 个关键词',
     with_replies: '（含评论抓取）',
     estimated_time: '预计耗时约 {n} 分钟，期间请勿关闭页面。',
@@ -2582,7 +2583,8 @@ const I18N = {
     no_keywords_in_file: 'No valid keywords found in file',
     file_read_failed: 'File read failed',
     imported_n_links: 'Imported {n} links from file',
-    too_many_keywords: 'Too many keywords (max 10)',
+    too_many_keywords: 'Too many keywords (max 30)',
+    retry_count: 'Retried {n}',
     batch_search_n: 'Batch search {n} keywords',
     with_replies: '(with replies)',
     estimated_time: 'Estimated {n} minutes. Do not close the page.',
@@ -4153,6 +4155,8 @@ async function startTwitterFetch() {
 
 // 全局变量：当前搜索任务 ID（供取消按钮使用）
 let _currentTaskId = null;
+// v1.5.3: 后端队列进度快照 {total, completed, percent, retries_total, current_keywords...}
+let _lastProgress = null;
 
 async function startMultiSearch() {
   const keyword = document.getElementById('search-keyword').value.trim();
@@ -4186,6 +4190,7 @@ async function startMultiSearch() {
   cancelBtn.style.display = 'inline-block';
   const _startTime = Date.now();
   _currentTaskId = null;
+  _lastProgress = null;  // v1.5.3: 重置队列进度快照
 
   const finishUI = () => {
     btn.disabled = false;
@@ -4308,7 +4313,7 @@ async function startBatchSearch(keywords) {
   const includeReplies = document.getElementById('search-include-replies').checked;
 
   if (!platforms.length) return toast(t('select_platform'), 'error');
-  if (keywords.length > 10) return toast(t('too_many_keywords'), 'error');
+  if (keywords.length > 30) return toast(t('too_many_keywords'), 'error');
   if (keywords.length > 3 && includeReplies) {
     const est = keywords.length * (includeReplies ? 10 : 3);
     if (!confirm(t('batch_search_n', {n: keywords.length}) + (includeReplies ? ' ' + t('with_replies') : '') + '\n' + t('estimated_time', {n: est}) + '\n\n' + t('confirm_continue'))) return;
@@ -4331,6 +4336,7 @@ async function startBatchSearch(keywords) {
   cancelBtn.style.display = 'inline-block';
   const _startTime = Date.now();
   _currentTaskId = null;
+  _lastProgress = null;  // v1.5.3: 重置队列进度快照
 
   const finishUI = () => {
     btn.disabled = false;
@@ -4391,7 +4397,7 @@ async function startBatchSearch(keywords) {
   try {
     const initRes = await api('/api/batch-search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('block-resources-toggle').checked })
+      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('block-resources-toggle').checked, stagger_platforms: true, worker_concurrency: 3, max_retries: 2 })
     });
     
     const taskId = initRes.task_id;
@@ -4402,10 +4408,21 @@ async function startBatchSearch(keywords) {
       if (!isPolling) return;
       const elapsed = Math.floor((Date.now() - _startTime) / 1000);
       const m = Math.floor(elapsed / 60), s = elapsed % 60;
-      btn.innerHTML = `<span class="loading"></span> ${t('batch_searching', {n: keywords.length, t: m + ':' + String(s).padStart(2,'0')})}`;
+      // v1.5.3: 显示进度 "完成 X/Y (P%)"
+      let progressText = '';
+      try {
+        const p = _lastProgress;
+        if (p && p.total > 0) {
+          progressText = ` · ${p.completed}/${p.total} (${p.percent}%)`;
+          if (p.retries_total > 0) progressText += ` · ${t('retry_count', {n: p.retries_total}) || '重试 ' + p.retries_total + ' 次'}`;
+        }
+      } catch (_e) { /* ignore */ }
+      btn.innerHTML = `<span class="loading"></span> ${t('batch_searching', {n: keywords.length, t: m + ':' + String(s).padStart(2,'0')})}${progressText}`;
 
       try {
         const statusRes = await api(`/api/task-status?task_id=${taskId}`);
+        // 抓取进度用于按钮显示
+        if (statusRes && statusRes.progress) _lastProgress = statusRes.progress;
         if (statusRes.status === 'success') {
           isPolling = false; renderFinalResult(statusRes.result); finishUI();
         } else if (statusRes.status === 'error') {

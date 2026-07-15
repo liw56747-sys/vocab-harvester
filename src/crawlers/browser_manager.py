@@ -1,150 +1,277 @@
 """
-BrowserManager — 共享 Playwright 浏览器实例管理（单例）
+BrowserManager — Playwright 浏览器进程池管理
 
-提供浏览器池化、健康检查、自动重启、网络拦截等功能。
-所有 Twitter 抓取任务共享同一浏览器进程，通过独立 context 隔离 cookie。
+v1.5.3 改造要点：
+- 单例改为进程池 (BrowserPool)，默认 N=2（macOS）/ 3（Windows/Linux）
+- 每个实例带健康心跳 + 使用次数上限，超过即回收重建
+- 高并发抓取时按 round-robin 分配，单实例挂死不影响其它任务
+- 保留 `BrowserManager.get()`、`new_context()` 旧接口，业务代码无需改动
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import sys
+import time
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-class BrowserManager:
-    """Playwright 浏览器生命周期管理（单例模式）"""
+# ── 池配置 ────────────────────────────────────────────────
 
-    _instance: Optional["BrowserManager"] = None
+def _default_pool_size() -> int:
+    """默认池大小：Mac 内存较紧，Windows/Linux 更大"""
+    env = os.environ.get("VOCAB_BROWSER_POOL_SIZE", "").strip()
+    if env.isdigit():
+        return max(1, min(int(env), 6))
+    return 2 if sys.platform == "darwin" else 3
 
-    def __init__(self):
-        self._pw = None
-        self._browser = None
-        self._proxy: Optional[str] = None
-        self._lock: Optional[asyncio.Lock] = None
+
+_MAX_CONTEXTS_PER_BROWSER = int(os.environ.get("VOCAB_BROWSER_MAX_USES", "40"))
+_HEALTH_CHECK_INTERVAL = 60.0  # 秒
+
+
+class _BrowserSlot:
+    """池中一个浏览器实例的元数据 + 生命周期管理"""
+
+    __slots__ = ("index", "browser", "pw", "proxy", "use_count", "last_health", "lock", "_lock_loop")
+
+    def __init__(self, index: int):
+        self.index = index
+        self.browser = None
+        self.pw = None
+        self.proxy: Optional[str] = None
+        self.use_count = 0
+        self.last_health = 0.0
+        self.lock: Optional[asyncio.Lock] = None
         self._lock_loop: Optional[asyncio.AbstractEventLoop] = None
 
+    def get_lock(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        if self.lock is None or self._lock_loop is not loop:
+            self.lock = asyncio.Lock()
+            self._lock_loop = loop
+        return self.lock
+
+    async def is_healthy(self) -> bool:
+        """轻量健康检查：连接存活 + 使用次数未超限"""
+        if self.browser is None:
+            return False
+        if self.use_count >= _MAX_CONTEXTS_PER_BROWSER:
+            return False
+        try:
+            if not self.browser.is_connected():
+                return False
+        except Exception:
+            return False
+        # 定期主动 ping
+        now = time.time()
+        if now - self.last_health > _HEALTH_CHECK_INTERVAL:
+            try:
+                # contexts 属性访问是同步、极快的健康信号
+                _ = self.browser.contexts
+                self.last_health = now
+            except Exception:
+                return False
+        return True
+
+    async def launch(self, proxy: str | None):
+        """启动一个新的浏览器实例（内部使用，需在锁内调用）"""
+        await self._safe_close()
+
+        from playwright.async_api import async_playwright
+
+        self.proxy = proxy
+        self.pw = await async_playwright().start()
+        self.browser = await self.pw.chromium.launch(
+            headless=True,
+            proxy={"server": proxy} if proxy else None,
+        )
+        self.use_count = 0
+        self.last_health = time.time()
+        logger.info(f"BrowserPool[{self.index}]: 启动 (proxy={proxy or 'none'})")
+
+    async def _safe_close(self):
+        """静默关闭，异常吞掉（回收时使用）"""
+        if self.browser is not None:
+            try:
+                await asyncio.wait_for(self.browser.close(), timeout=10.0)
+            except Exception:
+                pass
+            self.browser = None
+        if self.pw is not None:
+            try:
+                await self.pw.stop()
+            except Exception:
+                pass
+            self.pw = None
+
+    async def close(self):
+        await self._safe_close()
+        self.proxy = None
+        logger.info(f"BrowserPool[{self.index}]: 关闭")
+
+
+class BrowserPool:
+    """
+    Playwright 浏览器进程池（跨事件循环安全）。
+
+    对外通过 `new_context()` 提供隔离上下文；内部按 round-robin 派发到池成员。
+    """
+
+    _instance: Optional["BrowserPool"] = None
+
+    def __init__(self, size: int | None = None):
+        self.size = size or _default_pool_size()
+        self.slots: list[_BrowserSlot] = [_BrowserSlot(i) for i in range(self.size)]
+        self._rr_index = 0
+        self._rr_lock: Optional[asyncio.Lock] = None
+        self._rr_loop: Optional[asyncio.AbstractEventLoop] = None
+
     @classmethod
-    def get(cls) -> "BrowserManager":
-        """获取单例（需在 async 上下文中调用）"""
+    def get(cls) -> "BrowserPool":
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
-    def _get_lock(self) -> asyncio.Lock:
-        """获取与当前事件循环绑定的锁，跨循环时自动重建"""
+    @classmethod
+    def reset_for_test(cls, size: int = 2):
+        """仅测试用：重置单例，允许注入不同池大小"""
+        cls._instance = cls(size=size)
+
+    def _get_rr_lock(self) -> asyncio.Lock:
         loop = asyncio.get_running_loop()
-        if self._lock is None or self._lock_loop is not loop:
-            self._lock = asyncio.Lock()
-            self._lock_loop = loop
-        return self._lock
+        if self._rr_lock is None or self._rr_loop is not loop:
+            self._rr_lock = asyncio.Lock()
+            self._rr_loop = loop
+        return self._rr_lock
 
-    # ── 核心方法 ──────────────────────────────────────────
+    async def _pick_slot(self) -> _BrowserSlot:
+        """round-robin 选择一个 slot（原子递增）"""
+        async with self._get_rr_lock():
+            slot = self.slots[self._rr_index % self.size]
+            self._rr_index = (self._rr_index + 1) % self.size
+        return slot
 
-    async def ensure_browser(self, proxy: str | None = None) -> "Browser":
-        """确保浏览器存活，懒初始化 + 健康检查 + 自动重启"""
-        async with self._get_lock():
-            if self._browser is not None:
+    async def _ensure_slot(self, slot: _BrowserSlot, proxy: str | None) -> None:
+        """确保 slot 内浏览器可用；不可用则回收重建"""
+        async with slot.get_lock():
+            if not await slot.is_healthy() or slot.proxy != proxy:
+                # 代理变化或健康失败 → 重启
                 try:
-                    if self._browser.is_connected():
-                        return self._browser
-                except Exception:
-                    pass
-            # 启动浏览器带超时兜底（防止 Playwright 挂起导致前端一直"搜索中"）
-            try:
-                await asyncio.wait_for(self._launch(proxy), timeout=60.0)
-            except asyncio.TimeoutError as e:
-                logger.error("BrowserManager: 启动浏览器超时（60秒）")
-                raise RuntimeError("浏览器启动超时，请检查代理配置或重启应用") from e
-            return self._browser
+                    await asyncio.wait_for(slot.launch(proxy), timeout=60.0)
+                except asyncio.TimeoutError as e:
+                    logger.error(f"BrowserPool[{slot.index}]: 启动超时 60s")
+                    raise RuntimeError("浏览器启动超时，请检查代理配置或重启应用") from e
 
     async def new_context(
         self,
         cookies: dict | None = None,
         proxy: str | None = None,
-    ) -> "BrowserContext":
-        """在共享浏览器上创建隔离的 context（独立 cookie 和会话）"""
-        browser = await self.ensure_browser(proxy=proxy)
-        # 创建 context 带超时保护（防止 CDP 命令挂死）
-        try:
-            context = await asyncio.wait_for(
-                browser.new_context(
-                    viewport={"width": 1280, "height": 900},
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
-                    ),
-                ),
-                timeout=30.0,
-            )
-        except asyncio.TimeoutError as e:
-            logger.error("BrowserManager: new_context 超时（30秒）")
-            raise RuntimeError("创建浏览器上下文超时，请重启应用") from e
-        if cookies:
-            ct0_value = cookies.get("ct0", "")
-            cookie_list = []
-            for domain in [".x.com", ".twitter.com"]:
-                cookie_list.append(
-                    {"name": "ct0", "value": ct0_value,
-                     "domain": domain, "path": "/",
-                     "secure": True, "httpOnly": True, "sameSite": "None"}
+    ):
+        """
+        从池中取一个浏览器实例并创建隔离 context。
+
+        Args:
+            cookies: {"ct0": ..., "auth_token": ...}
+            proxy: 可选代理 URL
+        """
+        last_err: Exception | None = None
+        # 最多尝试 pool_size 次：某个 slot 挂了就换下一个
+        for attempt in range(self.size):
+            slot = await self._pick_slot()
+            try:
+                await self._ensure_slot(slot, proxy)
+                async with slot.get_lock():
+                    # 二次校验（拿锁后可能被别人回收）
+                    if not await slot.is_healthy():
+                        await asyncio.wait_for(slot.launch(proxy), timeout=60.0)
+                    context = await asyncio.wait_for(
+                        slot.browser.new_context(
+                            viewport={"width": 1280, "height": 900},
+                            user_agent=(
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                "Chrome/120.0.0.0 Safari/537.36"
+                            ),
+                        ),
+                        timeout=30.0,
+                    )
+                    slot.use_count += 1
+
+                if cookies:
+                    ct0_value = cookies.get("ct0", "")
+                    cookie_list = []
+                    for domain in [".x.com", ".twitter.com"]:
+                        cookie_list.append(
+                            {"name": "ct0", "value": ct0_value,
+                             "domain": domain, "path": "/",
+                             "secure": True, "httpOnly": True, "sameSite": "None"}
+                        )
+                        cookie_list.append(
+                            {"name": "auth_token", "value": cookies.get("auth_token", ""),
+                             "domain": domain, "path": "/",
+                             "secure": True, "httpOnly": True, "sameSite": "None"}
+                        )
+                    await context.add_cookies(cookie_list)
+                return context
+            except (asyncio.TimeoutError, RuntimeError, Exception) as e:
+                last_err = e
+                logger.warning(
+                    f"BrowserPool[{slot.index}]: new_context 失败 (attempt {attempt+1}/{self.size}): {e}"
                 )
-                cookie_list.append(
-                    {"name": "auth_token", "value": cookies.get("auth_token", ""),
-                     "domain": domain, "path": "/",
-                     "secure": True, "httpOnly": True, "sameSite": "None"}
-                )
-            await context.add_cookies(cookie_list)
-        # 注意：不在此处注册 context.route()
-        # 所有请求拦截统一由 apply_request_interceptors() 在 page 级别处理，
-        # 避免 context.route 和 page.route 使用相同 pattern 时后者覆盖前者
-        return context
+                # 强制回收该 slot
+                async with slot.get_lock():
+                    await slot._safe_close()
+                continue
+        raise RuntimeError(f"浏览器池全部实例创建 context 失败: {last_err}")
+
+    async def close_all(self):
+        for slot in self.slots:
+            try:
+                await slot.close()
+            except Exception:
+                pass
+
+
+# ── 向下兼容层：保留 BrowserManager 旧名字与 API ────────────
+
+class BrowserManager:
+    """
+    向下兼容包装：将旧的单例 API 委托给 BrowserPool。
+    业务代码 `BrowserManager.get().new_context(...)` 继续可用。
+    """
+
+    _instance: Optional["BrowserManager"] = None
+
+    def __init__(self):
+        self._pool = BrowserPool.get()
+
+    @classmethod
+    def get(cls) -> "BrowserManager":
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    async def ensure_browser(self, proxy: str | None = None):
+        """保持旧签名。返回池中第一个健康的 browser（仅供极少数直接使用者）。"""
+        slot = await self._pool._pick_slot()
+        await self._pool._ensure_slot(slot, proxy)
+        return slot.browser
+
+    async def new_context(
+        self,
+        cookies: dict | None = None,
+        proxy: str | None = None,
+    ):
+        return await self._pool.new_context(cookies=cookies, proxy=proxy)
 
     async def close(self):
-        """关闭浏览器和 Playwright 实例（应用关闭时调用）"""
-        if self._browser:
-            try:
-                await self._browser.close()
-            except Exception:
-                pass
-            self._browser = None
-        if self._pw:
-            try:
-                await self._pw.stop()
-            except Exception:
-                pass
-            self._pw = None
-        self._proxy = None
-        logger.info("BrowserManager: 浏览器已关闭")
-
-    # ── 内部方法 ──────────────────────────────────────────
-
-    async def _launch(self, proxy: str | None = None):
-        """启动新的浏览器实例"""
-        # 先关闭旧实例
-        if self._browser:
-            try:
-                await self._browser.close()
-            except Exception:
-                pass
-        if self._pw:
-            try:
-                await self._pw.stop()
-            except Exception:
-                pass
-
-        from playwright.async_api import async_playwright
-
-        self._proxy = proxy
-        self._pw = await async_playwright().start()
-        self._browser = await self._pw.chromium.launch(
-            headless=True,
-            proxy={"server": proxy} if proxy else None,
-        )
-        logger.info(f"BrowserManager: 浏览器已启动 (proxy={proxy or 'none'})")
+        await self._pool.close_all()
+        logger.info("BrowserManager: 池已全部关闭")
 
 
 # ── 统一请求拦截 ──────────────────────────────────────────
