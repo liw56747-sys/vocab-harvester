@@ -184,6 +184,65 @@ class VocabManager:
                     break
         return samples
 
+    def is_post_exist(self, post_id: str, keywords: str, user_id: str) -> bool:
+        """检查特定维度的帖子是否已存在"""
+        return self.storage.check_post_exists(
+            post_id=post_id,
+            keywords=keywords,
+            user_id=user_id,
+            date_range="30d"
+        )
+
+    def _is_similar(self, post1: ParsedPost, post2: ParsedPost) -> bool:
+        """检查内容相似度（简化实现）"""
+        # 实际实现应使用更复杂的文本相似度算法
+        # 例如：Jaccard相似度、TF-IDF等
+        return self._jaccard_similarity(post1.content, post2.content) > 0.7
+
+    def _jaccard_similarity(self, text1: str, text2: str) -> float:
+        """计算Jaccard相似度"""
+        set1 = set(text1.split())
+        set2 = set(text2.split())
+        intersection = set1 & set2
+        union = set1 | set2
+        return len(intersection) / len(union) if union else 0.0
+
+    async def ingest(self, result: WorkflowResult, source_posts: list[ParsedPost] | None = None, task_name: str = "") -> int:
+        """将工作流提取结果写入词库。"""
+        # ... (现有代码)
+
+        # 1. 优先使用post_id去重
+        if source_posts:
+            seen_ids = set()
+            new_posts = []
+            for post in source_posts:
+                if post.post_id:
+                    if post.post_id in seen_ids:
+                        continue  # 已存在，跳过
+                    seen_ids.add(post.post_id)
+                    new_posts.append(post)
+                else:
+                    new_posts.append(post)  # 无post_id，后续用内容去重
+
+            source_posts = new_posts
+
+        # 2. 内容相似度去重（针对无post_id的情况）
+        if source_posts:
+            unique_posts = self._deduplicate_by_content(source_posts)
+            source_posts = unique_posts
+
+        # ... (后续处理)
+
+    def _deduplicate_by_content(self, posts: list[ParsedPost]) -> list[ParsedPost]:
+        """通过内容相似度去重（Jaccard相似度）"""
+        unique_posts = []
+        for post in posts:
+            # 跳过已存在的相似内容
+            if any(self._is_similar(post, p) for p in unique_posts):
+                continue
+            unique_posts.append(post)
+        return unique_posts
+
     def process_blacklist(self, results: list, task_name: str):
         """处理黑词提取任务"""
         blacklist_items = self._extract_blacklist_items(results)

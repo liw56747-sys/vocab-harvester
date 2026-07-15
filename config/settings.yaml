@@ -56,6 +56,14 @@ workflow:
 # 词库配置
 vocabulary:
   auto_approve_threshold: 10   # 词频达到此值自动通过审核
+
+  dedup_config:
+    enabled: true
+    by_keyword: true
+    by_user: true
+    retention_days:
+      keywords: 30
+      user: 90
   max_context_samples: 5       # 每个词保留的最大上下文例句数
   dedup_similarity: 0.85       # 相似度阈值（0-1），超过则视为同一词
 
