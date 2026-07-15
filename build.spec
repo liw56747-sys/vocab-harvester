@@ -45,6 +45,7 @@ a = Analysis(
     datas=[
         # 前端
         (os.path.join(project_dir, 'static', 'index.html'), 'static'),
+        (os.path.join(project_dir, 'static', 'vendor'), 'static/vendor'),
         # 配置
         (os.path.join(project_dir, 'config', 'settings.yaml'), 'config'),
         # 图标

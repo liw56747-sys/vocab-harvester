@@ -27,6 +27,7 @@ a = Analysis(
     datas=[
         # Frontend
         (os.path.join(project_dir, 'static', 'index.html'), 'static'),
+        (os.path.join(project_dir, 'static', 'vendor'), 'static/vendor'),
         # Config
         (os.path.join(project_dir, 'config', 'settings.yaml'), 'config'),
         # Icon (macOS .icns)

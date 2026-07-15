@@ -1225,6 +1225,8 @@ tbody tr:hover { background: #FAFBFE; }
 .export-btn .export-icon.csv { background: #ECFDF5; color: var(--success); }
 .export-btn .export-icon.txt { background: #FEF3C7; color: var(--warning); }
 
+.export-btn .export-icon.xlsx { background: #D1FAE5; color: #065F46; }
+
 .export-btn .export-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
 .export-btn .export-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
@@ -1340,6 +1342,8 @@ kbd {
 .settings-download-row .form-control { flex: 1; }
 .settings-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 </style>
+<!-- v1.5.5: SheetJS 本地打包，用于上传 xlsx/xls 解析（离线可用） -->
+<script src="/static/vendor/xlsx.mini.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -1591,12 +1595,12 @@ kbd {
             </div>
           </details>
           <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
-            <input type="file" id="keyword-file-input" accept=".txt,.csv" style="display:none" onchange="handleKeywordFileUpload(this)">
-            <button class="btn-upload" title="从 TXT 文件导入多个关键词，逐条搜索后合并结果" onclick="document.getElementById('keyword-file-input').click()">
+            <input type="file" id="keyword-file-input" accept=".txt,.csv,.xlsx,.xls,.xlsm" style="display:none" onchange="handleKeywordFileUpload(this)">
+            <button class="btn-upload" title="从 TXT/CSV/Excel 文件导入多个关键词，逐条搜索后合并结果" onclick="document.getElementById('keyword-file-input').click()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              <span data-i18n="upload_batch">上传 TXT 批量搜索</span>
+              <span data-i18n="upload_batch">上传文件批量搜索</span>
             </button>
-            <span class="text-muted" style="font-size:11px">每行一个关键词，逐条搜索后合并为一个 CSV</span>
+            <span class="text-muted" style="font-size:11px">支持 .txt / .csv / .xlsx，每关键词一行/单元格，合并为一个文件</span>
           </div>
         </div>
 
@@ -2112,6 +2116,15 @@ kbd {
               <div class="export-desc" data-i18n="export_txt_desc">纯文本，每行一词</div>
             </div>
           </div>
+          <div class="export-btn" onclick="doExport('xlsx')">
+            <div class="export-icon xlsx">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+            </div>
+            <div>
+              <div class="export-name">Excel (.xlsx)</div>
+              <div class="export-desc" data-i18n="export_xlsx_desc">带样式表格，推荐</div>
+            </div>
+          </div>
         </div>
 
         <div id="export-result" style="margin-top:20px"></div>
@@ -2304,6 +2317,7 @@ const I18N = {
     filter_all: '全部词条', filter_approved: '仅已通过', filter_pending: '仅待审核',
     export_json_desc: '完整结构化数据', export_csv_desc: 'Excel 可打开',
     export_txt_desc: '纯文本，每行一词',
+    export_xlsx_desc: '带样式表格，推荐',
     // Settings
     settings_title: '设置', settings_desc: '语言、主题和文件保存位置',
     settings_language: '语言 / Language',
@@ -2381,8 +2395,12 @@ const I18N = {
     too_many_keywords: '关键词过多（最多 50 个），请精简后重试',
     retry_count: '重试 {n} 次',
     reject_excel: '暂不支持 Excel 格式，请另存为 .txt 或 .csv 再上传',
-    reject_zip_disguise: '检测到 Excel/ZIP 二进制文件，请另存为纯文本 .txt/.csv',
-    reject_file_type: '仅支持 .txt / .csv 文件',
+    reject_zip_disguise: '检测到 ZIP/Excel 二进制文件伪装为文本，请另存为纯文本，或直接使用 .xlsx',
+    reject_file_type: '仅支持 .txt / .csv / .xlsx 文件',
+    xlsx_lib_missing: 'Excel 解析库未加载，请刷新页面后重试；或另存为 .csv/.txt 上传',
+    xlsx_parsed_n: 'Excel 解析成功，共 {n} 个关键词',
+    xlsx_parse_failed: 'Excel 解析失败：',
+    btn_download_xlsx: '下载 Excel',
     multi_keyword_detected: '检测到 {n} 个关键词，将进入批量搜索模式（每个关键词独立抓取 {count} 条）。\n\n如你正在使用 Twitter 高级语法（如 apple OR banana），请点"取消"以保留为单一查询。\n\n是否切换到批量模式？',
     batch_search_n: '批量搜索 {n} 个关键词',
     with_replies: '（含评论抓取）',
@@ -2515,6 +2533,7 @@ const I18N = {
     filter_all: 'All entries', filter_approved: 'Approved only', filter_pending: 'Pending only',
     export_json_desc: 'Full structured data', export_csv_desc: 'Opens in Excel',
     export_txt_desc: 'Plain text, one word per line',
+    export_xlsx_desc: 'Styled table, recommended',
     settings_title: 'Settings', settings_desc: 'Language, theme and file save location',
     settings_language: 'Language / 语言',
     settings_theme: 'Appearance',
@@ -2590,8 +2609,12 @@ const I18N = {
     too_many_keywords: 'Too many keywords (max 50)',
     retry_count: 'Retried {n}',
     reject_excel: 'Excel format not supported. Please save as .txt or .csv first.',
-    reject_zip_disguise: 'Detected Excel/ZIP binary. Please save as plain .txt/.csv.',
-    reject_file_type: 'Only .txt / .csv files are supported',
+    reject_zip_disguise: 'Detected ZIP/Excel binary disguised as text. Save as plain text, or upload as .xlsx directly.',
+    reject_file_type: 'Only .txt / .csv / .xlsx files are supported',
+    xlsx_lib_missing: 'Excel parser not loaded. Refresh the page or save as .csv/.txt.',
+    xlsx_parsed_n: 'Excel parsed: {n} keywords',
+    xlsx_parse_failed: 'Excel parse failed: ',
+    btn_download_xlsx: 'Download Excel',
     multi_keyword_detected: 'Detected {n} keywords. Switch to batch mode ({count} posts each)?\n\nIf using Twitter advanced syntax (e.g., apple OR banana), cancel to keep as single query.',
     batch_search_n: 'Batch search {n} keywords',
     with_replies: '(with replies)',
@@ -2653,53 +2676,94 @@ function handleKeywordFileUpload(input) {
   if (!file) return;
 
   const name = (file.name || '').toLowerCase();
+  const isExcel = name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm');
+  const isCsv = name.endsWith('.csv');
+  const isTxt = name.endsWith('.txt');
 
-  // ── v1.5.4：拒绝 Excel 格式（读作文本会得到 ZIP 二进制乱码） ──
-  if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm')) {
-    toast(t('reject_excel') || '暂不支持 Excel 格式，请另存为 .txt 或 .csv 再上传', 'error');
-    input.value = '';
-    return;
-  }
-  if (!name.endsWith('.txt') && !name.endsWith('.csv')) {
-    toast((t('reject_file_type') || '仅支持 .txt / .csv 文件') + '（当前：' + (file.name || '?') + '）', 'error');
+  // ── v1.5.5：新增 xlsx 支持（通过 SheetJS 解析），保留 csv/txt ──
+  if (!isExcel && !isCsv && !isTxt) {
+    toast((t('reject_file_type') || '仅支持 .txt / .csv / .xlsx 文件') + '（当前：' + (file.name || '?') + '）', 'error');
     input.value = '';
     return;
   }
 
-  // ── 二次防线：即使被改名为 .txt，检测魔数 PK\x03\x04（ZIP 头） ──
-  const magicReader = new FileReader();
-  magicReader.onload = (me) => {
-    const magic = new Uint8Array(me.target.result);
-    if (magic.length >= 4 && magic[0] === 0x50 && magic[1] === 0x4B && magic[2] === 0x03 && magic[3] === 0x04) {
-      toast(t('reject_zip_disguise') || '检测到 Excel/ZIP 二进制文件，请另存为纯文本 .txt/.csv', 'error');
+  // ── xlsx 分支：SheetJS 解析 ──
+  if (isExcel) {
+    if (typeof XLSX === 'undefined' || !XLSX.read) {
+      toast(t('xlsx_lib_missing') || 'Excel 解析库未加载，请刷新页面后重试；或另存为 .csv/.txt 上传', 'error');
       input.value = '';
       return;
     }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const tokens = [];
+        // 遍历所有 sheet 的所有非空单元格
+        wb.SheetNames.forEach(sn => {
+          const sheet = wb.Sheets[sn];
+          const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+          for (const row of rows) {
+            if (!Array.isArray(row)) continue;
+            for (const cell of row) {
+              const s = String(cell || '').trim().replace(/^["']+|["']+$/g, '').trim();
+              if (s) tokens.push(s);
+            }
+          }
+        });
+        // 去重保序
+        const seen = new Set();
+        const unique = tokens.filter(k => (seen.has(k) ? false : (seen.add(k), true)));
+        if (unique.length === 0) {
+          toast(t('no_keywords_in_file'), 'error');
+          return;
+        }
+        document.getElementById('search-keyword').value = unique.join(', ');
+        toast((t('xlsx_parsed_n') || 'Excel 解析成功，共 {n} 个关键词').replace('{n}', unique.length), 'success');
+        startBatchSearch(unique);
+      } catch (err) {
+        console.error('xlsx parse error:', err);
+        toast((t('xlsx_parse_failed') || 'Excel 解析失败：') + (err.message || err), 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    input.value = '';
+    return;
+  }
 
-    // ── 文本读取与解析 ──
+  // ── txt / csv 分支（v1.5.4 逻辑保留 + 魔数二次防线） ──
+  const magicReader = new FileReader();
+  magicReader.onload = (me) => {
+    const magic = new Uint8Array(me.target.result);
+    // 拒绝伪装为 .txt/.csv 但内容是 ZIP（Office/OpenDocument 等）
+    if (magic.length >= 4 && magic[0] === 0x50 && magic[1] === 0x4B && magic[2] === 0x03 && magic[3] === 0x04) {
+      toast(t('reject_zip_disguise') || '检测到 ZIP/Excel 二进制文件伪装为文本，请另存为纯文本 .txt/.csv，或直接使用 .xlsx 上传', 'error');
+      input.value = '';
+      return;
+    }
     const textReader = new FileReader();
     textReader.onload = (te) => {
       let text = te.target.result || '';
-      // 剥离 UTF-8 BOM（Excel 另存 UTF-8 CSV 常见）
-      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);   // 剥离 UTF-8 BOM
 
       let tokens;
-      if (name.endsWith('.csv')) {
-        // CSV：按 换行/中英文逗号/分号/顿号 混合拆分
+      if (isCsv) {
         tokens = text.split(/[\n,，;；、]+/)
                      .map(s => s.trim().replace(/^["']+|["']+$/g, '').trim())
                      .filter(Boolean);
       } else {
-        // TXT：按换行拆分
         tokens = text.split('\n').map(s => s.trim()).filter(Boolean);
       }
-
-      if (tokens.length === 0) {
+      // 去重保序
+      const seen = new Set();
+      const unique = tokens.filter(k => (seen.has(k) ? false : (seen.add(k), true)));
+      if (unique.length === 0) {
         toast(t('no_keywords_in_file'), 'error');
         return;
       }
-      document.getElementById('search-keyword').value = tokens.join(', ');
-      startBatchSearch(tokens);
+      document.getElementById('search-keyword').value = unique.join(', ');
+      startBatchSearch(unique);
     };
     textReader.readAsText(file);
   };
@@ -2785,15 +2849,38 @@ async function loadModelConfigFromDB() {
 async function doExport(format) {
   const status = document.getElementById('export-status').value;
   try {
-    const res = await api(`/api/export?format=${format}&status=${status}`);
-    if (res.status === 'success') {
+    if (format === 'json') {
+      const data = await api(`/api/vocabulary/export?format=json&status=${status}`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'vocabulary_export.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
       toast(t('export_success'), 'success');
-      if (res.data) downloadCsv(res.data, `export.${format}`);
     } else {
-      toast(t('export_failed') + ': ' + (res.error || ''), 'error');
+      // csv / txt / xlsx 都是二进制/文本文件，用 blob 下载
+      const mimeMap = { csv: 'text/csv', txt: 'text/plain', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+      const extMap = { csv: 'csv', txt: 'txt', xlsx: 'xlsx' };
+      const res = await fetch(`/api/vocabulary/export?format=${format}&status=${status}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || t('export_failed'));
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `vocabulary_export.${extMap[format] || format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      toast(t('export_success'), 'success');
     }
   } catch (e) {
-    // Error caught by api helper
+    // Error caught by api helper or fetch
   }
 }
 
@@ -4160,7 +4247,7 @@ async function startTwitterFetch() {
         <div class="result-stats">
           <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('stat_scraped')}</div></div>
         </div>
-        ${stats.csv_data ? `<div style="margin-top:16px"><button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'tweets.csv')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_csv')}</button><div class="text-muted mt-8">${t('scrape_hint')}</div></div>` : ''}
+        ${stats.csv_data || stats.xlsx_data ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">${stats.csv_data ? `<button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'tweets.csv')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_csv')}</button>` : ''}${stats.xlsx_data ? `<button class="btn btn-download" onclick="downloadXlsx('${stats.xlsx_data}','${esc(stats.xlsx_filename || 'tweets.xlsx')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_xlsx')}</button>` : ''}<div class="text-muted mt-8">${t('scrape_hint')}</div></div>` : ''}
         ${postsHtml}
       </div>`;
       if (!isError) toast(t('tw_scrape_done'), 'success');
@@ -4302,7 +4389,7 @@ async function startMultiSearch() {
           <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('total_results')}</div></div>
           ${countsHtml}
         </div>
-        ${stats.csv_data ? `<div style="margin-top:16px"><button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'multi_search.csv')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_csv')}</button><div class="text-muted mt-8">${t('scrape_hint')}</div></div>` : ''}
+        ${stats.csv_data || stats.xlsx_data ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">${stats.csv_data ? `<button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'multi_search.csv')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_csv')}</button>` : ''}${stats.xlsx_data ? `<button class="btn btn-download" onclick="downloadXlsx('${stats.xlsx_data}','${esc(stats.xlsx_filename || 'multi_search.xlsx')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_xlsx')}</button>` : ''}<div class="text-muted mt-8">${t('scrape_hint')}</div></div>` : ''}
         ${_resultPosts.length ? '<div id="result-posts-container"></div>' : ''}
         </div>`;
       if (_resultPosts.length) renderResultPosts();
@@ -4471,8 +4558,9 @@ async function startBatchSearch(keywords) {
           <div class="result-stat"><div class="num">${keywords.length}</div><div class="lbl">${t('stat_keyword_count')}</div></div>
         </div>
         ${kwSummary ? `<div style="margin:8px 0;font-size:13px;display:flex;flex-wrap:wrap;gap:8px">${kwSummary}</div>` : ''}
-        <div style="margin:16px 0;display:flex;align-items:center;gap:12px">
+        <div style="margin:16px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           ${stats.csv_data ? `<button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${stats.csv_filename || 'batch.csv'}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:6px;vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${t('btn_download_csv')}</button>` : ''}
+          ${stats.xlsx_data ? `<button class="btn btn-download" onclick="downloadXlsx('${stats.xlsx_data}','${stats.xlsx_filename || 'batch.xlsx'}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:6px;vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${t('btn_download_xlsx')}</button>` : ''}
           <span class="text-sm text-muted">${t('scrape_hint')}</span>
         </div>
         ${_resultPosts.length ? '<div id="batch-posts-container"></div>' : ''}
@@ -4545,6 +4633,36 @@ function downloadCsv(b64Data, filename) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ csv_data: b64Data, filename: filename })
+  }).then(r => {
+    if (!r.ok) throw new Error(t('download_failed'));
+    return r.blob();
+  }).then(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }).catch(e => toast(t('download_failed'), 'error'));
+}
+
+// v1.5.5: 下载 Excel 文件
+function downloadXlsx(b64Data, filename) {
+  if (!b64Data) return;
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.save_file) {
+    const _folder = localStorage.getItem('download_folder') || '';
+    window.pywebview.api.save_file(b64Data, filename, _folder).then(path => {
+      toast(t('file_saved_to', {path}), 'success');
+    }).catch(e => {
+      toast(t('save_failed', {error: e}), 'error');
+    });
+    return;
+  }
+  fetch('/api/download-xlsx', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ xlsx_data: b64Data, filename: filename })
   }).then(r => {
     if (!r.ok) throw new Error(t('download_failed'));
     return r.blob();

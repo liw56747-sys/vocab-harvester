@@ -71,6 +71,68 @@ def generate_export_filename(task_name: str, ext: str = "csv") -> str:
     return filename
 
 
+# ── v1.5.5: XLSX 生成器（供 batch-search / search / export 复用） ──
+
+def _generate_xlsx_bytes(
+    rows: list[dict],
+    fields: list[str],
+    sheet_title: str = "抓取结果",
+) -> bytes:
+    """
+    从字段+行数据构建带样式的 xlsx 二进制内容。
+
+    - 首行样式：粗体 + 浅色底色
+    - 冻结首行
+    - 自适应列宽（简化：按内容长度估算，上限 60）
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    import io as _io
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_title[:31]  # Excel sheet 名字上限 31 字符
+
+    # 表头
+    ws.append(fields)
+    header_fill = PatternFill(start_color="EEF2FF", end_color="EEF2FF", fill_type="solid")
+    header_font = Font(bold=True, color="1E1B4B")
+    for col_idx, _ in enumerate(fields, start=1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(vertical="center", horizontal="left", wrap_text=False)
+
+    # 数据行
+    col_widths = [len(str(h or "")) + 2 for h in fields]
+    for row in rows:
+        vals = []
+        for i, f in enumerate(fields):
+            v = row.get(f, "")
+            # 布尔转字符串防止 Excel 大写
+            if isinstance(v, bool):
+                v = "true" if v else "false"
+            # 太长的内容截断（防止单元格膨胀）
+            if isinstance(v, str) and len(v) > 32000:
+                v = v[:32000] + "…"
+            vals.append(v)
+            # 计算列宽（截断到 60）
+            slen = len(str(v)) if v is not None else 0
+            if slen > col_widths[i]:
+                col_widths[i] = min(slen + 2, 60)
+        ws.append(vals)
+
+    # 冻结首行 + 应用列宽
+    ws.freeze_panes = "A2"
+    for i, w in enumerate(col_widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = max(8, w)
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 async def save_task_results_to_file(
     save_path: str,
     task_name: str,
@@ -188,6 +250,10 @@ app.add_middleware(
 
 # 静态文件目录
 STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
+
+# v1.5.5: 挂载 static 目录，用于 /static/vendor/xlsx.mini.min.js 等前端资源
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 # ── 请求/响应模型 ────────────────────────────────────────
@@ -922,6 +988,25 @@ async def download_csv(req: CsvDownloadRequest):
     )
 
 
+class XlsxDownloadRequest(BaseModel):
+    xlsx_data: str
+    filename: str = "data.xlsx"
+
+@app.post("/api/download-xlsx")
+async def download_xlsx(req: XlsxDownloadRequest):
+    """v1.5.5: 将 base64 XLSX 数据作为文件下载返回"""
+    import base64
+    try:
+        raw = base64.b64decode(req.xlsx_data)
+    except Exception:
+        raise HTTPException(400, "无效的 base64 数据")
+    return Response(
+        content=raw,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{req.filename}"'},
+    )
+
+
 @app.get("/api/vocabulary/export")
 async def export_vocabulary(format: str = "json", status: str | None = None):
     """导出词库"""
@@ -944,6 +1029,25 @@ async def export_vocabulary(format: str = "json", status: str | None = None):
             content=content,
             media_type="text/plain; charset=utf-8",
             headers={"Content-Disposition": 'attachment; filename="vocabulary_export.txt"'},
+        )
+    elif format == "xlsx":
+        # v1.5.5: 词库导出为 Excel
+        entries = await manager.storage.export_all(vocab_status)
+        if not entries:
+            raise HTTPException(404, "词库为空，无数据可导出")
+        fields = list(entries[0].keys())
+        rows = []
+        for entry in entries:
+            row = dict(entry)
+            for key in ("platforms", "context_samples"):
+                if key in row:
+                    row[key] = json.dumps(row[key], ensure_ascii=False)
+            rows.append(row)
+        xlsx_bytes = _generate_xlsx_bytes(rows, fields, "词库导出")
+        return Response(
+            content=xlsx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="vocabulary_export.xlsx"'},
         )
     else:
         raise HTTPException(400, f"不支持的格式: {format}")
@@ -1116,10 +1220,20 @@ async def twitter_fetch(req: TwitterUrlFetchRequest):
                     })
 
                 csv_b64 = base64.b64encode(csv_string.encode("utf-8-sig")).decode("ascii")
+                # v1.5.5: 生成 xlsx 数据
+                xlsx_fields = ["platform", "post_id", "author", "content", "created_at", "url", "likes", "retweets", "replies"]
+                xlsx_rows = []
+                for t in tweets:
+                    xlsx_rows.append({"platform": "twitter", "post_id": t.get("tweet_id", ""), "author": t.get("author_name", "") or t.get("author", ""), "content": t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)})
+                try:
+                    xlsx_b64 = base64.b64encode(_generate_xlsx_bytes(xlsx_rows, xlsx_fields, "推文抓取")).decode("ascii")
+                except Exception as xlsx_err:
+                    logger.warning(f"xlsx 生成失败: {xlsx_err}")
+                    xlsx_b64 = ""
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 _set_task_status(task_id, {
                     "status": "success",
-                    "result": {"status": "success", "total_posts": len(tweets), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"tweets_{timestamp}.csv"}
+                    "result": {"status": "success", "total_posts": len(tweets), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"tweets_{timestamp}.csv", "xlsx_data": xlsx_b64, "xlsx_filename": f"tweets_{timestamp}.xlsx"}
                 })
             except Exception as e:
                 tb.print_exc()
@@ -1352,6 +1466,20 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                         writer.writerow(t)
 
                 csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
+                # v1.5.5: 生成 xlsx 数据
+                xlsx_fields = ["platform", "type", "post_id", "author", "content", "created_at", "url", "likes", "retweets", "replies", "score", "num_comments"]
+                xlsx_rows = []
+                for t in all_posts:
+                    plat, row_type = t.get("platform", ""), t.get("type", "post")
+                    if plat == "twitter":
+                        xlsx_rows.append({"platform": "twitter", "type": row_type, "post_id": t.get("tweet_id", ""), "author": t.get("author_name", "") or t.get("author", ""), "content": t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)})
+                    elif plat == "reddit":
+                        xlsx_rows.append({"platform": "reddit", "type": row_type, "post_id": t.get("post_id", ""), "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", "")).strip() if row_type == "post" else t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "score": t.get("score", 0), "num_comments": t.get("num_comments", 0)})
+                try:
+                    xlsx_b64 = base64.b64encode(_generate_xlsx_bytes(xlsx_rows, xlsx_fields, "搜索结果")).decode("ascii")
+                except Exception as xlsx_err:
+                    logger.warning(f"xlsx 生成失败: {xlsx_err}")
+                    xlsx_b64 = ""
                 # 缓存搜索结果供自动分析使用
                 with _LAST_SEARCH_LOCK:
                     _LAST_SEARCH_DATA[task_id] = csv_buf.getvalue()
@@ -1361,7 +1489,7 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 result_status = "cancelled" if was_cancelled else "success"
                 result_msg = "搜索已取消，数据已保存" if was_cancelled else None
-                _set_task_status(task_id, {"status": "success", "result": {"status": result_status, "total_posts": sum(1 for p in all_posts if p.get("type", "post") != "comment"), "total_rows": len(all_posts), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"multi_search_{timestamp}.csv", "platform_counts": platform_counts, "skipped_platforms": skipped_platforms, "errors": errors, "message": result_msg}})
+                _set_task_status(task_id, {"status": "success", "result": {"status": result_status, "total_posts": sum(1 for p in all_posts if p.get("type", "post") != "comment"), "total_rows": len(all_posts), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"multi_search_{timestamp}.csv", "xlsx_data": xlsx_b64, "xlsx_filename": f"multi_search_{timestamp}.xlsx", "platform_counts": platform_counts, "skipped_platforms": skipped_platforms, "errors": errors, "message": result_msg}})
             except Exception as e:
                 tb.print_exc()
                 _set_task_status(task_id, {"status": "error", "error": str(e)})
@@ -1594,6 +1722,20 @@ async def batch_search(req: BatchSearchRequest):
                     else: writer.writerow(t)
 
                 csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
+                # v1.5.5: 生成 xlsx 数据
+                xlsx_fields = ["keyword", "platform", "type", "post_id", "author", "content", "created_at", "url", "likes", "retweets", "replies", "score", "num_comments"]
+                xlsx_rows = []
+                for t in all_rows:
+                    plat, row_type = t.get("platform", ""), t.get("type", "post")
+                    if plat == "twitter":
+                        xlsx_rows.append({"keyword": t.get("keyword", ""), "platform": "twitter", "type": row_type, "post_id": t.get("tweet_id", ""), "author": t.get("author_name", "") or t.get("author", ""), "content": t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)})
+                    elif plat == "reddit":
+                        xlsx_rows.append({"keyword": t.get("keyword", ""), "platform": "reddit", "type": row_type, "post_id": t.get("post_id", ""), "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", "")).strip() if row_type == "post" else t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "score": t.get("score", 0), "num_comments": t.get("num_comments", 0)})
+                try:
+                    xlsx_b64 = base64.b64encode(_generate_xlsx_bytes(xlsx_rows, xlsx_fields, "批量搜索结果")).decode("ascii")
+                except Exception as xlsx_err:
+                    logger.warning(f"xlsx 生成失败: {xlsx_err}")
+                    xlsx_b64 = ""
                 # 缓存批量搜索结果供自动分析使用
                 with _LAST_SEARCH_LOCK:
                     _LAST_SEARCH_DATA[task_id] = csv_buf.getvalue()
@@ -1613,6 +1755,8 @@ async def batch_search(req: BatchSearchRequest):
                     "sampled_posts": sampled,
                     "csv_data": csv_b64,
                     "csv_filename": f"batch_search_{timestamp}.csv",
+                    "xlsx_data": xlsx_b64,
+                    "xlsx_filename": f"batch_search_{timestamp}.xlsx",
                     "skipped_platforms": skipped_platforms,
                     "errors": errors,
                     "progress": final_snap,
