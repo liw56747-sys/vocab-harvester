@@ -109,16 +109,22 @@ class KeywordJobQueue:
         concurrency: int = 3,
         is_cancelled: Callable[[], bool] | None = None,
         platform_order: list[str] | None = None,
+        batch_size: int = 0,
+        batch_cooldown: float = 30.0,
     ):
         """
         Args:
             concurrency: 同时运行的 worker 数
             is_cancelled: 全局取消检查器（每 job 启动前+失败重试前都检查）
             platform_order: 平台执行顺序，靠前的先跑完再启后面的（错峰）
+            batch_size: 每平台组内再切分的批大小（>0 生效，用于大规模抓取分批）
+            batch_cooldown: 批次间的冷却时间（秒），让浏览器/代理喘口气
         """
         self.concurrency = max(1, concurrency)
         self.is_cancelled = is_cancelled or (lambda: False)
         self.platform_order = platform_order or []
+        self.batch_size = max(0, batch_size)
+        self.batch_cooldown = max(0.0, batch_cooldown)
         self._jobs: list[KeywordJob] = []
         self._retries_total = 0
 
@@ -199,6 +205,40 @@ class KeywordJobQueue:
         group: list[KeywordJob],
         progress_callback: Callable[[QueueProgress], None] | None,
     ):
+        """在一个平台组内执行 jobs；若 batch_size > 0 则再切分为子批次串行执行"""
+        # 未启用分批 or 数量不需要分批 → 一次并发跑完
+        if self.batch_size == 0 or len(group) <= self.batch_size:
+            await self._run_sub_batch(group, progress_callback)
+            return
+
+        # 大规模：切分为多个 sub-batch 串行，批间冷却
+        for i in range(0, len(group), self.batch_size):
+            if self.is_cancelled():
+                return
+            sub = group[i:i + self.batch_size]
+            logger.info(
+                f"KeywordJobQueue: 执行子批次 {i // self.batch_size + 1}/"
+                f"{(len(group) + self.batch_size - 1) // self.batch_size} "
+                f"(size={len(sub)})"
+            )
+            await self._run_sub_batch(sub, progress_callback)
+
+            # 除最后一批外，批间冷却（可被取消打断）
+            if i + self.batch_size < len(group) and self.batch_cooldown > 0:
+                cooled = 0.0
+                logger.info(f"KeywordJobQueue: 批间冷却 {self.batch_cooldown}s")
+                while cooled < self.batch_cooldown:
+                    if self.is_cancelled():
+                        return
+                    await asyncio.sleep(0.5)
+                    cooled += 0.5
+
+    async def _run_sub_batch(
+        self,
+        sub: list[KeywordJob],
+        progress_callback: Callable[[QueueProgress], None] | None,
+    ):
+        """并发执行一个子批次内的所有 job（受 concurrency 限流）"""
         sem = asyncio.Semaphore(self.concurrency)
 
         async def _one(job: KeywordJob):
@@ -214,7 +254,7 @@ class KeywordJobQueue:
                     except Exception:
                         pass
 
-        await asyncio.gather(*[_one(j) for j in group], return_exceptions=True)
+        await asyncio.gather(*[_one(j) for j in sub], return_exceptions=True)
 
     async def _execute_with_retry(self, job: KeywordJob):
         """执行单个 job，失败按指数退避重试"""

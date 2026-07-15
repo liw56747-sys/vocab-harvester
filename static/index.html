@@ -2378,8 +2378,12 @@ const I18N = {
     no_keywords_in_file: '文件中没有找到有效关键词',
     file_read_failed: '文件读取失败',
     imported_n_links: '已从文件导入 {n} 个链接',
-    too_many_keywords: '关键词过多（最多 30 个），请精简后重试',
+    too_many_keywords: '关键词过多（最多 50 个），请精简后重试',
     retry_count: '重试 {n} 次',
+    reject_excel: '暂不支持 Excel 格式，请另存为 .txt 或 .csv 再上传',
+    reject_zip_disguise: '检测到 Excel/ZIP 二进制文件，请另存为纯文本 .txt/.csv',
+    reject_file_type: '仅支持 .txt / .csv 文件',
+    multi_keyword_detected: '检测到 {n} 个关键词，将进入批量搜索模式（每个关键词独立抓取 {count} 条）。\n\n如你正在使用 Twitter 高级语法（如 apple OR banana），请点"取消"以保留为单一查询。\n\n是否切换到批量模式？',
     batch_search_n: '批量搜索 {n} 个关键词',
     with_replies: '（含评论抓取）',
     estimated_time: '预计耗时约 {n} 分钟，期间请勿关闭页面。',
@@ -2583,8 +2587,12 @@ const I18N = {
     no_keywords_in_file: 'No valid keywords found in file',
     file_read_failed: 'File read failed',
     imported_n_links: 'Imported {n} links from file',
-    too_many_keywords: 'Too many keywords (max 30)',
+    too_many_keywords: 'Too many keywords (max 50)',
     retry_count: 'Retried {n}',
+    reject_excel: 'Excel format not supported. Please save as .txt or .csv first.',
+    reject_zip_disguise: 'Detected Excel/ZIP binary. Please save as plain .txt/.csv.',
+    reject_file_type: 'Only .txt / .csv files are supported',
+    multi_keyword_detected: 'Detected {n} keywords. Switch to batch mode ({count} posts each)?\n\nIf using Twitter advanced syntax (e.g., apple OR banana), cancel to keep as single query.',
     batch_search_n: 'Batch search {n} keywords',
     with_replies: '(with replies)',
     estimated_time: 'Estimated {n} minutes. Do not close the page.',
@@ -2643,17 +2651,59 @@ function handleUrlFileUpload(input) {
 function handleKeywordFileUpload(input) {
   const file = input.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const keywords = e.target.result.split('\n').map(k => k.trim()).filter(Boolean);
-    if (keywords.length > 0) {
-      document.getElementById('search-keyword').value = keywords.join(', ');
-      startBatchSearch(keywords);
-    } else {
-      toast(t('no_keywords_in_file'), 'error');
+
+  const name = (file.name || '').toLowerCase();
+
+  // ── v1.5.4：拒绝 Excel 格式（读作文本会得到 ZIP 二进制乱码） ──
+  if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm')) {
+    toast(t('reject_excel') || '暂不支持 Excel 格式，请另存为 .txt 或 .csv 再上传', 'error');
+    input.value = '';
+    return;
+  }
+  if (!name.endsWith('.txt') && !name.endsWith('.csv')) {
+    toast((t('reject_file_type') || '仅支持 .txt / .csv 文件') + '（当前：' + (file.name || '?') + '）', 'error');
+    input.value = '';
+    return;
+  }
+
+  // ── 二次防线：即使被改名为 .txt，检测魔数 PK\x03\x04（ZIP 头） ──
+  const magicReader = new FileReader();
+  magicReader.onload = (me) => {
+    const magic = new Uint8Array(me.target.result);
+    if (magic.length >= 4 && magic[0] === 0x50 && magic[1] === 0x4B && magic[2] === 0x03 && magic[3] === 0x04) {
+      toast(t('reject_zip_disguise') || '检测到 Excel/ZIP 二进制文件，请另存为纯文本 .txt/.csv', 'error');
+      input.value = '';
+      return;
     }
+
+    // ── 文本读取与解析 ──
+    const textReader = new FileReader();
+    textReader.onload = (te) => {
+      let text = te.target.result || '';
+      // 剥离 UTF-8 BOM（Excel 另存 UTF-8 CSV 常见）
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+      let tokens;
+      if (name.endsWith('.csv')) {
+        // CSV：按 换行/中英文逗号/分号/顿号 混合拆分
+        tokens = text.split(/[\n,，;；、]+/)
+                     .map(s => s.trim().replace(/^["']+|["']+$/g, '').trim())
+                     .filter(Boolean);
+      } else {
+        // TXT：按换行拆分
+        tokens = text.split('\n').map(s => s.trim()).filter(Boolean);
+      }
+
+      if (tokens.length === 0) {
+        toast(t('no_keywords_in_file'), 'error');
+        return;
+      }
+      document.getElementById('search-keyword').value = tokens.join(', ');
+      startBatchSearch(tokens);
+    };
+    textReader.readAsText(file);
   };
-  reader.readAsText(file);
+  magicReader.readAsArrayBuffer(file.slice(0, 4));
   input.value = '';
 }
 
@@ -4159,13 +4209,31 @@ let _currentTaskId = null;
 let _lastProgress = null;
 
 async function startMultiSearch() {
-  const keyword = document.getElementById('search-keyword').value.trim();
+  const rawInput = document.getElementById('search-keyword').value;
+  const keyword = rawInput.trim();
   const platforms = getSelectedPlatforms();
   const count = parseInt(document.getElementById('search-count').value) || 50;
   const includeReplies = document.getElementById('search-include-replies').checked;
 
   if (!keyword) return toast(t('enter_keyword'), 'error');
   if (!platforms.length) return toast(t('select_platform'), 'error');
+
+  // v1.5.4：智能检测多关键词（换行/逗号/分号/顿号分隔）
+  // 单关键词或 Twitter 高级语法（如 apple OR banana）保持原逻辑
+  const tokens = keyword.split(/[\n,，;；、]+/)
+                        .map(s => s.trim().replace(/^["']+|["']+$/g, '').trim())
+                        .filter(Boolean);
+  if (tokens.length > 1) {
+    const hint = t('multi_keyword_detected', {n: tokens.length, count})
+                 || `检测到 ${tokens.length} 个关键词，将进入批量搜索模式（每个关键词独立抓取 ${count} 条）。\n\n` +
+                    `如你正在使用 Twitter 高级语法（如 apple OR banana、"精确短语,含逗号"），` +
+                    `请点"取消"以保留为单一查询。\n\n是否切换到批量模式？`;
+    if (confirm(hint)) {
+      document.getElementById('search-keyword').value = tokens.join(', ');
+      return startBatchSearch(tokens);
+    }
+    // 用户点取消 → 保留整串作单查询继续
+  }
 
   const cookies = [];
   const skippedPlatforms = [];
@@ -4313,8 +4381,30 @@ async function startBatchSearch(keywords) {
   const includeReplies = document.getElementById('search-include-replies').checked;
 
   if (!platforms.length) return toast(t('select_platform'), 'error');
-  if (keywords.length > 30) return toast(t('too_many_keywords'), 'error');
-  if (keywords.length > 3 && includeReplies) {
+  if (keywords.length > 50) return toast(t('too_many_keywords'), 'error');
+
+  // v1.5.4：任务规模评分警告（keywords × count × platforms × (评论倍数)）
+  // 评论倍数：Twitter 5x（tab 数量爆炸），Reddit 2x
+  const commentMultiplier = includeReplies ? (platforms.includes('twitter') ? 5 : 2) : 1;
+  const load = keywords.length * count * platforms.length * commentMultiplier;
+  // 大规模阈值：>5000 弹警告；>15000 强烈提示
+  if (load > 5000) {
+    // 粗略预估耗时（分钟）
+    const estMin = Math.max(3, Math.round(load / 250));
+    const hasReplies = includeReplies ? '\n• 含评论抓取（Twitter 单 kw 会自动降为 20 条以防限流）' : '';
+    const advice = (load > 15000)
+      ? '\n\n⚠️ 任务规模非常大，强烈建议：\n' +
+        '  1) 关闭"同时抓取评论"（可省 5 倍时间）\n' +
+        '  2) 或分批（一次 ≤ 20 关键词）\n' +
+        '  3) 或降低每平台条数至 ≤ 20'
+      : '';
+    const msg = `本次批量搜索规模：\n` +
+                `• ${keywords.length} 个关键词 × ${count} 条 × ${platforms.length} 平台${hasReplies}\n` +
+                `• 预计耗时：约 ${estMin} 分钟\n` +
+                `• 请确保代理稳定、Mac 建议留 5GB+ 空闲内存${advice}\n\n` +
+                `是否继续？`;
+    if (!confirm(msg)) return;
+  } else if (keywords.length > 3 && includeReplies) {
     const est = keywords.length * (includeReplies ? 10 : 3);
     if (!confirm(t('batch_search_n', {n: keywords.length}) + (includeReplies ? ' ' + t('with_replies') : '') + '\n' + t('estimated_time', {n: est}) + '\n\n' + t('confirm_continue'))) return;
   }
@@ -4397,7 +4487,7 @@ async function startBatchSearch(keywords) {
   try {
     const initRes = await api('/api/batch-search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('block-resources-toggle').checked, stagger_platforms: true, worker_concurrency: 3, max_retries: 2 })
+      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('block-resources-toggle').checked, stagger_platforms: true, worker_concurrency: 3, max_retries: 2, batch_size: 0, batch_cooldown: 30, twitter_count_cap_with_replies: 20 })
     });
     
     const taskId = initRes.task_id;

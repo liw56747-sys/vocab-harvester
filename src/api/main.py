@@ -269,6 +269,10 @@ class BatchSearchRequest(BaseModel):
     stagger_platforms: bool = True         # 平台错峰：先跑 Reddit（快）再跑 Twitter（慢）
     worker_concurrency: int = 3            # 关键词级并发（每平台）
     max_retries: int = 2                   # 单关键词失败时的最大重试次数
+    # v1.5.4 新增
+    batch_size: int = 0                    # 大规模抓取分批 size（>0 生效；0=不分批）
+    batch_cooldown: float = 30.0           # 批次间冷却秒数
+    twitter_count_cap_with_replies: int = 20  # 含评论时 Twitter 单 kw 抓取条数上限（防限流）
 
 
 # ── API 路由 ─────────────────────────────────────────────
@@ -1374,15 +1378,17 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
 @app.post("/api/batch-search")
 async def batch_search(req: BatchSearchRequest):
     """
-    批量关键词搜索（v1.5.3 引入关键词级 Job 队列）
+    批量关键词搜索（v1.5.3 引入关键词级 Job 队列，v1.5.4 加入自动分批与评论降配）
 
     - 每 (keyword, platform) 独立成一个 job：失败可单独重试
     - 支持平台错峰（stagger_platforms=True 时先跑 Reddit 再跑 Twitter）
+    - 支持自动分批（batch_size>0 时切分大规模任务，每批间冷却降低 IP 限流风险）
+    - 含评论时 Twitter 自动降 count（避免 tab 爆炸 + 单 Cookie 限流）
     - 进度实时上报到 /api/task-status 的 progress 字段
-    - 关键词上限 30（前端亦已同步）
+    - 关键词上限 50（前端亦已同步）
     """
     if not req.keywords: raise HTTPException(400, "请提供至少一个关键词")
-    if len(req.keywords) > 30: raise HTTPException(400, f"关键词数量过多（{len(req.keywords)} 个），单次最多 30 个")
+    if len(req.keywords) > 50: raise HTTPException(400, f"关键词数量过多（{len(req.keywords)} 个），单次最多 50 个")
 
     task_id = str(uuid.uuid4())
     _set_task_status(task_id, {"status": "running", "result": None, "progress": {"total": 0, "completed": 0, "percent": 0}})
@@ -1436,6 +1442,17 @@ async def batch_search(req: BatchSearchRequest):
 
                 valid_keywords = [kw.strip() for kw in req.keywords if kw.strip()]
 
+                # v1.5.4: 含评论时降 Twitter 单 kw 抓取条数（避免 50 tab/kw × 大规模关键词导致
+                # 内存 + 单 Cookie 限流双重灾难）；Reddit 用 JSON API 廉价，不降。
+                twitter_effective_count = req.count
+                if req.include_replies and req.count > req.twitter_count_cap_with_replies:
+                    twitter_effective_count = req.twitter_count_cap_with_replies
+                    logger.info(
+                        f"[batch-search {task_id}] include_replies=True 且 count={req.count} > "
+                        f"{req.twitter_count_cap_with_replies}: Twitter 单关键词条数自动降为 "
+                        f"{twitter_effective_count}（Reddit 保持 {req.count}）"
+                    )
+
                 # ── Worker：单个 (keyword, platform) 抓取 ──
                 async def _worker(keyword: str, platform: str):
                     pc = cookie_map.get(platform, {})
@@ -1447,7 +1464,8 @@ async def batch_search(req: BatchSearchRequest):
                         fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=req.block_resources)
                         cookies = {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}
                         posts, _csv = await asyncio.wait_for(
-                            fetcher.search_tweets(keyword, count=req.count, include_replies=req.include_replies,
+                            fetcher.search_tweets(keyword, count=twitter_effective_count,
+                                                  include_replies=req.include_replies,
                                                   cookies=cookies, sort_by=req.sort_by, task_id=task_id),
                             timeout=_TC.single_keyword_timeout,
                         )
@@ -1476,10 +1494,23 @@ async def batch_search(req: BatchSearchRequest):
                     # Reddit 用 JSON API 极快，先跑完；Twitter 用浏览器较慢，后跑
                     platform_order = ["reddit", "twitter"]
 
+                # v1.5.4: 大规模抓取自动分批（前端未指定 batch_size 时按启发式决定）
+                effective_batch_size = req.batch_size
+                if effective_batch_size == 0:
+                    # 启发式：>20 关键词 或（含评论 且 >10 关键词）自动分成 size=10 的批
+                    if len(valid_keywords) > 20 or (req.include_replies and len(valid_keywords) > 10):
+                        effective_batch_size = 10
+                        logger.info(
+                            f"[batch-search {task_id}] 关键词数 {len(valid_keywords)} 触发自动分批，"
+                            f"batch_size={effective_batch_size}, cooldown={req.batch_cooldown}s"
+                        )
+
                 queue = KeywordJobQueue(
                     concurrency=max(1, min(req.worker_concurrency, 5)),
                     is_cancelled=lambda: _is_task_cancelled(task_id),
                     platform_order=platform_order or [],
+                    batch_size=effective_batch_size,
+                    batch_cooldown=req.batch_cooldown,
                 )
                 for kw in valid_keywords:
                     for plat in active_platforms:

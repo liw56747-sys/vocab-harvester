@@ -149,3 +149,63 @@ async def test_snapshot_progress():
     assert final.completed == 3
     assert final.pending == 0
     assert final.as_dict()["percent"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_batch_size_splits_into_subbatches():
+    """batch_size=2 时应将 5 个 job 拆成 3 批（2+2+1）"""
+    events: list[tuple[float, str]] = []
+    import time as _time
+    start = _time.time()
+    q = KeywordJobQueue(concurrency=2, batch_size=2, batch_cooldown=0.05)
+
+    async def worker(kw, plat):
+        events.append((_time.time() - start, f"run:{kw}"))
+        await asyncio.sleep(0.02)
+        return "ok"
+
+    for kw in ("a", "b", "c", "d", "e"):
+        q.enqueue(kw, "twitter", worker=worker)
+
+    await q.run()
+    jobs = q.results()
+    assert all(j.status == JobStatus.SUCCESS for j in jobs)
+    # 只要 5 个 job 都成功、且总时长大于纯并发（0.02s）加上至少两次批间冷却 (0.05×2=0.1)
+    total = _time.time() - start
+    assert total >= 0.1, f"批间冷却似乎未生效 (total={total:.3f}s)"
+
+
+@pytest.mark.asyncio
+async def test_batch_cooldown_can_be_cancelled():
+    """批间冷却期间收到 cancel 应立即停止后续批次"""
+    cancel_flag = {"stop": False}
+    q = KeywordJobQueue(
+        concurrency=1,
+        batch_size=1,
+        batch_cooldown=5.0,   # 长冷却，测试能被打断
+        is_cancelled=lambda: cancel_flag["stop"],
+    )
+
+    async def worker(kw, plat):
+        return "ok"
+
+    for kw in ("a", "b", "c"):
+        q.enqueue(kw, "twitter", worker=worker)
+
+    async def _canceller():
+        # 第一批完成后立刻取消
+        await asyncio.sleep(0.1)
+        cancel_flag["stop"] = True
+
+    import time as _time
+    start = _time.time()
+    await asyncio.gather(q.run(), _canceller())
+    elapsed = _time.time() - start
+
+    # 应远小于 batch_cooldown × 2 = 10s
+    assert elapsed < 3.0, f"取消未打断冷却 (elapsed={elapsed:.2f}s)"
+    # 至少 a 已成功；剩余应为 CANCELLED 或 PENDING（未启动）
+    jobs = q.results()
+    statuses = [j.status for j in jobs]
+    assert statuses[0] == JobStatus.SUCCESS
+    assert JobStatus.CANCELLED in statuses or JobStatus.PENDING in statuses

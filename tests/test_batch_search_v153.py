@@ -22,15 +22,27 @@ def test_app_startup_and_routes(client):
     assert "platform" in body
 
 
-def test_batch_search_rejects_over_30(client):
-    """新的上限 30，超过则 400"""
+def test_batch_search_rejects_over_50(client):
+    """v1.5.4: 上限提到 50，超过则 400"""
     r = client.post("/api/batch-search", json={
-        "keywords": [f"kw{i}" for i in range(31)],
+        "keywords": [f"kw{i}" for i in range(51)],
         "count": 10,
         "platforms": ["twitter"],
     })
     assert r.status_code == 400
-    assert "30" in r.json().get("detail", "")
+    assert "50" in r.json().get("detail", "")
+
+
+def test_batch_search_accepts_up_to_50(client):
+    """v1.5.4: 边界 - 恰好 50 个应接受（不再是 30）"""
+    r = client.post("/api/batch-search", json={
+        "keywords": [f"kw{i}" for i in range(50)],
+        "count": 5,
+        "platforms": ["twitter"],
+        "cookies": [],
+    })
+    assert r.status_code == 200
+    assert r.json().get("status") == "started"
 
 
 def test_batch_search_rejects_empty(client):
