@@ -2344,6 +2344,7 @@ const I18N = {
     chromium_retry: '安装完成后刷新页面即可使用。', chromium_refresh: '刷新页面',
     chromium_update_title: '浏览器组件已就绪', chromium_update_desc: '建议重新安装应用到「应用程序」文件夹，以确保所有功能正常。',
     chromium_update_skip: '跳过，直接使用', chromium_update_reinstall: '重新安装应用',
+    chromium_skip_hint: '下载较慢？', chromium_skip_link: '跳过，先使用应用', chromium_skip_note: '（Reddit 不需要此组件，X/Twitter 需要）',
     // Dynamic / toast
     request_failed: '请求失败', task_cancelled: '任务已取消',
     select_file_toast: '请选择文件', importing: '导入中...',
@@ -2560,6 +2561,7 @@ const I18N = {
     chromium_retry: 'Refresh the page after installation to continue.', chromium_refresh: 'Refresh Page',
     chromium_update_title: 'Browser Component Ready', chromium_update_desc: 'We recommend reinstalling the app to the Applications folder for best experience.',
     chromium_update_skip: 'Skip, use as-is', chromium_update_reinstall: 'Reinstall App',
+    chromium_skip_hint: 'Download too slow?', chromium_skip_link: 'Skip, use app first', chromium_skip_note: '(Reddit doesn\'t need this, X/Twitter does)',
     // Dynamic / toast
     request_failed: 'Request failed', task_cancelled: 'Task cancelled',
     select_file_toast: 'Please select a file', importing: 'Importing...',
@@ -3178,6 +3180,13 @@ function reinstallAppFromChromium() {
   }).catch(() => {
     toast('检查更新失败，请稍后重试', 'error');
   });
+}
+
+function skipChromiumInstall() {
+  if (_chromiumPollTimer) clearInterval(_chromiumPollTimer);
+  const overlay = document.getElementById('chromium-overlay');
+  if (overlay) overlay.classList.remove('show');
+  toast('已跳过浏览器组件安装。X/Twitter 功能需安装后才能使用，Reddit 可正常使用。', 'info');
 }
 
 
@@ -4914,9 +4923,14 @@ function togglePostContent(btn, id) { var el = document.getElementById(id); if (
     </div>
     <div class="chromium-overlay-title" id="chromium-title" data-i18n="chromium_title">首次启动设置</div>
     <div class="chromium-overlay-desc" id="chromium-desc" data-i18n="chromium_desc">正在自动安装浏览器组件，安装完成后即可使用数据抓取功能。</div>
-    <div class="chromium-overlay-progress" id="chromium-progress">
+    <div id="chromium-progress">
       <div class="chromium-spinner" id="chromium-spinner"></div>
       <span id="chromium-progress-text" data-i18n="chromium_downloading">正在下载浏览器组件...</span>
+    </div>
+    <div id="chromium-skip-hint" style="margin-top:14px;font-size:12px;color:var(--text-muted)">
+      <span data-i18n="chromium_skip_hint">下载较慢？</span>
+      <a href="javascript:void(0)" onclick="skipChromiumInstall()" style="color:var(--primary);text-decoration:underline;cursor:pointer" data-i18n="chromium_skip_link">跳过，先使用应用</a>
+      <br><span style="font-size:11px;margin-top:4px;display:inline-block" data-i18n="chromium_skip_note">（Reddit 不需要此组件，X/Twitter 需要）</span>
     </div>
     <div id="chromium-success" style="display:none">
       <div class="chromium-overlay-progress">
