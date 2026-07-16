@@ -1626,7 +1626,7 @@ kbd {
             <input type="number" id="search-count" value="50" min="1" max="200" style="width:90px">
           </div>
           <div class="form-group">
-            <label data-i18n="sort_label">排序</label>
+            <label data-i18n="sort_label">排序方式</label>
             <div class="sort-toggle">
               <button class="sort-btn active" id="sort-top" onclick="setSortBy('top')"><span data-i18n="sort_top">热门</span></button>
               <button class="sort-btn" id="sort-live" onclick="setSortBy('live')"><span data-i18n="sort_live">最新</span></button>
@@ -1635,6 +1635,10 @@ kbd {
           <label class="checkbox-label">
             <input type="checkbox" id="search-include-replies">
             <span data-i18n="include_replies">同时抓取评论</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="user-block-resources">
+            <span data-i18n="block_resources">加速模式（屏蔽图片/CSS，页面加载更快）</span>
           </label>
           <div style="margin-left:auto;display:flex;gap:8px">
             <button class="btn btn-primary" id="multi-search-btn" onclick="startMultiSearch()" data-i18n="btn_search">开始搜索</button>

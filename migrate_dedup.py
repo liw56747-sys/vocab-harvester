@@ -6,7 +6,7 @@ def migrate():
     with get_db() as conn:
         # 1. 添加新字段
         try:
-            conn.execute(""
+            conn.execute("""
             ALTER TABLE posts 
             ADD COLUMN post_id TEXT UNIQUE,
             ADD COLUMN keywords TEXT NOT NULL,
