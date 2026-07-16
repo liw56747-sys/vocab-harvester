@@ -1979,38 +1979,65 @@ async def api_install_chromium():
 
     def _do_install():
         import subprocess
+        import sys
         _app_module._log("Starting Chromium installation...")
         _chromium_install_state["progress"] = "downloading"
 
-        commands = [
-            ["python3", "-m", "playwright", "install", "chromium"],
-            ["playwright", "install", "chromium"],
+        # 构建子进程环境：优先使用打包在 app 内的 Playwright 模块，
+        # 避免系统 Playwright 版本不一致导致下载错误的浏览器版本
+        install_env = os.environ.copy()
+        _meipass = getattr(sys, "_MEIPASS", None)
+        if _meipass:
+            # 将打包的 site-packages 加入 PYTHONPATH，确保子进程加载 bundled Playwright
+            existing = install_env.get("PYTHONPATH", "")
+            install_env["PYTHONPATH"] = f"{_meipass}{os.pathsep}{existing}" if existing else _meipass
+            _app_module._log(f"Using bundled Playwright from {_meipass}")
+
+        # 需要同时安装 chromium（完整浏览器）和 chromium-headless-shell（headless 模式需要）
+        browser_packages = ["chromium", "chromium-headless-shell"]
+        python_prefixes = [
+            ["python3", "-m", "playwright"],
+            ["playwright"],
         ]
 
-        for cmd in commands:
-            try:
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300
-                )
-                if result.returncode == 0:
-                    _chromium_install_state["status"] = "installed"
-                    _chromium_install_state["progress"] = "complete"
-                    _app_module._NEEDS_CHROMIUM_INSTALL = False
-                    _app_module._log("Chromium installation succeeded")
-                    return
-                else:
-                    _app_module._log(f"Command failed: {' '.join(cmd)}: {result.stderr}")
-            except FileNotFoundError:
-                continue
-            except subprocess.TimeoutExpired:
-                _app_module._log(f"Command timed out: {' '.join(cmd)}")
-                continue
-            except Exception as e:
-                _app_module._log(f"Install error: {e}")
+        all_ok = True
+        for pkg in browser_packages:
+            installed = False
+            for prefix in python_prefixes:
+                cmd = prefix + ["install", pkg]
+                try:
+                    _app_module._log(f"Running: {' '.join(cmd)}")
+                    _chromium_install_state["progress"] = f"downloading {pkg}"
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                        timeout=300, env=install_env
+                    )
+                    if result.returncode == 0:
+                        _app_module._log(f"{pkg} installed successfully")
+                        installed = True
+                        break
+                    else:
+                        _app_module._log(f"Command failed: {' '.join(cmd)}: {result.stderr}")
+                except FileNotFoundError:
+                    continue
+                except subprocess.TimeoutExpired:
+                    _app_module._log(f"Command timed out: {' '.join(cmd)}")
+                    continue
+                except Exception as e:
+                    _app_module._log(f"Install error for {pkg}: {e}")
+            if not installed:
+                all_ok = False
+                _app_module._log(f"Failed to install {pkg}")
 
-        _chromium_install_state["status"] = "error"
-        _chromium_install_state["error"] = "Installation failed. Please run 'playwright install chromium' in Terminal."
-        _app_module._log("Chromium installation failed")
+        if all_ok:
+            _chromium_install_state["status"] = "installed"
+            _chromium_install_state["progress"] = "complete"
+            _app_module._NEEDS_CHROMIUM_INSTALL = False
+            _app_module._log("Chromium installation succeeded (chromium + headless-shell)")
+        else:
+            _chromium_install_state["status"] = "error"
+            _chromium_install_state["error"] = "Installation failed. Please run 'playwright install chromium && playwright install chromium-headless-shell' in Terminal."
+            _app_module._log("Chromium installation failed")
 
     threading.Thread(target=_do_install, daemon=True).start()
 

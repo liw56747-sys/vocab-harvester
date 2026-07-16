@@ -48,8 +48,9 @@ jobs:
 
       - name: Install Playwright & Chromium
         run: |
-          pip install playwright
-          playwright install chromium
+          # Use pinned version from requirements.txt (do NOT pip install playwright without version pin)
+          python -m playwright install chromium
+          python -m playwright install chromium-headless-shell
           # Windows: set Chromium path for Playwright (PowerShell syntax)
           echo "PLAYWRIGHT_BROWSERS_PATH=$env:LOCALAPPDATA\ms-playwright" >> $env:GITHUB_ENV
 
@@ -200,8 +201,9 @@ jobs:
 
       - name: Install Playwright & Chromium
         run: |
-          pip install playwright
-          playwright install chromium
+          # Use pinned version from requirements.txt (do NOT pip install playwright without version pin)
+          python -m playwright install chromium
+          python -m playwright install chromium-headless-shell
           # macOS does not bundle Chromium in the .app (codesign compat);
           # it is installed at runtime via API endpoint. No env var needed here.
 

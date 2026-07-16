@@ -65,23 +65,24 @@ elif sys.platform == "darwin":
     # 首次启动时通过 API 端点安装，前端显示引导界面
     _MAC_PW_PATH = Path.home() / "Library" / "Caches" / "ms-playwright"
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(_MAC_PW_PATH))
-    # 检查是否已有 Chromium（使用 try/except 避免目录不存在或无权限导致启动崩溃）
+    # 检查是否已有 Chromium 和 chromium-headless-shell（两者都需要）
     _chromium_found = False
     try:
         if _MAC_PW_PATH.exists():
-            _chromium_found = any(
-                (_MAC_PW_PATH / d).is_dir()
-                for d in os.listdir(_MAC_PW_PATH)
-                if d.startswith("chromium")
-            )
+            dirs = [d for d in os.listdir(_MAC_PW_PATH) if d.startswith("chromium")]
+            has_chromium = any(d.startswith("chromium-") for d in dirs)
+            has_headless_shell = any(d.startswith("chromium_headless_shell-") for d in dirs)
+            _chromium_found = has_chromium and has_headless_shell
+            if not _chromium_found:
+                _log(f"Chromium check: chromium={has_chromium}, headless_shell={has_headless_shell}")
     except (FileNotFoundError, PermissionError, OSError) as _e:
         _log(f"Playwright Chromium path check failed: {_e}")
         _chromium_found = False
     if not _chromium_found:
         _NEEDS_CHROMIUM_INSTALL = True
-        _log("Playwright Chromium not found, will install via API endpoint")
+        _log("Playwright Chromium/headless-shell not found, will install via API endpoint")
     else:
-        _log(f"Playwright Chromium found at {_MAC_PW_PATH}")
+        _log(f"Playwright Chromium + headless-shell found at {_MAC_PW_PATH}")
 
 # 确保 _MEIPASS 根目录在 sys.path（让 from src.xxx import 正常工作）
 if str(_BUNDLED_DIR) not in sys.path:

@@ -2342,6 +2342,8 @@ const I18N = {
     chromium_downloading: '正在下载浏览器组件...', chromium_installing: '正在安装...',
     chromium_complete: '安装完成，正在启动应用...', chromium_failed: '自动安装失败，请在终端中手动执行以下命令：',
     chromium_retry: '安装完成后刷新页面即可使用。', chromium_refresh: '刷新页面',
+    chromium_update_title: '浏览器组件已就绪', chromium_update_desc: '建议重新安装应用到「应用程序」文件夹，以确保所有功能正常。',
+    chromium_update_skip: '跳过，直接使用', chromium_update_reinstall: '重新安装应用',
     // Dynamic / toast
     request_failed: '请求失败', task_cancelled: '任务已取消',
     select_file_toast: '请选择文件', importing: '导入中...',
@@ -2556,6 +2558,8 @@ const I18N = {
     chromium_downloading: 'Downloading browser component...', chromium_installing: 'Installing...',
     chromium_complete: 'Installation complete, launching app...', chromium_failed: 'Automatic installation failed. Please run the following command in Terminal:',
     chromium_retry: 'Refresh the page after installation to continue.', chromium_refresh: 'Refresh Page',
+    chromium_update_title: 'Browser Component Ready', chromium_update_desc: 'We recommend reinstalling the app to the Applications folder for best experience.',
+    chromium_update_skip: 'Skip, use as-is', chromium_update_reinstall: 'Reinstall App',
     // Dynamic / toast
     request_failed: 'Request failed', task_cancelled: 'Task cancelled',
     select_file_toast: 'Please select a file', importing: 'Importing...',
@@ -3067,7 +3071,114 @@ document.addEventListener('DOMContentLoaded', () => {
       if (info.latest_version) showUpdateBanner(info);
     } catch (e) { /* 静默忽略 */ }
   }, 4 * 60 * 60 * 1000);
+  // Chromium 安装引导
+  initChromiumSetup();
 });
+
+// ── Chromium 安装引导 ──
+let _chromiumPollTimer = null;
+
+async function initChromiumSetup() {
+  try {
+    const status = await api('/api/chromium-status');
+    if (status.status === 'not_needed') return;
+    if (status.status === 'installed') {
+      // 已安装但可能是旧版本，直接隐藏
+      return;
+    }
+    // 需要安装 → 显示遮罩并触发安装
+    showChromiumOverlay();
+    // 触发后端安装
+    await api('/api/install-chromium', { method: 'POST' });
+    // 开始轮询
+    startChromiumPoll();
+  } catch (e) {
+    // 静默忽略 API 调用失败
+  }
+}
+
+function showChromiumOverlay() {
+  const overlay = document.getElementById('chromium-overlay');
+  if (overlay) overlay.classList.add('show');
+}
+
+function startChromiumPoll() {
+  if (_chromiumPollTimer) clearInterval(_chromiumPollTimer);
+  _chromiumPollTimer = setInterval(async () => {
+    try {
+      const status = await api('/api/chromium-status');
+      const progressText = document.getElementById('chromium-progress-text');
+      if (status.progress && progressText) {
+        progressText.textContent = status.progress === 'downloading'
+          ? t('chromium_downloading')
+          : status.progress.startsWith('downloading ')
+            ? status.progress
+            : t('chromium_installing');
+      }
+      if (status.status === 'installed') {
+        clearInterval(_chromiumPollTimer);
+        onChromiumInstalled();
+      } else if (status.status === 'error') {
+        clearInterval(_chromiumPollTimer);
+        onChromiumError(status.error);
+      }
+    } catch (e) {
+      // 继续轮询
+    }
+  }, 1500);
+}
+
+function onChromiumInstalled() {
+  // 隐藏 spinner，显示成功 ✓
+  const spinner = document.getElementById('chromium-spinner');
+  if (spinner) spinner.style.display = 'none';
+  const successEl = document.getElementById('chromium-success');
+  if (successEl) successEl.style.display = 'block';
+  // 2 秒后切换到更新提示
+  setTimeout(() => {
+    if (successEl) successEl.style.display = 'none';
+    const progressEl = document.getElementById('chromium-progress');
+    if (progressEl) progressEl.style.display = 'none';
+    const updatePrompt = document.getElementById('chromium-update-prompt');
+    if (updatePrompt) updatePrompt.style.display = 'block';
+    // 刷新 i18n
+    applyI18n();
+  }, 2000);
+}
+
+function onChromiumError(errorMsg) {
+  const progressEl = document.getElementById('chromium-progress');
+  if (progressEl) progressEl.style.display = 'none';
+  const errorEl = document.getElementById('chromium-error');
+  if (errorEl) errorEl.style.display = 'block';
+  if (errorMsg) {
+    const cmdEl = document.getElementById('chromium-error-cmd');
+    if (cmdEl) cmdEl.textContent = errorMsg;
+  }
+}
+
+function dismissChromiumUpdatePrompt() {
+  const overlay = document.getElementById('chromium-overlay');
+  if (overlay) overlay.classList.remove('show');
+}
+
+function reinstallAppFromChromium() {
+  // 关闭遮罩，触发一键更新流程
+  const overlay = document.getElementById('chromium-overlay');
+  if (overlay) overlay.classList.remove('show');
+  // 检查是否有可用更新并触发下载
+  api('/api/check-update', { method: 'POST' }).then(info => {
+    if (info.latest_version) {
+      showUpdateBanner(info);
+      // 自动开始下载
+      startOneClickUpdate();
+    } else {
+      toast('当前已是最新版本，无需更新', 'info');
+    }
+  }).catch(() => {
+    toast('检查更新失败，请稍后重试', 'error');
+  });
+}
 
 
 let _currentLang = localStorage.getItem('app_language') || 'zh';
@@ -4813,10 +4924,18 @@ function togglePostContent(btn, id) { var el = document.getElementById(id); if (
         <span data-i18n="chromium_complete">安装完成，正在启动应用...</span>
       </div>
     </div>
+    <div id="chromium-update-prompt" style="display:none;margin-top:20px;text-align:center">
+      <div style="font-size:15px;font-weight:600;color:var(--text-primary);margin-bottom:6px" data-i18n="chromium_update_title">浏览器组件已就绪</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.5" data-i18n="chromium_update_desc">建议重新安装应用到「应用程序」文件夹，以确保所有功能正常。</div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="chromium-overlay-btn" onclick="dismissChromiumUpdatePrompt()" style="background:var(--border);color:var(--text-primary)" data-i18n="chromium_update_skip">跳过，直接使用</button>
+        <button class="chromium-overlay-btn" onclick="reinstallAppFromChromium()" data-i18n="chromium_update_reinstall">重新安装应用</button>
+      </div>
+    </div>
     <div id="chromium-error" style="display:none">
       <div class="chromium-overlay-error">
         <span data-i18n="chromium_failed">自动安装失败，请在终端中手动执行以下命令：</span>
-        <code id="chromium-error-cmd">playwright install chromium</code>
+        <code id="chromium-error-cmd">playwright install chromium &amp;&amp; playwright install chromium-headless-shell</code>
         <p style="margin-top:12px" data-i18n="chromium_retry">安装完成后刷新页面即可使用。</p>
       </div>
       <button class="chromium-overlay-btn" onclick="location.reload()" data-i18n="chromium_refresh">刷新页面</button>
