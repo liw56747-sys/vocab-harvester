@@ -1993,8 +1993,9 @@ async def api_install_chromium():
             install_env["PYTHONPATH"] = f"{_meipass}{os.pathsep}{existing}" if existing else _meipass
             _app_module._log(f"Using bundled Playwright from {_meipass}")
 
-        # 需要同时安装 chromium（完整浏览器）和 chromium-headless-shell（headless 模式需要）
-        browser_packages = ["chromium", "chromium-headless-shell"]
+        # 爬虫只使用 headless=True 模式，只需 chromium-headless-shell（92 MB）
+        # 不需要完整 Chromium（341 MB），避免下载时间过长
+        browser_packages = ["chromium-headless-shell"]
         python_prefixes = [
             ["python3", "-m", "playwright"],
             ["playwright"],
@@ -2033,11 +2034,11 @@ async def api_install_chromium():
             _chromium_install_state["status"] = "installed"
             _chromium_install_state["progress"] = "complete"
             _app_module._NEEDS_CHROMIUM_INSTALL = False
-            _app_module._log("Chromium installation succeeded (chromium + headless-shell)")
+            _app_module._log("Chromium headless-shell installation succeeded")
         else:
             _chromium_install_state["status"] = "error"
-            _chromium_install_state["error"] = "Installation failed. Please run 'playwright install chromium && playwright install chromium-headless-shell' in Terminal."
-            _app_module._log("Chromium installation failed")
+            _chromium_install_state["error"] = "Installation failed. Please run 'playwright install chromium-headless-shell' in Terminal."
+            _app_module._log("Chromium headless-shell installation failed")
 
     threading.Thread(target=_do_install, daemon=True).start()
 

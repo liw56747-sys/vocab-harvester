@@ -204,8 +204,9 @@ jobs:
           # Use pinned version from requirements.txt (do NOT pip install playwright without version pin)
           python -m playwright install chromium
           python -m playwright install chromium-headless-shell
-          # macOS does not bundle Chromium in the .app (codesign compat);
-          # it is installed at runtime via API endpoint. No env var needed here.
+          # macOS bundles only chromium_headless_shell (plain binary, no codesign issues).
+          # The full Chromium .app is NOT bundled (breaks PyInstaller codesign).
+          # build_mac.spec will pick up chromium_headless_shell-* from the default cache path.
 
       - name: Install PyInstaller
         run: pip install pyinstaller

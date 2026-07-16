@@ -54,35 +54,41 @@ def _log(msg: str):
 
 
 # ── Playwright 浏览器路径 ──
-# 打包后 Chromium 位于 _internal/playwright_browser/（Windows 打包方式）
+# Windows/macOS 打包后，浏览器位于 _internal/playwright_browser/
 _BUNDLED_BROWSER = _BUNDLED_DIR / "playwright_browser"
 _NEEDS_CHROMIUM_INSTALL = False
 
 if _BUNDLED_BROWSER.is_dir():
+    # 打包内已有浏览器目录（Windows 全量打包 / macOS 仅 headless shell）
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_BUNDLED_BROWSER)
+    # 检查打包内是否有可用的浏览器组件
+    _has_headless_shell = any(
+        d.startswith("chromium_headless_shell-") for d in os.listdir(_BUNDLED_BROWSER)
+    ) if _BUNDLED_BROWSER.exists() else False
+    if _has_headless_shell:
+        _log(f"Bundled headless shell found at {_BUNDLED_BROWSER}")
+    else:
+        _log(f"WARNING: {_BUNDLED_BROWSER} exists but no headless shell found")
+        _NEEDS_CHROMIUM_INSTALL = True
 elif sys.platform == "darwin":
-    # macOS：Chromium 不打包进 .app（codesign 兼容性问题）
-    # 首次启动时通过 API 端点安装，前端显示引导界面
+    # macOS 兜底：打包内无浏览器，检查用户缓存目录
     _MAC_PW_PATH = Path.home() / "Library" / "Caches" / "ms-playwright"
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(_MAC_PW_PATH))
-    # 检查是否已有 Chromium 和 chromium-headless-shell（两者都需要）
-    _chromium_found = False
+    # 检查是否已有 chromium-headless-shell（爬虫 headless 模式必需）
+    _headless_shell_found = False
     try:
         if _MAC_PW_PATH.exists():
-            dirs = [d for d in os.listdir(_MAC_PW_PATH) if d.startswith("chromium")]
-            has_chromium = any(d.startswith("chromium-") for d in dirs)
-            has_headless_shell = any(d.startswith("chromium_headless_shell-") for d in dirs)
-            _chromium_found = has_chromium and has_headless_shell
-            if not _chromium_found:
-                _log(f"Chromium check: chromium={has_chromium}, headless_shell={has_headless_shell}")
+            _headless_shell_found = any(
+                d.startswith("chromium_headless_shell-") for d in os.listdir(_MAC_PW_PATH)
+            )
     except (FileNotFoundError, PermissionError, OSError) as _e:
-        _log(f"Playwright Chromium path check failed: {_e}")
-        _chromium_found = False
-    if not _chromium_found:
+        _log(f"Playwright headless shell path check failed: {_e}")
+        _headless_shell_found = False
+    if not _headless_shell_found:
         _NEEDS_CHROMIUM_INSTALL = True
-        _log("Playwright Chromium/headless-shell not found, will install via API endpoint")
+        _log("Playwright headless-shell not found, will install via API endpoint")
     else:
-        _log(f"Playwright Chromium + headless-shell found at {_MAC_PW_PATH}")
+        _log(f"Playwright headless-shell found at {_MAC_PW_PATH}")
 
 # 确保 _MEIPASS 根目录在 sys.path（让 from src.xxx import 正常工作）
 if str(_BUNDLED_DIR) not in sys.path:

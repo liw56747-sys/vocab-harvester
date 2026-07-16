@@ -13,12 +13,32 @@ try:
 except NameError:
     project_dir = os.path.dirname(os.path.abspath(__file__))
 
-# ── Playwright browsers are NOT bundled on macOS ──
-# Chromium's .app has deeply nested frameworks that break PyInstaller's codesign.
-# Instead, the app runs `playwright install chromium` on first launch.
-# This keeps the PyInstaller output clean and avoids signing errors.
-pw_datas = []
-print("[*] Playwright browsers: will be installed at runtime (not bundled)")
+# ── Playwright browsers: bundle headless shell only on macOS ──
+# Chromium's full .app has deeply nested frameworks that break PyInstaller's codesign.
+# However, chromium_headless_shell is a plain binary (not .app) and is safe to bundle.
+# The crawler only uses headless=True mode, which requires chromium_headless_shell.
+def _find_headless_shell():
+    """Locate chromium_headless_shell for bundling (macOS only)"""
+    browsers_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if not browsers_path:
+        browsers_path = os.path.join(os.path.expanduser("~/Library/Caches"), "ms-playwright")
+    if not os.path.isdir(browsers_path):
+        print(f"[WARN] Playwright browsers path not found: {browsers_path}")
+        print("[INFO] Headless shell will be downloaded at runtime")
+        return []
+    datas = []
+    for name in os.listdir(browsers_path):
+        src = os.path.join(browsers_path, name)
+        if os.path.isdir(src) and name.startswith("chromium_headless_shell"):
+            dst = os.path.join("playwright_browser", name)
+            datas.append((src, dst))
+            print(f"  Bundling headless shell: {name} -> {dst}")
+    if not datas:
+        print("[WARN] chromium_headless_shell not found, will install at runtime")
+    return datas
+
+print("[*] Locating Playwright headless shell for macOS bundle...")
+pw_datas = _find_headless_shell()
 
 a = Analysis(
     [os.path.join(project_dir, 'app.py')],
