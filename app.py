@@ -19,6 +19,9 @@ import src.api.routes
 import src.common.config
 import src.common.database
 import src.common.version
+import src.orchestrator.pipeline
+import src.orchestrator.job_queue
+import src.orchestrator.scheduler
 
 
 # ── PyInstaller 路径处理 ──
@@ -62,12 +65,18 @@ elif sys.platform == "darwin":
     # 首次启动时通过 API 端点安装，前端显示引导界面
     _MAC_PW_PATH = Path.home() / "Library" / "Caches" / "ms-playwright"
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(_MAC_PW_PATH))
-    # 检查是否已有 Chromium
-    _chromium_found = any(
-        (_MAC_PW_PATH / d).is_dir()
-        for d in os.listdir(_MAC_PW_PATH)
-        if d.startswith("chromium")
-    ) if _MAC_PW_PATH.exists() else False
+    # 检查是否已有 Chromium（使用 try/except 避免目录不存在或无权限导致启动崩溃）
+    _chromium_found = False
+    try:
+        if _MAC_PW_PATH.exists():
+            _chromium_found = any(
+                (_MAC_PW_PATH / d).is_dir()
+                for d in os.listdir(_MAC_PW_PATH)
+                if d.startswith("chromium")
+            )
+    except (FileNotFoundError, PermissionError, OSError) as _e:
+        _log(f"Playwright Chromium path check failed: {_e}")
+        _chromium_found = False
     if not _chromium_found:
         _NEEDS_CHROMIUM_INSTALL = True
         _log("Playwright Chromium not found, will install via API endpoint")

@@ -223,6 +223,8 @@ async def lifespan(app: FastAPI):
         logger.info("Database initialized successfully")
         # 启动时自动检查更新（后台线程，不阻塞启动）
         check_for_update_async()
+        # 启动时加载已配置的定时任务（确保 cron 任务在重启后自动恢复）
+        _reload_scheduler()
     except Exception as e:
         logger.error(f"Lifespan startup failed: {e}", exc_info=True)
         raise
@@ -233,6 +235,13 @@ async def lifespan(app: FastAPI):
         await BrowserManager.get().close()
     except Exception:
         pass
+    # 停止定时任务调度器
+    global _task_scheduler
+    if _task_scheduler:
+        try:
+            _task_scheduler.shutdown(wait=False)
+        except Exception:
+            pass
     await close_db()
 
 
@@ -767,7 +776,31 @@ async def _execute_scheduled_task(task_config: dict):
         )
 
         logger.info(f"[定时任务 {task_id}] 开始抓取，关键词: {query.keywords}")
-        pipeline = Pipeline.from_config()
+
+        # 加载模型配置：从数据库读取用户配置的 LLM API，用于自动分析
+        cursor_cfg = await db.execute("SELECT config_key, config_value FROM model_config")
+        model_rows = await cursor_cfg.fetchall()
+        model_cfg = {r[0]: r[1] for r in model_rows}
+        model_api_key = model_cfg.get("model_api_key", "")
+        model_base_url = model_cfg.get("model_base_url", "")
+        model_name = model_cfg.get("model_name", "")
+        model_backup_base_url = model_cfg.get("model_backup_base_url", "")
+        model_backup_api_key = model_cfg.get("model_backup_api_key", "")
+        model_backup_name = model_cfg.get("model_backup_name", "")
+
+        # 根据是否配置了模型 API 选择流水线类型
+        if model_api_key and model_base_url:
+            pipeline = Pipeline.from_config_with_model(
+                base_url=model_base_url, api_key=model_api_key, model=model_name,
+                backup_model=model_backup_name,
+                backup_base_url=model_backup_base_url or model_base_url,
+                backup_api_key=model_backup_api_key or model_api_key,
+            )
+            logger.info(f"[定时任务 {task_id}] 使用用户配置的模型 API 进行分析")
+        else:
+            pipeline = Pipeline.from_config()
+            logger.info(f"[定时任务 {task_id}] 使用默认配置（无模型 API，可能使用 Mock 适配器）")
+
         stats = await pipeline.run(
             query, task_name=task_name,
             opinion_detail=opinion_detail, opinion_rules=opinion_rules,

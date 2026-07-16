@@ -20,10 +20,15 @@ def _find_playwright_browsers():
     # 优先从环境变量
     browsers_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
     if not browsers_path:
-        # 默认路径
-        browsers_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright")
+        # Windows 默认路径
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        browsers_path = os.path.join(localappdata, "ms-playwright")
+        # macOS 默认路径
+        if not os.path.isdir(browsers_path):
+            browsers_path = os.path.join(os.path.expanduser("~/Library/Caches"), "ms-playwright")
     if not os.path.isdir(browsers_path):
-        print("[WARN] Playwright browsers not found, skipping")
+        print(f"[WARN] Playwright browsers not found at: {browsers_path}")
+        print("[INFO] Browser will be downloaded at runtime on first launch")
         return []
 
     datas = []
@@ -107,6 +112,21 @@ a = Analysis(
         'yaml.cyaml',
         # openpyxl
         'openpyxl',
+        # apscheduler（定时任务）
+        'apscheduler',
+        'apscheduler.schedulers',
+        'apscheduler.schedulers.asyncio',
+        'apscheduler.triggers',
+        'apscheduler.triggers.cron',
+        'apscheduler.triggers.interval',
+        'apscheduler.triggers.date',
+        'apscheduler.jobstores',
+        'apscheduler.jobstores.memory',
+        'apscheduler.executors',
+        'apscheduler.executors.asyncio',
+        # pywebview（桌面窗口）
+        'webview',
+        'webview.platforms',
         # 项目自身模块（PyInstaller 有时漏掉）
         'src',
         'src.api',
@@ -131,6 +151,7 @@ a = Analysis(
         'src.orchestrator',
         'src.orchestrator.pipeline',
         'src.orchestrator.scheduler',
+        'src.orchestrator.job_queue',
         'src.vocabulary',
         'src.vocabulary.manager',
         'src.vocabulary.storage',

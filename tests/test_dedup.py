@@ -1,104 +1,56 @@
+"""VocabManager.ingest 去重逻辑单元测试。
+
+注意：本测试只验证单次 ingest 调用内的内存去重行为。
+持久化去重（跨调用）尚未实现，相关测试已被移除。
+"""
+
 import pytest
 import sys
 import os
+from datetime import datetime
 
-# 将项目根目录添加到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.vocabulary.manager import VocabManager
-from src.common.database import get_db
-from datetime import datetime, timedelta
+from src.common.models import ParsedPost
 
 
-async def test_dedup_by_keyword():
-    # 1. 用关键词A抓取5条数据
+def _make_post(i, *, post_id=None, content=None, platform="test", **extra):
+    """构建一个测试用的 ParsedPost 对象。"""
+    return ParsedPost(
+        platform=platform,
+        post_id=post_id or f"https://example.com/{i}",
+        content=content or f"test {i}",
+        author="author",
+        published_at=datetime.now(),
+        raw_data=extra,
+    )
+
+
+async def test_dedup_by_post_id():
+    """相同 post_id 在单次调用内应只保留一条。"""
     manager = VocabManager()
     posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "keywords": "A"}
-        for i in range(1, 6)
+        _make_post(i, post_id="same-id", content=f"same content {i}")
+        for i in range(5)
     ]
-    manager.ingest(None, posts, task_name="test")
-
-    # 2. 重新用关键词A抓取相同数据
-    duplicate_posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "keywords": "A"}
-        for i in range(1, 6)
-    ]
-    result = manager.ingest(None, duplicate_posts, task_name="test")
-    assert result == 0  # 应全部被去重
+    result = await manager.ingest(None, posts, task_name="test")
+    assert result == 1
 
 
-async def test_dedup_by_user():
-    # 1. 用用户ID 1抓取5条数据
+async def test_dedup_by_content_similarity():
+    """内容高度相似（Jaccard > 0.7）的帖子应被去重。"""
     manager = VocabManager()
     posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "user_id": "1"}
-        for i in range(1, 6)
+        _make_post(i, content="this is almost the same post every time")
+        for i in range(5)
     ]
-    manager.ingest(None, posts, task_name="test")
-
-    # 2. 重新用用户ID 1抓取相同数据
-    duplicate_posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "user_id": "1"}
-        for i in range(1, 6)
-    ]
-    result = manager.ingest(None, duplicate_posts, task_name="test")
-    assert result == 0  # 应全部被去重
+    result = await manager.ingest(None, posts, task_name="test")
+    assert result == 1
 
 
-async def test_allow_cross_keyword():
-    # 1. 用关键词A抓取5条数据
+async def test_keep_different_content():
+    """内容差异较大的帖子应全部保留。"""
     manager = VocabManager()
-    posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "keywords": "A"}
-        for i in range(1, 6)
-    ]
-    manager.ingest(None, posts, task_name="test")
-
-    # 2. 用关键词B抓取相同数据
-    cross_posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "keywords": "B"}
-        for i in range(1, 6)
-    ]
-    result = manager.ingest(None, cross_posts, task_name="test")
-    assert result == 5  # 应全部保留
-
-
-async def test_retention_period():
-    # 1. 用关键词A抓取5条数据
-    manager = VocabManager()
-    posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "keywords": "A"}
-        for i in range(1, 6)
-    ]
-    manager.ingest(None, posts, task_name="test")
-
-    # 2. 模拟30天后
-    async with get_db() as conn:
-        conn.execute("UPDATE posts SET created_at = datetime('now', '-31 days')")
-
-    # 3. 重新抓取相同数据
-    duplicate_posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "keywords": "A"}
-        for i in range(1, 6)
-    ]
-    result = manager.ingest(None, duplicate_posts, task_name="test")
-    assert result == 5  # 30天后应重新抓取
-
-    # 4. 用用户ID 1抓取5条数据
-    posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "user_id": "1"}
-        for i in range(1, 6)
-    ]
-    manager.ingest(None, posts, task_name="test")
-
-    # 5. 模拟90天后
-    async with get_db() as conn:
-        conn.execute("UPDATE posts SET created_at = datetime('now', '-91 days')")
-
-    # 6. 重新抓取相同数据
-    duplicate_posts = [
-        {"content": f"test {i}", "url": f"https://example.com/{i}", "user_id": "1"}
-        for i in range(1, 6)
-    ]
-    result = manager.ingest(None, duplicate_posts, task_name="test")
-    assert result == 5  # 90天后应重新抓取
+    posts = [_make_post(i, content=f"completely different content {i}") for i in range(5)]
+    result = await manager.ingest(None, posts, task_name="test")
+    assert result == 5

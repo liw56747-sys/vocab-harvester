@@ -231,7 +231,8 @@ class VocabManager:
             unique_posts = self._deduplicate_by_content(source_posts)
             source_posts = unique_posts
 
-        # ... (后续处理)
+        # 返回去重后需要写入的新帖子数量
+        return len(source_posts)
 
     def _deduplicate_by_content(self, posts: list[ParsedPost]) -> list[ParsedPost]:
         """通过内容相似度去重（Jaccard相似度）"""

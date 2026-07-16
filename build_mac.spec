@@ -89,6 +89,21 @@ a = Analysis(
         'yaml.cyaml',
         # openpyxl
         'openpyxl',
+        # apscheduler（定时任务）
+        'apscheduler',
+        'apscheduler.schedulers',
+        'apscheduler.schedulers.asyncio',
+        'apscheduler.triggers',
+        'apscheduler.triggers.cron',
+        'apscheduler.triggers.interval',
+        'apscheduler.triggers.date',
+        'apscheduler.jobstores',
+        'apscheduler.jobstores.memory',
+        'apscheduler.executors',
+        'apscheduler.executors.asyncio',
+        # pywebview（桌面窗口）
+        'webview',
+        'webview.platforms',
         # 项目自身模块（PyInstaller 有时漏掉）
         'src',
         'src.api',
@@ -113,6 +128,7 @@ a = Analysis(
         'src.orchestrator',
         'src.orchestrator.pipeline',
         'src.orchestrator.scheduler',
+        'src.orchestrator.job_queue',
         'src.vocabulary',
         'src.vocabulary.manager',
         'src.vocabulary.storage',

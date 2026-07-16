@@ -50,6 +50,8 @@ jobs:
         run: |
           pip install playwright
           playwright install chromium
+          # Windows: set Chromium path for Playwright (PowerShell syntax)
+          echo "PLAYWRIGHT_BROWSERS_PATH=$env:LOCALAPPDATA\ms-playwright" >> $env:GITHUB_ENV
 
       - name: Install PyInstaller
         run: pip install pyinstaller
@@ -200,6 +202,8 @@ jobs:
         run: |
           pip install playwright
           playwright install chromium
+          # macOS does not bundle Chromium in the .app (codesign compat);
+          # it is installed at runtime via API endpoint. No env var needed here.
 
       - name: Install PyInstaller
         run: pip install pyinstaller
@@ -313,7 +317,6 @@ jobs:
     name: Publish GitHub Release
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
-    run-name: Release ${{ inputs.version }}
     permissions:
       contents: write
 
@@ -355,22 +358,30 @@ jobs:
         run: |
           # 提取当前 tag 对应的 commit message 第一行作为更新摘要
           TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
           
           # 获取 tag 对应的 commit message
           COMMIT_MSG=$(git log -1 --pretty=format:%s "$TAG" 2>/dev/null || echo "")
           
           # 如果为空，尝试获取最新的 commit
           if [ -z "$COMMIT_MSG" ]; then
-            COMMIT_MSG=$(git log -1 --pretty=format:%s 2>/dev/null || echo "版本更新")
+            COMMIT_MSG=$(git log -1 --pretty=format:%s 2>/dev/null || echo "")
           fi
           
           # 移除可能的版本号前缀（如 "v1.5.0: " 或 "feat: "）
           # 保留核心摘要文本
           SUMMARY=$(echo "$COMMIT_MSG" | sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+[:：]?\s*)//' | sed -E 's/^(feat|fix|refactor|chore|docs|style|perf|test)[:：]?\s*/\1: /')
           
-          # 如果摘要为空或太短，使用默认值
+          # 检测无意义的摘要（如 "update version", "bump version to X.Y.Z", "版本更新"）
+          # 这些通常是自动生成的 commit message，不适合作为 Release 名称
+          GENERIC_PATTERNS="update version|bump version|版本更新|release version|new release|chore: bump"
+          if echo "$SUMMARY" | grep -iqE "$GENERIC_PATTERNS"; then
+            SUMMARY=""
+          fi
+          
+          # 如果摘要为空或太短，使用版本号生成有意义的默认值
           if [ -z "$SUMMARY" ] || [ ${#SUMMARY} -lt 3 ]; then
-            SUMMARY="版本更新"
+            SUMMARY="版本发布"
           fi
           
           echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
@@ -466,8 +477,9 @@ jobs:
           USE_AUTO="${{ steps.notes.outputs.use_auto_notes }}"
           BODY_FILE="${{ steps.notes.outputs.body_file }}"
 
-          # 组装 Release 名称：版本号 + 更新摘要
-          RELEASE_NAME="${TAG}: ${SUMMARY}"
+          # 组装 Release 名称：Release + 版本号 + 更新摘要
+          # 格式: "Release v1.5.9 - 修复XXX" 而不是 "v1.5.9: update version"
+          RELEASE_NAME="Release ${TAG} - ${SUMMARY}"
           echo "Release name: $RELEASE_NAME"
 
           # Check if release already exists
