@@ -313,6 +313,7 @@ jobs:
     name: Publish GitHub Release
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
+    run-name: Release ${{ inputs.version }}
     permissions:
       contents: write
 
