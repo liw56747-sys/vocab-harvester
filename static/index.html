@@ -1556,9 +1556,20 @@ kbd {
             <label data-i18n="per_user_count">每用户条数</label>
             <input type="number" id="twitter-count" value="50" min="1" max="200" style="width:90px">
           </div>
+          <div class="form-group">
+            <label data-i18n="sort_label">排序方式</label>
+            <div class="sort-toggle">
+              <button class="sort-btn" id="twitter-sort-top" onclick="setTwitterSortBy('top')"><span data-i18n="sort_top">热门</span></button>
+              <button class="sort-btn active" id="twitter-sort-live" onclick="setTwitterSortBy('live')"><span data-i18n="sort_live">最新</span></button>
+            </div>
+          </div>
           <label class="checkbox-label">
             <input type="checkbox" id="twitter-include-replies">
             <span data-i18n="include_replies">同时抓取评论</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="twitter-block-resources">
+            <span data-i18n="block_resources">加速模式（屏蔽图片/CSS，页面加载更快）</span>
           </label>
           <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
             <span id="twitter-url-count" class="text-muted text-sm">0 个链接</span>
@@ -1646,12 +1657,6 @@ kbd {
           </div>
         </div>
 
-        <div style="margin-bottom:8px">
-          <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-secondary)">
-            <input type="checkbox" id="block-resources-toggle">
-            <span data-i18n="block_resources">加速模式（屏蔽图片/CSS，页面加载更快）</span>
-          </label>
-        </div>
         </div>
       </div>
 
@@ -4306,6 +4311,13 @@ function setSortBy(val) {
   document.getElementById('sort-live').classList.toggle('active', val === 'live');
 }
 
+let currentTwitterSortBy = 'live';  // 用户主页默认按最新排序
+function setTwitterSortBy(val) {
+  currentTwitterSortBy = val;
+  document.getElementById('twitter-sort-top').classList.toggle('active', val === 'top');
+  document.getElementById('twitter-sort-live').classList.toggle('active', val === 'live');
+}
+
 // ==========================================
 // 🚀 以下是完全替换为防堵塞安全轮询的核心函数
 // ==========================================
@@ -4344,7 +4356,7 @@ async function startTwitterFetch() {
           <h4>${t('scraped_posts', {n: stats.sampled_posts.length})}</h4>
           ${stats.sampled_posts.map((post, idx) => {
             let mediaHtml = '';
-            const _isAccel = document.getElementById('block-resources-toggle')?.checked;
+            const _isAccel = document.getElementById('twitter-block-resources')?.checked;
             if (post.has_media && !_isAccel) {
               const badge = post.media_type === 'image' ? '&#128247; ' + t('images') : post.media_type === 'video' ? '&#127909; ' + t('videos') : post.media_type === 'mixed' ? '&#128247;&#127909; ' + t('images') + '+' + t('videos') : '&#128206; ' + t('media');
               const urls = (post.media_urls || '').split(';').filter(Boolean);
@@ -4383,7 +4395,7 @@ async function startTwitterFetch() {
   try {
     const initRes = await api('/api/twitter-fetch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls, count, include_replies: includeReplies, ct0: cookies.ct0, auth_token: cookies.auth_token, proxy: cookies.proxy || null, block_resources: document.getElementById('block-resources-toggle').checked })
+      body: JSON.stringify({ urls, count, include_replies: includeReplies, ct0: cookies.ct0, auth_token: cookies.auth_token, proxy: cookies.proxy || null, block_resources: document.getElementById('twitter-block-resources').checked, sort_by: currentTwitterSortBy })
     });
     
     const taskId = initRes.task_id;

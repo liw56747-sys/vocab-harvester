@@ -293,6 +293,7 @@ class TwitterUrlFetchRequest(BaseModel):
     count: int = 50  # 每个用户抓取多少条推文
     include_replies: bool = False  # 是否同时抓取每条推文的评论
     block_resources: bool = False  # 是否屏蔽图片/CSS 加速加载
+    sort_by: str = "live"  # 排序方式: "top"(热门) 或 "live"(最新)，用户主页默认最新
     ct0: str | None = None  # 浏览器 cookie（每用户独立）
     auth_token: str | None = None
     proxy: str | None = None

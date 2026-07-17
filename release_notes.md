@@ -1,19 +1,24 @@
-# v1.6.3 更新日志
+# v1.6.4 更新日志
 
-## ✨ 核心改进
+## 🐛 Bug 修复
 
-### macOS 安装包内置 Chromium Headless Shell，X/Twitter 开箱即用
+### 修复关键词搜索处「加速模式」复选框重复显示
 
-之前版本的 macOS .app 不打包任何浏览器组件（Chromium 完整浏览器的 .app 包会破坏 PyInstaller 代码签名），用户首次启动时需从 CDN 下载约 92 MB 的 headless shell 组件，CDN 速度慢时会导致长时间卡在「正在下载浏览器组件」界面。
+关键词搜索区域内有两个标签完全相同的「加速模式」复选框（`user-block-resources` 和 `block-resources-toggle`），导致 UI 冗余且行为不一致。
 
-**本次改进：**
+**修复：** 移除多余的 `block-resources-toggle` 复选框，统一使用搜索栏内的 `user-block-resources`。
 
-- **打包 headless shell 进 .app** — `build_mac.spec` 新增 `_find_headless_shell()` 函数，CI 构建时将 `chromium_headless_shell`（190 MB，纯二进制文件，无 .app 包结构）打包进安装目录，不影响代码签名
-- **开箱即用** — macOS 用户安装后 X/Twitter 抓取功能直接可用，无需等待下载
-- **精简运行时安装** — `src/api/main.py` 中运行时安装组件从 `chromium` + `chromium-headless-shell`（431 MB）精简为仅 `chromium-headless-shell`（92 MB），作为兜底方案
-- **启动检测优化** — `app.py` 中优先检测打包内的 headless shell，找到则直接使用，不再触发安装引导
+---
 
-**验证结果：** 通过模拟 macOS .app 打包目录结构验证，Playwright 可正确从 `_MEIPASS/playwright_browser/chromium_headless_shell-1223/` 路径启动 headless 浏览器并加载网页。
+## ✨ 新功能
+
+### 用户主页抓取新增排序方式与加速模式
+
+用户主页抓取功能之前只有「每用户条数」和「同时抓取评论」两个选项，本次新增：
+
+- **排序方式切换** — 新增「热门 / 最新」排序切换按钮，**默认选中「最新」**（用户主页天然按时间倒序展示）
+- **加速模式** — 新增「加速模式（屏蔽图片/CSS，页面加载更快）」复选框，与关键词搜索保持一致
+- **后端适配** — `TwitterUrlFetchRequest` 模型新增 `sort_by` 参数（默认值 `"live"`），前端 API 调用同步传递排序和加速模式参数
 
 ---
 
@@ -21,14 +26,6 @@
 
 | 文件 | 修改内容 |
 |---|---|
-| `build_mac.spec` | 新增 `_find_headless_shell()` 函数，将 `chromium_headless_shell-*` 目录打包进 `playwright_browser/` |
-| `app.py` | 浏览器检测逻辑重构：优先检测打包内 headless shell → macOS 用户缓存兜底 → 触发安装引导 |
-| `src/api/main.py` | 运行时安装组件精简为仅 `chromium-headless-shell`；错误提示命令同步更新 |
-| `VERSION` | `1.6.2` → `1.6.3` |
-
----
-
-## 📌 前序版本回顾
-
-- **v1.6.2** — macOS 首次启动安装引导增加「跳过」按钮
-- **v1.6.1** — 修复 X/Twitter 平台 Playwright headless-shell 缺失导致的抓取报错
+| `static/index.html` | 删除多余的 `block-resources-toggle`；用户主页区域新增排序切换（默认最新）、加速模式复选框；新增 `setTwitterSortBy()` 函数；`startTwitterFetch()` 传递 `sort_by` 参数并使用新 ID |
+| `src/api/main.py` | `TwitterUrlFetchRequest` 新增 `sort_by: str = "live"` 字段 |
+| `VERSION` | `1.6.3` → `1.6.4` |
