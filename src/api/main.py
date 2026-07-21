@@ -137,74 +137,77 @@ async def save_task_results_to_file(
     save_path: str,
     task_name: str,
     stats: dict,
-    results: list[dict] | None = None
+    results: list[dict] | None = None,
+    file_format: str = "csv",
 ) -> str | None:
     """
     将任务结果保存到指定路径。
-    
+
     Args:
         save_path: 保存目录的绝对路径
         task_name: 任务名称
         stats: 任务统计信息
-        results: 详细结果数据（可选）
-    
+        results: 详细帖子数据（可选；为 None 时自动从 stats 中提取 crawled_posts）
+        file_format: 导出格式，"csv" 或 "xlsx"
+
     Returns:
         保存的文件路径，如果保存失败返回 None
     """
     import os
-    
+
     if not save_path:
         logger.warning("未指定保存路径，跳过文件保存")
         return None
-    
+
+    # 待导出的帖子明细：优先用显式传入的 results，否则用仅抓取模式的完整帖子，再退而用采样帖子
+    posts = results or stats.get("crawled_posts") or stats.get("sampled_posts") or []
+    fmt = (file_format or "csv").lower()
+    if fmt not in ("csv", "xlsx"):
+        fmt = "csv"
+
+    # 统一的导出字段顺序
+    fields = ["platform", "post_id", "author", "content", "published_at", "likes", "retweets", "replies", "tags"]
+
+    def _normalize(p: dict) -> dict:
+        """将帖子数据展平为导出行（兼容 crawled_posts 与 sampled_posts 两种结构）"""
+        metrics = p.get("metrics") or {}
+        return {
+            "platform": p.get("platform", ""),
+            "post_id": p.get("post_id", ""),
+            "author": p.get("author", ""),
+            "content": p.get("content", ""),
+            "published_at": p.get("published_at", ""),
+            "likes": p.get("likes", metrics.get("likes", 0)),
+            "retweets": p.get("retweets", metrics.get("retweets", 0)),
+            "replies": p.get("replies", metrics.get("replies", 0)),
+            "tags": p.get("tags", ""),
+        }
+
+    rows = [_normalize(p) for p in posts]
+
     try:
-        # 检查目录是否存在，不存在则创建
         if not os.path.exists(save_path):
             os.makedirs(save_path, exist_ok=True)
             logger.info(f"已创建保存目录: {save_path}")
-        
-        # 生成文件名
-        filename = generate_export_filename(task_name, "csv")
+
+        filename = generate_export_filename(task_name, fmt)
         file_path = os.path.join(save_path, filename)
-        
-        # 保存为 CSV 格式
-        with open(file_path, 'w', newline='', encoding='utf-8-sig') as f:
-            writer = csv.writer(f)
-            
-            # 写入统计信息头部
-            writer.writerow(["任务统计信息"])
-            writer.writerow(["任务名称", task_name])
-            writer.writerow(["执行时间", datetime.now().isoformat()])
-            writer.writerow(["状态", stats.get("status", "unknown")])
-            writer.writerow(["总帖子数", stats.get("total_posts", 0)])
-            writer.writerow(["总关键词数", stats.get("total_keywords", 0)])
-            writer.writerow([])  # 空行
-            
-            # 写入平台详情
-            writer.writerow(["平台详情"])
-            writer.writerow(["平台", "帖子数", "关键词数"])
-            for platform_name, platform_stats in stats.get("platforms", {}).items():
-                writer.writerow([
-                    platform_name,
-                    platform_stats.get("posts", 0),
-                    platform_stats.get("keywords", 0)
-                ])
-            
-            # 如果有详细结果，写入详细数据
-            if results:
-                writer.writerow([])  # 空行
-                writer.writerow(["详细数据"])
-                if results:
-                    # 写入表头
-                    headers = list(results[0].keys())
-                    writer.writerow(headers)
-                    # 写入数据行
-                    for row in results:
-                        writer.writerow([row.get(h, "") for h in headers])
-        
-        logger.info(f"任务结果已保存: {file_path}")
+
+        if fmt == "xlsx":
+            xlsx_bytes = _generate_xlsx_bytes(rows, fields, sheet_title=task_name or "抓取结果")
+            with open(file_path, "wb") as f:
+                f.write(xlsx_bytes)
+        else:
+            # CSV：首行为表头，直接写入帖子明细（utf-8-sig 防止 Excel 中文乱码）
+            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(fields)
+                for r in rows:
+                    writer.writerow([r.get(h, "") for h in fields])
+
+        logger.info(f"任务结果已保存: {file_path}（{len(rows)} 条，格式 {fmt}）")
         return file_path
-    
+
     except Exception as e:
         logger.error(f"保存任务结果失败: {e}")
         return None
@@ -816,15 +819,19 @@ async def _execute_scheduled_task(task_config: dict):
 
         # 保存结果到指定路径
         save_path = task_config.get("save_path", "")
+        save_format = params.get("save_format", "csv")
         if save_path:
             saved_file = await save_task_results_to_file(
                 save_path=save_path,
                 task_name=task_name,
                 stats=stats,
-                results=None  # 暂时不保存详细结果，只保存统计信息
+                results=None,  # 从 stats.crawled_posts / sampled_posts 自动提取帖子明细
+                file_format=save_format,
             )
             if saved_file:
                 logger.info(f"[定时任务 {task_id}] 结果已保存: {saved_file}")
+        else:
+            logger.info(f"[定时任务 {task_id}] 未设置保存路径，本次不落盘")
 
         await db.execute("UPDATE scheduled_tasks SET last_run_status=?, last_error='' WHERE id=?",
                          (stats.get("status", "unknown"), task_id))

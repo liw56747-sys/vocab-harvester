@@ -2225,11 +2225,19 @@ kbd {
           <div class="form-group">
             <label data-i18n="label_save_path">保存路径</label>
             <div style="display:flex;gap:4px;align-items:center">
-              <input type="text" id="schedule-save-path" placeholder="选择保存文件夹" style="flex:1;min-width:200px">
+              <input type="text" id="schedule-save-path" placeholder="选择保存文件夹" style="flex:1;min-width:200px" oninput="updateSavePathHint()">
               <button class="btn btn-secondary btn-sm" onclick="pickScheduleFolder()" style="padding:6px 10px;flex-shrink:0" title="选择文件夹">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
               </button>
             </div>
+            <div id="schedule-save-path-hint" style="display:none;font-size:12px;color:var(--warning);margin-top:6px;line-height:1.5" data-i18n="save_path_hint_none">未设置保存路径：本任务抓取的数据将不会导出到文件夹。如需保存请选择上方文件夹。</div>
+          </div>
+          <div class="form-group">
+            <label data-i18n="label_save_format">保存格式</label>
+            <select id="schedule-save-format" style="width:120px">
+              <option value="csv">CSV</option>
+              <option value="xlsx">Excel (xlsx)</option>
+            </select>
           </div>
         </div>
         <div class="form-row">
@@ -2534,6 +2542,8 @@ const I18N = {
     exec_hint_crawl: '仅抓取并保存数据，不进行黑词分析',
     badge_analyze: '含分析',
     badge_crawl_only: '仅抓取',
+    label_save_format: '保存格式',
+    save_path_hint_none: '未设置保存路径：本任务抓取的数据将不会导出到文件夹。如需保存请选择上方文件夹。',
     // Schedule
     schedule_title: '定时任务配置', schedule_desc: '设置自动化定时抓取与分析任务',
     schedule_list: '任务列表', btn_add_task: '+ 新建任务',
@@ -2769,6 +2779,8 @@ const I18N = {
     exec_hint_crawl: 'Only harvest and save data, no blackword analysis',
     badge_analyze: 'w/ analysis',
     badge_crawl_only: 'harvest only',
+    label_save_format: 'Save format',
+    save_path_hint_none: 'No save path set: harvested data will NOT be exported to a folder. Choose a folder above to save.',
     // Schedule
     schedule_title: 'Scheduled Tasks', schedule_desc: 'Configure automated scraping and analysis tasks',
     schedule_list: 'Task List', btn_add_task: '+ New Task',
@@ -3756,13 +3768,13 @@ function toggleImportOpinionFields() {
 function pickScheduleFolder() {
   if (window.pywebview && window.pywebview.api && window.pywebview.api.choose_folder) {
     window.pywebview.api.choose_folder().then(path => {
-      if (path) document.getElementById('schedule-save-path').value = path;
+      if (path) { document.getElementById('schedule-save-path').value = path; updateSavePathHint(); }
     });
   } else {
     fetch('/api/choose-folder', { method: 'POST' })
       .then(r => r.json())
       .then(data => {
-        if (data.path) document.getElementById('schedule-save-path').value = data.path;
+        if (data.path) { document.getElementById('schedule-save-path').value = data.path; updateSavePathHint(); }
       });
   }
 }
@@ -4306,6 +4318,7 @@ function showScheduleForm() {
   document.getElementById('schedule-exec-mode').value = 'analyze';
   document.getElementById('schedule-cron').value = '0 8 * * *';
   document.getElementById('schedule-save-path').value = '';
+  document.getElementById('schedule-save-format').value = 'csv';
   document.getElementById('schedule-keywords').value = '';
   document.getElementById('schedule-enabled').checked = true;
   document.getElementById('schedule-opinion-detail').value = '';
@@ -4313,6 +4326,7 @@ function showScheduleForm() {
   document.getElementById('schedule-opinion-fields').style.display = 'none';
   document.querySelectorAll('.schedule-workflow').forEach(cb => cb.checked = false);
   onScheduleExecModeChange();
+  updateSavePathHint();
   // 重置抓取配置
   _fetchConfig = null;
   const summaryEl = document.getElementById('fetch-config-summary');
@@ -4341,6 +4355,13 @@ function onScheduleExecModeChange() {
   if (hint) hint.textContent = t(isAnalyze ? 'exec_hint_analyze' : 'exec_hint_crawl');
 }
 
+// 未设置保存路径时显示提示
+function updateSavePathHint() {
+  const path = (document.getElementById('schedule-save-path')?.value || '').trim();
+  const hint = document.getElementById('schedule-save-path-hint');
+  if (hint) hint.style.display = path ? 'none' : 'block';
+}
+
 async function editScheduleTask(taskId) {
   try {
     const data = await api('/api/scheduled-tasks');
@@ -4353,6 +4374,7 @@ async function editScheduleTask(taskId) {
     document.getElementById('schedule-exec-mode').value = (task.params?.analyze === false) ? 'crawl_only' : 'analyze';
     document.getElementById('schedule-cron').value = task.cron_expression || '0 8 * * *';
     document.getElementById('schedule-save-path').value = task.save_path || '';
+    document.getElementById('schedule-save-format').value = task.params?.save_format || 'csv';
     document.getElementById('schedule-keywords').value = (task.params?.keywords || []).join('\n');
     document.getElementById('schedule-enabled').checked = task.enabled;
     document.getElementById('schedule-opinion-detail').value = task.params?.opinion_detail || '';
@@ -4362,6 +4384,7 @@ async function editScheduleTask(taskId) {
     });
     toggleScheduleOpinionFields();
     onScheduleExecModeChange();
+    updateSavePathHint();
     
     // 回填抓取配置参数
     _fetchConfig = {
@@ -4493,6 +4516,8 @@ async function saveScheduleTask() {
   // 执行目标：analyze=true 抓取+分析；false 仅抓取
   const execMode = document.getElementById('schedule-exec-mode').value;
   params.analyze = (execMode !== 'crawl_only');
+  // 保存格式（csv / xlsx）
+  params.save_format = document.getElementById('schedule-save-format').value || 'csv';
   const opinionDetail = document.getElementById('schedule-opinion-detail').value.trim();
   const opinionRules = document.getElementById('schedule-opinion-rules').value.trim();
   if (params.analyze && opinionDetail) params.opinion_detail = opinionDetail;
