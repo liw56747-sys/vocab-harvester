@@ -7,53 +7,68 @@
 <style>
 /* ═══════════════════════════════════════════════════
    Design System — Modern Minimalist
-   Primary: #4F46E5  |  Surface: #FFFFFF
-   Background: #F8FAFC  |  Text: #0F172A
+   Primary: #1F9B95  |  Accent: #A1CECD  |  Surface: #FFFFFF
+   Background: #F5F7F7  |  Text: #10302E
    ═══════════════════════════════════════════════════ */
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --primary: #4F46E5;
-  --primary-light: #EEF2FF;
-  --primary-hover: #4338CA;
-  --success: #059669;
-  --success-light: #ECFDF5;
-  --warning: #D97706;
-  --warning-light: #FFFBEB;
-  --danger: #DC2626;
-  --danger-light: #FEF2F2;
-  --text-primary: #0F172A;
-  --text-secondary: #475569;
-  --text-muted: #94A3B8;
-  --bg: #F8FAFC;
+  /* 主色系：清亮青绿（品牌色 #A1CECD 为强调，#1F9B95 为交互主色） */
+  --primary: #1F9B95;          /* 主操作色：清亮青绿，白字清晰 */
+  --primary-light: #E4F4F3;    /* 极浅青绿：选中/hover 浅底 */
+  --primary-hover: #17827D;    /* hover 更深青绿 */
+  --accent: #A1CECD;           /* 品牌强调色（用户指定主色） */
+  --accent-soft: #CBE6E5;      /* 强调色柔化版：标签/边框 */
+  --accent-deep: #0E3733;      /* 深青墨：品牌色上的文字 */
+  --success: #16A34A;
+  --success-light: #E9F9EF;
+  --warning: #E08A15;
+  --warning-light: #FEF6E7;
+  --danger: #E4483C;
+  --danger-light: #FDECEA;
+  --text-primary: #10302E;     /* 深墨绿黑：呼应主色、比纯黑柔和 */
+  --text-secondary: #566664;
+  --text-muted: #93A3A1;
+  --bg: #F5F7F7;               /* 页面底色：干净冷白，保证通透层次 */
   --surface: #FFFFFF;
-  --border: #E2E8F0;
-  --border-light: #F1F5F9;
-  --sidebar-bg: #0F172A;
-  --sidebar-hover: #1E293B;
-  --sidebar-active: rgba(79, 70, 229, 0.15);
+  --border: #E5EAE9;           /* 边框：中性冷浅灰 */
+  --border-light: #EFF3F2;
+  --sidebar-bg: #A1CECD;       /* 侧栏：品牌主色浅青绿 */
+  --sidebar-hover: rgba(255,255,255,0.45);      /* hover：白色半透高亮 */
+  --sidebar-active: #FFFFFF;                    /* 选中项：白底卡片 */
+  --sidebar-text: #0E3733;                      /* 深青墨文字 */
+  --sidebar-text-dim: rgba(14,55,52,0.62);      /* 未选中/次要文字 */
+  --sidebar-border: rgba(14,55,52,0.12);
+  --sidebar-edge: rgba(14,55,52,0.14);      /* 侧栏右侧分隔线 */
+  --sidebar-active-text: var(--primary);        /* 选中项文字：主色 */
   --radius: 12px;
   --radius-sm: 8px;
   --radius-xs: 6px;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
-  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+  --shadow-sm: 0 1px 2px rgba(16,55,52,0.05);
+  --shadow: 0 1px 3px rgba(16,55,52,0.07), 0 1px 2px rgba(16,55,52,0.04);
+  --shadow-md: 0 6px 16px -4px rgba(16,55,52,0.12), 0 2px 6px -2px rgba(16,55,52,0.06);
   --transition: 0.2s ease;
 }
 
 /* ── Dark Theme ── */
 body.dark-theme {
-  --bg: #0F172A;
-  --surface: #1E293B;
-  --text-primary: #F1F5F9;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
-  --border: #334155;
-  --border-light: #1E293B;
-  --sidebar-bg: #0B1120;
-  --sidebar-hover: #1E293B;
-  --primary-light: rgba(79, 70, 229, 0.15);
+  --bg: #0B1F1D;               /* 深青墨背景，呼应主色 */
+  --surface: #12302D;
+  --text-primary: #EAF3F2;
+  --text-secondary: #9DB2B0;
+  --text-muted: #6B807E;
+  --border: #244440;
+  --border-light: #12302D;
+  --sidebar-bg: #081815;
+  --sidebar-hover: #143938;
+  --primary-light: rgba(161, 206, 205, 0.15);
+  --sidebar-active: rgba(161, 206, 205, 0.22);
+  --sidebar-text: #EAF3F2;
+  --sidebar-text-dim: rgba(234,243,242,0.58);
+  --sidebar-border: rgba(255,255,255,0.06);
+  --sidebar-edge: rgba(0,0,0,0.35);
+  --sidebar-active-text: var(--accent);
   --success-light: rgba(5, 150, 105, 0.15);
   --warning-light: rgba(217, 119, 6, 0.15);
   --danger-light: rgba(220, 38, 38, 0.15);
@@ -63,16 +78,16 @@ body.dark-theme {
 }
 body.dark-theme .card { background: var(--surface); border-color: var(--border); }
 body.dark-theme .form-control, body.dark-theme select, body.dark-theme textarea {
-  background: #0F172A; border-color: var(--border); color: var(--text-primary);
+  background: #081815; border-color: var(--border); color: var(--text-primary);
 }
-body.dark-theme .table th { background: #0F172A; border-color: var(--border); }
+body.dark-theme .table th { background: #081815; border-color: var(--border); }
 body.dark-theme .table td { border-color: var(--border); }
 body.dark-theme .stat-card { background: var(--surface); border-color: var(--border); }
-body.dark-theme .cookie-status { background: #0F172A; }
-body.dark-theme details { background: #0F172A; }
+body.dark-theme .cookie-status { background: #081815; }
+body.dark-theme details { background: #081815; }
 body.dark-theme .export-btn { background: var(--surface); border-color: var(--border); }
 body.dark-theme .export-btn:hover { border-color: var(--primary); }
-body.dark-theme .update-banner { background: #312E81; }
+body.dark-theme .update-banner { background: #1B524F; }
 
 body {
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
@@ -89,18 +104,20 @@ body {
 .sidebar {
   width: 240px;
   background: var(--sidebar-bg);
-  color: #fff;
+  color: var(--sidebar-text);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   position: fixed;
   top: 0; left: 0; bottom: 0;
   z-index: 100;
+  border-right: 1px solid var(--sidebar-edge);
+  box-shadow: 1px 0 0 rgba(255,255,255,0.35) inset, 2px 0 12px rgba(14,55,52,0.06);
 }
 
 .sidebar-brand {
   padding: 28px 24px 24px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid var(--sidebar-border);
 }
 
 .sidebar-brand h1 {
@@ -116,7 +133,7 @@ body {
 
 .sidebar-brand .subtitle {
   font-size: 12px;
-  color: rgba(255,255,255,0.4);
+  color: var(--sidebar-text-dim);
   margin-top: 4px;
   padding-left: 30px;
 }
@@ -138,7 +155,7 @@ body {
   cursor: pointer;
   font-size: 14px;
   font-weight: 450;
-  color: rgba(255,255,255,0.6);
+  color: var(--sidebar-text-dim);
   transition: all var(--transition);
   position: relative;
   user-select: none;
@@ -148,15 +165,16 @@ body {
 
 .nav-item:hover {
   background: var(--sidebar-hover);
-  color: rgba(255,255,255,0.9);
+  color: var(--sidebar-text);
 }
 
-.nav-item:hover svg { opacity: 0.8; }
+.nav-item:hover svg { opacity: 0.85; }
 
 .nav-item.active {
   background: var(--sidebar-active);
-  color: #fff;
+  color: var(--sidebar-active-text);
   font-weight: 550;
+  box-shadow: 0 1px 3px rgba(14,55,52,0.10);
 }
 
 .nav-item.active svg { opacity: 1; }
@@ -175,24 +193,24 @@ body {
 
 .sidebar-footer {
   padding: 16px 24px;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid var(--sidebar-border);
   font-size: 11px;
-  color: rgba(255,255,255,0.25);
+  color: var(--sidebar-text-dim);
 }
 
 /* ── Update Banner ── */
 .update-banner {
   display: none;
   position: fixed;
-  top: 0; left: 240px; right: 0;
-  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+  top: 56px; left: 240px; right: 0;
+  background: linear-gradient(135deg, #3E9591 0%, #5FB8B3 100%);
   color: #fff;
   padding: 10px 24px;
   font-size: 13px;
-  z-index: 200;
+  z-index: 140;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0 2px 8px rgba(79,70,229,0.3);
+  box-shadow: 0 2px 8px rgba(62,149,145,0.3);
 }
 .update-banner.show { display: flex; }
 .update-banner a {
@@ -242,7 +260,7 @@ body {
   width: 64px; height: 64px;
   margin: 0 auto 20px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+  background: linear-gradient(135deg, #3E9591 0%, #5FB8B3 100%);
   display: flex; align-items: center; justify-content: center;
 }
 .chromium-overlay-icon svg { width: 36px; height: 36px; color: #fff; }
@@ -258,13 +276,13 @@ body {
 .chromium-overlay-progress {
   display: flex; align-items: center; justify-content: center;
   gap: 10px; font-size: 14px; font-weight: 500;
-  color: var(--primary, #4F46E5);
+  color: var(--primary, #3E9591);
   margin-bottom: 16px;
 }
 .chromium-spinner {
   width: 20px; height: 20px;
-  border: 2.5px solid var(--primary-light, #EEF2FF);
-  border-top-color: var(--primary, #4F46E5);
+  border: 2.5px solid var(--primary-light, #EAF6F5);
+  border-top-color: var(--primary, #3E9591);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -301,7 +319,7 @@ body {
 .chromium-overlay-btn {
   margin-top: 20px;
   padding: 10px 28px;
-  background: var(--primary, #4F46E5);
+  background: var(--primary, #3E9591);
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -310,7 +328,7 @@ body {
   cursor: pointer;
   transition: background 0.2s;
 }
-.chromium-overlay-btn:hover { background: var(--primary-hover, #4338CA); }
+.chromium-overlay-btn:hover { background: var(--primary-hover, #327C78); }
 
 /* ── Fetch Config Modal ── */
 .fetch-modal-overlay {
@@ -418,13 +436,43 @@ body {
   transition: all var(--transition);
 }
 .fetch-config-summary .btn-modify:hover { border-color: var(--primary); background: var(--surface); }
-.main.has-banner { padding-top: 72px; }
+.main.has-banner { padding-top: 120px; }
+
+/* ── Top Bar ── */
+.topbar {
+  position: fixed;
+  top: 0; left: 240px; right: 0;
+  height: 56px;
+  z-index: 150;
+  background: rgba(255,255,255,0.82);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40px;
+}
+body.dark-theme .topbar { background: rgba(18,48,45,0.82); }
+.topbar-breadcrumb { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); }
+.topbar-breadcrumb .crumb-sep { opacity: 0.5; }
+.topbar-breadcrumb .crumb-current { color: var(--text-primary); font-weight: 600; }
+.topbar-actions { display: flex; align-items: center; gap: 4px; }
+.topbar-btn {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; cursor: pointer;
+  color: var(--text-secondary); transition: all var(--transition);
+}
+.topbar-btn:hover { background: var(--primary-light); color: var(--primary); }
+.topbar-btn svg { width: 18px; height: 18px; }
 
 /* ── Main Content ── */
 .main {
   flex: 1;
   margin-left: 240px;
-  padding: 32px 40px;
+  padding: 80px 40px 32px;
   min-height: 100vh;
   overflow-y: auto;
 }
@@ -439,19 +487,29 @@ body {
 }
 
 .page-title {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 27px;
+  font-weight: 750;
+  letter-spacing: -0.025em;
   color: var(--text-primary);
+  line-height: 1.2;
 }
 
 .page-desc {
   font-size: 14px;
   color: var(--text-secondary);
-  margin-top: 6px;
+  margin-top: 7px;
 }
 
 /* ── Cards ── */
+.form-action-bar {
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+.form-action-bar .form-group { margin-bottom: 0; }
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -459,10 +517,10 @@ body {
   padding: 24px;
   margin-bottom: 20px;
   box-shadow: var(--shadow-sm);
-  transition: box-shadow var(--transition);
+  transition: box-shadow var(--transition), transform var(--transition), border-color var(--transition);
 }
 
-.card:hover { box-shadow: var(--shadow); }
+.card:hover { box-shadow: var(--shadow-md); border-color: var(--accent-soft); transform: translateY(-1px); }
 
 .card-title {
   font-size: 15px;
@@ -490,11 +548,42 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px 24px;
+  padding: 20px 22px;
   box-shadow: var(--shadow-sm);
   position: relative;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: box-shadow var(--transition), transform var(--transition), border-color var(--transition);
 }
+.stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+
+.stat-card-icon {
+  width: 46px; height: 46px;
+  border-radius: 13px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.stat-card-icon svg { width: 23px; height: 23px; }
+.stat-card-body { flex: 1; min-width: 0; }
+
+.stat-card.total .stat-card-icon { background: var(--primary-light); color: var(--primary); }
+.stat-card.pending .stat-card-icon { background: var(--warning-light); color: var(--warning); }
+.stat-card.approved .stat-card-icon { background: var(--success-light); color: var(--success); }
+.stat-card.rejected .stat-card-icon { background: var(--danger-light); color: var(--danger); }
+
+.stat-trend {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
+}
+.stat-trend.up { color: var(--success); }
+.stat-trend.down { color: var(--danger); }
 
 .stat-card::before {
   content: '';
@@ -503,7 +592,7 @@ body {
   height: 3px;
 }
 
-.stat-card.total::before { background: var(--primary); }
+.stat-card.total::before { background: linear-gradient(90deg, var(--primary), var(--accent)); }
 .stat-card.pending::before { background: var(--warning); }
 .stat-card.approved::before { background: var(--success); }
 .stat-card.rejected::before { background: var(--danger); }
@@ -514,11 +603,11 @@ body {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .stat-value {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -567,7 +656,7 @@ textarea {
 
 input:focus, select:focus, textarea:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px rgba(62, 149, 145, 0.12);
 }
 
 input::placeholder, textarea::placeholder {
@@ -674,23 +763,24 @@ input[type="checkbox"] {
 .btn-primary {
   background: var(--primary);
   color: #fff;
+  box-shadow: 0 1px 2px rgba(16,55,52,0.12), 0 2px 8px -2px rgba(31,155,149,0.35);
 }
-.btn-primary:hover { background: var(--primary-hover); }
-.btn-primary:active { transform: scale(0.98); }
-.btn-primary:disabled { background: #C7D2FE; cursor: not-allowed; transform: none; }
+.btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 2px 4px rgba(16,55,52,0.14), 0 6px 16px -4px rgba(31,155,149,0.45); }
+.btn-primary:active { transform: translateY(0) scale(0.99); box-shadow: 0 1px 2px rgba(16,55,52,0.12); }
+.btn-primary:disabled { background: #B8D6D4; color: #EAF4F3; cursor: not-allowed; transform: none; box-shadow: none; }
 
 .btn-success { background: var(--success); color: #fff; }
-.btn-success:hover { background: #047857; }
+.btn-success:hover { background: #128A3E; }
 
 .btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { background: #B91C1C; }
+.btn-danger:hover { background: #C9372C; }
 
 .btn-secondary {
   background: var(--surface);
   color: var(--text-secondary);
   border: 1px solid var(--border);
 }
-.btn-secondary:hover { background: var(--border-light); border-color: #CBD5E1; }
+.btn-secondary:hover { background: var(--primary-light); border-color: var(--accent); color: var(--primary); }
 
 .btn-ghost {
   background: transparent;
@@ -758,7 +848,7 @@ input[type="checkbox"] {
   background: var(--danger);
   color: #fff;
 }
-.btn-danger:hover { background: #B91C1C; }
+.btn-danger:hover { background: #C9372C; }
 .btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ── Crawl Result Warning ── */
@@ -828,7 +918,7 @@ input[type="checkbox"] {
   color: var(--text-secondary);
 }
 
-.platform-check:hover { border-color: #CBD5E1; background: var(--border-light); }
+.platform-check:hover { border-color: var(--accent); background: var(--primary-light); }
 
 .platform-check.selected {
   border-color: var(--primary);
@@ -895,7 +985,35 @@ tbody td {
 }
 
 tbody tr { transition: background var(--transition); }
-tbody tr:hover { background: #FAFBFE; }
+tbody tr:hover { background: var(--primary-light); }
+
+/* ── Empty State ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  gap: 6px;
+}
+.empty-state .empty-icon {
+  width: 72px; height: 72px;
+  border-radius: 20px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--primary-light);
+  color: var(--primary);
+  margin-bottom: 10px;
+}
+.empty-state .empty-icon svg { width: 34px; height: 34px; }
+.empty-state .empty-title {
+  font-size: 15px; font-weight: 650; color: var(--text-primary);
+}
+.empty-state .empty-desc {
+  font-size: 13px; color: var(--text-muted); line-height: 1.6; max-width: 320px;
+}
+.empty-state .btn { margin-top: 14px; }
+td .empty-state { padding: 40px 24px; }
 
 /* ── Badges ── */
 .badge {
@@ -925,6 +1043,31 @@ tbody tr:hover { background: #FAFBFE; }
 }
 
 .filters .form-group { min-width: 0; }
+
+/* ── Collapsible advanced filters ── */
+.filter-toggle-btn { position: relative; }
+.filter-toggle-btn .filter-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  margin-left: 6px; border-radius: 8px;
+  background: var(--primary); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 1;
+}
+.filter-toggle-btn .chev { transition: transform var(--transition); margin-left: 4px; }
+.filter-toggle-btn.open .chev { transform: rotate(180deg); }
+.filters-advanced {
+  display: none;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  animation: fadeIn 0.2s ease;
+}
+.filters-advanced.show { display: flex; }
 
 /* ── Batch Bar ── */
 .batch-bar {
@@ -1208,7 +1351,7 @@ tbody tr:hover { background: #FAFBFE; }
 
 .export-btn:hover {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+  box-shadow: 0 0 0 3px rgba(62, 149, 145, 0.1);
 }
 
 .export-btn .export-icon {
@@ -1221,7 +1364,7 @@ tbody tr:hover { background: #FAFBFE; }
   flex-shrink: 0;
 }
 
-.export-btn .export-icon.json { background: #EEF2FF; color: var(--primary); }
+.export-btn .export-icon.json { background: var(--primary-light); color: var(--primary); }
 .export-btn .export-icon.csv { background: #ECFDF5; color: var(--success); }
 .export-btn .export-icon.txt { background: #FEF3C7; color: var(--warning); }
 
@@ -1341,6 +1484,32 @@ kbd {
 .settings-download-row { display: flex; gap: 10px; align-items: center; }
 .settings-download-row .form-control { flex: 1; }
 .settings-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+
+/* ── Responsive fallback（窗口拉窄时防止布局崩坏） ── */
+@media (max-width: 1100px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 900px) {
+  /* 侧栏收缩为图标栏 */
+  .sidebar { width: 72px; }
+  .sidebar-brand { padding: 20px 0; text-align: center; }
+  .sidebar-brand h1 { font-size: 0; justify-content: center; gap: 0; }
+  .sidebar-brand .subtitle { display: none; }
+  .nav-item { justify-content: center; padding: 12px; }
+  .nav-item span { display: none; }
+  .sidebar-footer { display: none; }
+  .topbar { left: 72px; padding: 0 20px; }
+  .update-banner { left: 72px; }
+  .main { margin-left: 72px; padding: 76px 20px 24px; }
+}
+@media (max-width: 600px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .main { padding: 76px 14px 20px; }
+  .topbar { padding: 0 14px; }
+  .topbar-breadcrumb { font-size: 12px; }
+  .filters-advanced { flex-direction: column; align-items: stretch; }
+  .page-title { font-size: 22px; }
+}
 </style>
 <!-- v1.5.5: SheetJS 本地打包，用于上传 xlsx/xls 解析（离线可用） -->
 <script src="/static/vendor/xlsx.mini.min.js"></script>
@@ -1390,6 +1559,20 @@ kbd {
     <div class="sidebar-footer">Vocab Harvester <span id="app-version">v1.0</span></div>
   </aside>
 
+  <header class="topbar">
+    <div class="topbar-breadcrumb">
+      <span>Vocab Harvester</span>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-current" id="topbar-current" data-i18n="dashboard_title">仪表盘</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="topbar-btn" id="theme-toggle-btn" onclick="toggleThemeQuick()" title="切换主题" aria-label="toggle theme"></button>
+      <button class="topbar-btn" onclick="goToPage('settings')" title="设置" aria-label="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
   <div class="main">
 
     <div id="page-dashboard" class="page active">
@@ -1399,10 +1582,22 @@ kbd {
       </div>
 
       <div class="stats-grid" id="stats-row">
-        <div class="stat-card total"><div class="stat-label" data-i18n="stat_total">总词条</div><div class="stat-value" id="stat-total">-</div></div>
-        <div class="stat-card pending"><div class="stat-label">待审核</div><div class="stat-value" id="stat-pending">-</div></div>
-        <div class="stat-card approved"><div class="stat-label" data-i18n="stat_approved">已通过</div><div class="stat-value" id="stat-approved">-</div></div>
-        <div class="stat-card rejected"><div class="stat-label" data-i18n="stat_rejected">已拒绝</div><div class="stat-value" id="stat-rejected">-</div></div>
+        <div class="stat-card total">
+          <div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+          <div class="stat-card-body"><div class="stat-label" data-i18n="stat_total">总词条</div><div class="stat-value" id="stat-total">-</div></div>
+        </div>
+        <div class="stat-card pending">
+          <div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></div>
+          <div class="stat-card-body"><div class="stat-label">待审核</div><div class="stat-value" id="stat-pending">-</div></div>
+        </div>
+        <div class="stat-card approved">
+          <div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+          <div class="stat-card-body"><div class="stat-label" data-i18n="stat_approved">已通过</div><div class="stat-value" id="stat-approved">-</div></div>
+        </div>
+        <div class="stat-card rejected">
+          <div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
+          <div class="stat-card-body"><div class="stat-label" data-i18n="stat_rejected">已拒绝</div><div class="stat-value" id="stat-rejected">-</div></div>
+        </div>
       </div>
 
       <div class="card">
@@ -1551,7 +1746,7 @@ kbd {
           </div>
         </div>
 
-        <div class="flex items-center gap-16 mb-16">
+        <div class="flex items-center gap-16 mb-16 form-action-bar">
           <div class="form-group">
             <label data-i18n="per_user_count">每用户条数</label>
             <input type="number" id="twitter-count" value="50" min="1" max="200" style="width:90px">
@@ -1631,7 +1826,7 @@ kbd {
           </div>
         </div>
 
-        <div class="flex items-center gap-16 mb-16">
+        <div class="flex items-center gap-16 mb-16 form-action-bar">
           <div class="form-group">
             <label data-i18n="per_platform_count">每平台条数</label>
             <input type="number" id="search-count" value="50" min="1" max="200" style="width:90px">
@@ -1874,6 +2069,19 @@ kbd {
               <option value="rejected" data-i18n="rejected">已拒绝</option>
             </select>
           </div>
+          <button class="btn btn-secondary btn-sm filter-toggle-btn" id="vocab-filter-toggle" onclick="toggleVocabFilters()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span data-i18n="filter_more">更多筛选</span>
+            <span class="filter-count" id="vocab-filter-count" style="display:none">0</span>
+            <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="loadVocab()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            <span data-i18n="btn_refresh">刷新</span>
+          </button>
+        </div>
+
+        <div class="filters-advanced" id="vocab-adv-filters">
           <div class="form-group">
             <label data-i18n="action_label">动作</label>
             <select id="filter-action" onchange="loadVocab()" style="width:140px">
@@ -1922,10 +2130,6 @@ kbd {
               <option value="">全部</option>
             </select>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="loadVocab()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            <span data-i18n="btn_refresh">刷新</span>
-          </button>
         </div>
 
         <div class="batch-bar" id="batch-bar" style="display:none">
@@ -2003,6 +2207,16 @@ kbd {
           </div>
         </div>
         <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <label data-i18n="exec_target">执行目标</label>
+            <select id="schedule-exec-mode" style="width:280px" onchange="onScheduleExecModeChange()">
+              <option value="analyze" data-i18n="exec_analyze">抓取数据 + 分析黑词并提取</option>
+              <option value="crawl_only" data-i18n="exec_crawl_only">仅抓取数据</option>
+            </select>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px" id="schedule-exec-hint" data-i18n="exec_hint_analyze">抓取后自动进行黑词分析并写入词库（需配置模型 API）</div>
+          </div>
+        </div>
+        <div class="form-row">
           <div class="form-group">
             <label data-i18n="label_cron">Cron表达式</label>
             <input type="text" id="schedule-cron" placeholder="0 8 * * *" style="width:180px">
@@ -2041,7 +2255,7 @@ kbd {
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group">
+          <div class="form-group" id="schedule-analyze-section">
             <label data-i18n="label_workflows">分析工作流</label>
             <div style="display:flex;gap:12px;flex-wrap:wrap">
               <label><input type="checkbox" class="schedule-workflow" value="yq" onchange="toggleScheduleOpinionFields()"> <span data-i18n="wf_yq">舆情</span></label>
@@ -2304,6 +2518,22 @@ const I18N = {
     btn_prev: '上一页', btn_next: '下一页',
     page_info_tpl: '第 {x} / {y} 页（共 {z} 条）',
     no_data: '暂无数据',
+    empty_vocab_title: '词库还是空的',
+    empty_vocab_desc: '还没有符合条件的词条。去「数据抓取」采集第一批数据，或调整上方筛选条件。',
+    empty_recent_title: '还没有词条',
+    empty_recent_desc: '词库为空。前往「数据抓取」开始采集你的第一批数据。',
+    empty_tasks_title: '还没有定时任务',
+    empty_tasks_desc: '创建一个定时任务，让系统按计划自动抓取与分析。',
+    empty_goto_fetch: '去数据抓取',
+    filter_more: '更多筛选',
+    filter_reset: '重置',
+    exec_target: '执行目标',
+    exec_analyze: '抓取数据 + 分析黑词并提取',
+    exec_crawl_only: '仅抓取数据',
+    exec_hint_analyze: '抓取后自动进行黑词分析并写入词库（需配置模型 API）',
+    exec_hint_crawl: '仅抓取并保存数据，不进行黑词分析',
+    badge_analyze: '含分析',
+    badge_crawl_only: '仅抓取',
     // Schedule
     schedule_title: '定时任务配置', schedule_desc: '设置自动化定时抓取与分析任务',
     schedule_list: '任务列表', btn_add_task: '+ 新建任务',
@@ -2523,6 +2753,22 @@ const I18N = {
     btn_prev: 'Previous', btn_next: 'Next',
     page_info_tpl: 'Page {x} / {y} ({z} total)',
     no_data: 'No data',
+    empty_vocab_title: 'Your vocabulary is empty',
+    empty_vocab_desc: 'No entries match yet. Head to Data Harvesting to collect your first batch, or adjust the filters above.',
+    empty_recent_title: 'No entries yet',
+    empty_recent_desc: 'The vocabulary is empty. Go to Data Harvesting to collect your first batch.',
+    empty_tasks_title: 'No scheduled tasks',
+    empty_tasks_desc: 'Create a scheduled task to let the system harvest and analyze automatically.',
+    empty_goto_fetch: 'Go to Harvesting',
+    filter_more: 'More filters',
+    filter_reset: 'Reset',
+    exec_target: 'Execution target',
+    exec_analyze: 'Harvest + extract blackwords',
+    exec_crawl_only: 'Harvest only',
+    exec_hint_analyze: 'After harvesting, auto-analyze blackwords and write to vocabulary (requires model API)',
+    exec_hint_crawl: 'Only harvest and save data, no blackword analysis',
+    badge_analyze: 'w/ analysis',
+    badge_crawl_only: 'harvest only',
     // Schedule
     schedule_title: 'Scheduled Tasks', schedule_desc: 'Configure automated scraping and analysis tasks',
     schedule_list: 'Task List', btn_add_task: '+ New Task',
@@ -2660,6 +2906,38 @@ function esc(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// ── 数字滚动动画 ──
+function countUp(el, target) {
+  if (!el) return;
+  target = Number(target) || 0;
+  const start = Number(String(el.textContent).replace(/[^\d.-]/g, '')) || 0;
+  if (start === target) { el.textContent = target; return; }
+  const dur = 600, t0 = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+    el.textContent = Math.round(start + (target - start) * eased);
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = target;
+  };
+  requestAnimationFrame(step);
+}
+
+// ── 空状态插画（表格内，占整行） ──
+function emptyStateRow(colspan, kind, titleKey, descKey, actionKey, actionOnclick) {
+  const icons = {
+    box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>'
+  };
+  const svg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (icons[kind] || icons.box) + '</svg>';
+  const btn = actionKey ? '<button class="btn btn-primary btn-sm" onclick="' + actionOnclick + '">' + t(actionKey) + '</button>' : '';
+  return '<tr><td colspan="' + colspan + '" style="padding:0"><div class="empty-state">' +
+    '<div class="empty-icon">' + svg + '</div>' +
+    '<div class="empty-title">' + t(titleKey) + '</div>' +
+    '<div class="empty-desc">' + t(descKey) + '</div>' + btn +
+    '</div></td></tr>';
 }
 
 function toggleSecret(inputId, btnEl) {
@@ -2947,6 +3225,7 @@ function showUpdateBanner(info, force) {
   if (progressBar) progressBar.style.display = 'none';
   if (progressText) progressText.style.display = 'none';
   if (banner) banner.classList.add('show');
+  document.querySelector('.main')?.classList.add('has-banner');
 }
 
 function dismissUpdate() {
@@ -2955,6 +3234,7 @@ function dismissUpdate() {
     localStorage.setItem('update_dismissed_version', versionEl.textContent.replace('v', ''));
   }
   document.getElementById('update-banner').classList.remove('show');
+  document.querySelector('.main')?.classList.remove('has-banner');
 }
 
 // 一键更新功能
@@ -3214,6 +3494,8 @@ function applyI18n() {
   // Update sidebar subtitle
   const sub = document.querySelector('.subtitle');
   if (sub) sub.textContent = t('subtitle');
+  // Re-sync breadcrumb with the current active page title (override the i18n default)
+  if (typeof updateBreadcrumb === 'function') updateBreadcrumb();
 }
 
 function switchLanguage(lang) {
@@ -3234,6 +3516,34 @@ function loadTheme() {
   const radio = document.querySelector(`input[name="theme"][value="${saved}"]`);
   if(radio) radio.checked = true;
   switchTheme(saved);
+  updateThemeIcon();
+}
+
+// ── 顶栏主题快捷切换 ──
+const _THEME_ICONS = {
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>'
+};
+function updateThemeIcon() {
+  const btn = document.getElementById('theme-toggle-btn');
+  if (!btn) return;
+  const isDark = document.body.classList.contains('dark-theme');
+  // 深色模式显示太阳（点击回浅色），浅色显示月亮
+  btn.innerHTML = isDark ? _THEME_ICONS.sun : _THEME_ICONS.moon;
+}
+function toggleThemeQuick() {
+  const next = document.body.classList.contains('dark-theme') ? 'light' : 'dark';
+  switchTheme(next);
+  const radio = document.querySelector(`input[name="theme"][value="${next}"]`);
+  if (radio) radio.checked = true;
+  updateThemeIcon();
+}
+
+// ── 顶栏面包屑：同步当前页面标题 ──
+function updateBreadcrumb() {
+  const active = document.querySelector('.page.active .page-title');
+  const crumb = document.getElementById('topbar-current');
+  if (active && crumb) crumb.textContent = active.textContent;
 }
 
 // ── Download Folder ──
@@ -3295,6 +3605,7 @@ function showPage(name, el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   el.classList.add('active');
+  updateBreadcrumb();
   if (name === 'dashboard') loadStats();
   if (name === 'vocabulary') { loadVocab(); loadVocabFilterOptions(); }
   if (name === 'schedule') loadScheduleTasks();
@@ -3315,6 +3626,40 @@ function showPage(name, el) {
     });
   }
   if (name === 'settings') loadSettings();
+}
+
+// 从空状态按钮等处跳转页面（自动定位导航项）
+function goToPage(name) {
+  const nav = document.querySelector(`.nav-item[onclick*="showPage('${name}'"]`);
+  if (nav) showPage(name, nav);
+}
+
+// ── 词库管理：高级筛选抽屉 ──
+function toggleVocabFilters() {
+  const adv = document.getElementById('vocab-adv-filters');
+  const btn = document.getElementById('vocab-filter-toggle');
+  if (!adv || !btn) return;
+  const show = !adv.classList.contains('show');
+  adv.classList.toggle('show', show);
+  btn.classList.toggle('open', show);
+}
+
+// 统计高级筛选中已选的数量，更新徒章
+function updateVocabFilterCount() {
+  const ids = ['filter-action','filter-workflow','filter-category','filter-candidate-type','filter-score','filter-task-name'];
+  let n = 0;
+  ids.forEach(id => { const el = document.getElementById(id); if (el && el.value) n++; });
+  const badge = document.getElementById('vocab-filter-count');
+  if (badge) {
+    badge.textContent = n;
+    badge.style.display = n > 0 ? 'inline-flex' : 'none';
+  }
+  // 有激活筛选时自动展开抽屉，避免隐藏生效的条件
+if (n > 0) {
+    const adv = document.getElementById('vocab-adv-filters');
+    const btn = document.getElementById('vocab-filter-toggle');
+    if (adv && !adv.classList.contains('show')) { adv.classList.add('show'); if (btn) btn.classList.add('open'); }
+  }
 }
 
 // ── Toast ──
@@ -3348,14 +3693,17 @@ async function api(url, options = {}) {
 async function loadStats() {
   try {
     const stats = await api('/api/stats');
-    document.getElementById('stat-total').textContent = stats.total;
-    document.getElementById('stat-pending').textContent = stats.pending;
-    document.getElementById('stat-approved').textContent = stats.approved;
-    document.getElementById('stat-rejected').textContent = stats.rejected;
+    countUp(document.getElementById('stat-total'), stats.total);
+    countUp(document.getElementById('stat-pending'), stats.pending);
+    countUp(document.getElementById('stat-approved'), stats.approved);
+    countUp(document.getElementById('stat-rejected'), stats.rejected);
 
     const data = await api('/api/vocabulary?limit=10');
     const tbody = document.querySelector('#recent-table tbody');
     tbody.innerHTML = '';
+    if (!data.items || data.items.length === 0) {
+      tbody.innerHTML = emptyStateRow(6, 'box', 'empty_recent_title', 'empty_recent_desc', 'empty_goto_fetch', "goToPage('twitter')");
+    }
     data.items.forEach(item => {
       tbody.innerHTML += `<tr>
         <td><strong>${esc(item.word)}</strong></td>
@@ -3629,6 +3977,7 @@ function debounceLoad() {
 }
 
 async function loadVocab() {
+  updateVocabFilterCount();
   const search = document.getElementById('filter-search').value.trim();
   const status = document.getElementById('filter-status').value;
   const action = document.getElementById('filter-action').value;
@@ -3659,7 +4008,7 @@ async function loadVocab() {
     tbody.innerHTML = '';
 
     if (data.items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text-muted);padding:48px">' + t('no_data') + '</td></tr>';
+      tbody.innerHTML = emptyStateRow(13, 'box', 'empty_vocab_title', 'empty_vocab_desc', 'empty_goto_fetch', "goToPage('twitter')");
     }
 
     data.items.forEach((item, i) => {
@@ -3917,18 +4266,22 @@ async function loadScheduleTasks() {
     const tbody = document.querySelector('#schedule-table tbody');
     tbody.innerHTML = '';
     if (!data.tasks || data.tasks.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:48px">' + t('no_tasks') + '</td></tr>';
+      tbody.innerHTML = emptyStateRow(9, 'clock', 'empty_tasks_title', 'empty_tasks_desc', null, null);
       return;
     }
     data.tasks.forEach(task => {
       const params = task.params || {};
       const keywords = (params.keywords || []).join(', ');
+      const isAnalyze = params.analyze !== false;
+      const modeBadge = isAnalyze
+        ? `<span class="badge badge-approved" style="margin-left:6px">${t('badge_analyze')}</span>`
+        : `<span class="badge badge-observe" style="margin-left:6px">${t('badge_crawl_only')}</span>`;
       const statusBadge = task.last_run_status === 'success' ? 'badge-approved' :
                           task.last_run_status === 'failed' ? 'badge-rejected' :
                           task.last_run_status === 'running' ? 'badge-observe' : '';
       tbody.innerHTML += `<tr>
         <td><strong>${esc(task.name || '-')}</strong></td>
-        <td>${task.task_type === 'search' ? t('type_search') : t('type_url')}</td>
+        <td>${task.task_type === 'search' ? t('type_search') : t('type_url')}${modeBadge}</td>
         <td><code>${esc(task.cron_expression)}</code></td>
         <td title="${esc(keywords)}">${esc(keywords.slice(0, 30))}${keywords.length > 30 ? '...' : ''}</td>
         <td><code>${esc(task.save_path || '-')}</code></td>
@@ -3950,6 +4303,7 @@ function showScheduleForm() {
   document.getElementById('schedule-task-id').value = '';
   document.getElementById('schedule-name').value = '';
   document.getElementById('schedule-type').value = 'search';
+  document.getElementById('schedule-exec-mode').value = 'analyze';
   document.getElementById('schedule-cron').value = '0 8 * * *';
   document.getElementById('schedule-save-path').value = '';
   document.getElementById('schedule-keywords').value = '';
@@ -3958,6 +4312,7 @@ function showScheduleForm() {
   document.getElementById('schedule-opinion-rules').value = '';
   document.getElementById('schedule-opinion-fields').style.display = 'none';
   document.querySelectorAll('.schedule-workflow').forEach(cb => cb.checked = false);
+  onScheduleExecModeChange();
   // 重置抓取配置
   _fetchConfig = null;
   const summaryEl = document.getElementById('fetch-config-summary');
@@ -3966,6 +4321,24 @@ function showScheduleForm() {
 
 function hideScheduleForm() {
   document.getElementById('schedule-form-card').style.display = 'none';
+}
+
+// 执行目标切换：仅抓取时隐藏分析工作流与舆情字段，并更新提示
+function onScheduleExecModeChange() {
+  const mode = document.getElementById('schedule-exec-mode').value;
+  const isAnalyze = mode !== 'crawl_only';
+  const section = document.getElementById('schedule-analyze-section');
+  if (section) section.style.display = isAnalyze ? '' : 'none';
+  if (!isAnalyze) {
+    // 仅抓取：清空工作流选择并隐藏舆情面板
+    document.querySelectorAll('.schedule-workflow').forEach(cb => cb.checked = false);
+    const opinion = document.getElementById('schedule-opinion-fields');
+    if (opinion) opinion.style.display = 'none';
+  } else {
+    toggleScheduleOpinionFields();
+  }
+  const hint = document.getElementById('schedule-exec-hint');
+  if (hint) hint.textContent = t(isAnalyze ? 'exec_hint_analyze' : 'exec_hint_crawl');
 }
 
 async function editScheduleTask(taskId) {
@@ -3977,6 +4350,7 @@ async function editScheduleTask(taskId) {
     document.getElementById('schedule-task-id').value = task.id;
     document.getElementById('schedule-name').value = task.name || '';
     document.getElementById('schedule-type').value = task.task_type || 'search';
+    document.getElementById('schedule-exec-mode').value = (task.params?.analyze === false) ? 'crawl_only' : 'analyze';
     document.getElementById('schedule-cron').value = task.cron_expression || '0 8 * * *';
     document.getElementById('schedule-save-path').value = task.save_path || '';
     document.getElementById('schedule-keywords').value = (task.params?.keywords || []).join('\n');
@@ -3987,6 +4361,7 @@ async function editScheduleTask(taskId) {
       cb.checked = (task.workflows || []).includes(cb.value);
     });
     toggleScheduleOpinionFields();
+    onScheduleExecModeChange();
     
     // 回填抓取配置参数
     _fetchConfig = {
@@ -4115,10 +4490,13 @@ async function saveScheduleTask() {
   const blockResources = _fetchConfig.block_resources || false;
   
   const params = { keywords, platforms, count, sort, include_replies: includeReplies, block_resources: blockResources };
+  // 执行目标：analyze=true 抓取+分析；false 仅抓取
+  const execMode = document.getElementById('schedule-exec-mode').value;
+  params.analyze = (execMode !== 'crawl_only');
   const opinionDetail = document.getElementById('schedule-opinion-detail').value.trim();
   const opinionRules = document.getElementById('schedule-opinion-rules').value.trim();
-  if (opinionDetail) params.opinion_detail = opinionDetail;
-  if (opinionRules) params.opinion_rules = opinionRules;
+  if (params.analyze && opinionDetail) params.opinion_detail = opinionDetail;
+  if (params.analyze && opinionRules) params.opinion_rules = opinionRules;
   const body = {
     name, task_type: taskType, cron_expression: cron,
     enabled, params, save_path: savePath, workflows,

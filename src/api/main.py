@@ -762,6 +762,8 @@ async def _execute_scheduled_task(task_config: dict):
         include_replies = params.get("include_replies", False)
         opinion_detail = params.get("opinion_detail", "")
         opinion_rules = params.get("opinion_rules", "")
+        # 执行目标：True=抓取+分析黑词并提取（默认）；False=仅抓取数据
+        analyze = params.get("analyze", True)
 
         # 构建平台枚举
         platform_map = {"twitter": Platform.TWITTER, "reddit": Platform.REDDIT}
@@ -789,8 +791,12 @@ async def _execute_scheduled_task(task_config: dict):
         model_backup_api_key = model_cfg.get("model_backup_api_key", "")
         model_backup_name = model_cfg.get("model_backup_name", "")
 
-        # 根据是否配置了模型 API 选择流水线类型
-        if model_api_key and model_base_url:
+        # 根据执行目标选择流水线类型
+        if not analyze:
+            # 仅抓取数据：无需模型 API，使用默认流水线（不会调用 LLM）
+            pipeline = Pipeline.from_config()
+            logger.info(f"[定时任务 {task_id}] 执行目标：仅抓取数据（不分析黑词）")
+        elif model_api_key and model_base_url:
             pipeline = Pipeline.from_config_with_model(
                 base_url=model_base_url, api_key=model_api_key, model=model_name,
                 backup_model=model_backup_name,
@@ -805,6 +811,7 @@ async def _execute_scheduled_task(task_config: dict):
         stats = await pipeline.run(
             query, task_name=task_name,
             opinion_detail=opinion_detail, opinion_rules=opinion_rules,
+            analyze=analyze,
         )
 
         # 保存结果到指定路径

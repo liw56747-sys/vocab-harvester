@@ -86,15 +86,19 @@ class Pipeline:
         task_name: str = "",
         opinion_detail: str = "",
         opinion_rules: str = "",
+        analyze: bool = True,
     ) -> dict[str, Any]:
         """
-        执行一次完整的数据处理流程。
+        执行一次数据处理流程。
 
-        流程：采集 → 投递工作流 → 接收结果 → 写入词库
+        流程：采集 →（可选）投递工作流 → 接收结果 → 写入词库
 
         Args:
             query: 采集查询参数
             task_name: 关联的定时任务名称
+            analyze: 是否进行黑词分析并写入词库。
+                     True（默认）= 抓取 + 分析黑词并提取；
+                     False = 仅抓取数据（跳过工作流分析与词库写入）
 
         Returns:
             本次运行统计信息
@@ -165,6 +169,16 @@ class Pipeline:
             if not all_posts:
                 stats["status"] = "empty"
                 logger.warning("未采集到任何数据")
+                await self._update_log(db, log_id, stats)
+                return stats
+
+            # 仅抓取模式：跳过工作流分析与词库写入，直接返回采集结果
+            if not analyze:
+                stats["total_keywords"] = 0
+                stats["analyze"] = False
+                stats["status"] = "success"
+                logger.info(f"仅抓取模式：已采集 {len(all_posts)} 条数据，跳过黑词分析与词库写入")
+                stats["finished_at"] = datetime.now().isoformat()
                 await self._update_log(db, log_id, stats)
                 return stats
 

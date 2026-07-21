@@ -53,3 +53,23 @@ async def test_mock_pipeline_platform_breakdown(mock_pipeline, crawl_query):
         assert "name" in p
         assert "post_count" in p
         assert p["name"] in ("twitter", "reddit")
+
+
+async def test_mock_pipeline_crawl_only_skips_analysis(mock_pipeline, crawl_query):
+    """analyze=False 仅抓取数据，跳过黑词分析与词库写入"""
+    stats = await mock_pipeline.run(crawl_query, analyze=False)
+
+    assert stats["status"] == "success"
+    assert stats["total_posts"] > 0        # 仍然完成采集
+    assert stats["analyze"] is False
+    assert stats["total_keywords"] == 0    # 未进行分析
+    assert "ingested_count" not in stats   # 未写入词库
+
+
+async def test_mock_pipeline_analyze_default_true(mock_pipeline, crawl_query):
+    """默认 analyze=True，保持原有“抓取+分析”行为"""
+    stats = await mock_pipeline.run(crawl_query)
+
+    assert stats["status"] == "success"
+    # 完整流程会进行词库写入
+    assert "ingested_count" in stats
