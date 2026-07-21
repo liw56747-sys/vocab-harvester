@@ -4941,7 +4941,7 @@ async function startMultiSearch() {
   try {
     const initRes = await api('/api/search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('block-resources-toggle').checked })
+      body: JSON.stringify({ keyword, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('user-block-resources').checked })
     });
     
     const taskId = initRes.task_id;
@@ -5114,7 +5114,7 @@ async function startBatchSearch(keywords) {
   try {
     const initRes = await api('/api/batch-search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('block-resources-toggle').checked, stagger_platforms: true, worker_concurrency: 3, max_retries: 2, batch_size: 0, batch_cooldown: 30, twitter_count_cap_with_replies: 20 })
+      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('user-block-resources').checked, stagger_platforms: true, worker_concurrency: 3, max_retries: 2, batch_size: 0, batch_cooldown: 30, twitter_count_cap_with_replies: 20 })
     });
     
     const taskId = initRes.task_id;
@@ -5253,7 +5253,7 @@ function renderResultPosts() {
         <span>${t('comments')} ${(post.metrics?.comments||0).toLocaleString()}</span>`;
     }
     let mediaHtml = '';
-    const _isAccel2 = document.getElementById('block-resources-toggle')?.checked;
+    const _isAccel2 = document.getElementById('user-block-resources')?.checked;
     if (post.has_media && !_isAccel2) {
       const badge = post.media_type === 'image' ? '&#128247; ' + t('images')
                   : post.media_type === 'video' ? '&#127909; ' + t('videos')

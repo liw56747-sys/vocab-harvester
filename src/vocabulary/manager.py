@@ -26,7 +26,7 @@ class VocabManager:
 
     async def ingest(self, result: WorkflowResult, source_posts: list[ParsedPost] | None = None, task_name: str = "") -> int:
         """
-        将工作流提取结果写入词库。
+        将工作流提取结果写入词库（黑词持久化到 vocab.db）。
 
         Args:
             result: 工作流处理结果
@@ -36,6 +36,10 @@ class VocabManager:
         Returns:
             新增/更新的词条数
         """
+        # v1.5.7 自动去重：先对来源帖子去重（post_id 精确去重 + 内容相似度去重）
+        if source_posts:
+            source_posts = self._dedup_posts(source_posts)
+
         # 构建 post_id -> content 映射（用于获取上下文）
         post_map: dict[str, str] = {}
         if source_posts:
@@ -207,32 +211,17 @@ class VocabManager:
         union = set1 | set2
         return len(intersection) / len(union) if union else 0.0
 
-    async def ingest(self, result: WorkflowResult, source_posts: list[ParsedPost] | None = None, task_name: str = "") -> int:
-        """将工作流提取结果写入词库。"""
-        # ... (现有代码)
-
-        # 1. 优先使用post_id去重
-        if source_posts:
-            seen_ids = set()
-            new_posts = []
-            for post in source_posts:
-                if post.post_id:
-                    if post.post_id in seen_ids:
-                        continue  # 已存在，跳过
-                    seen_ids.add(post.post_id)
-                    new_posts.append(post)
-                else:
-                    new_posts.append(post)  # 无post_id，后续用内容去重
-
-            source_posts = new_posts
-
-        # 2. 内容相似度去重（针对无post_id的情况）
-        if source_posts:
-            unique_posts = self._deduplicate_by_content(source_posts)
-            source_posts = unique_posts
-
-        # 返回去重后需要写入的新帖子数量
-        return len(source_posts)
+    def _dedup_posts(self, posts: list[ParsedPost]) -> list[ParsedPost]:
+        """对来源帖子去重：先按 post_id 精确去重，再按内容相似度去重。"""
+        seen_ids: set[str] = set()
+        deduped: list[ParsedPost] = []
+        for post in posts:
+            if post.post_id:
+                if post.post_id in seen_ids:
+                    continue
+                seen_ids.add(post.post_id)
+            deduped.append(post)
+        return self._deduplicate_by_content(deduped)
 
     def _deduplicate_by_content(self, posts: list[ParsedPost]) -> list[ParsedPost]:
         """通过内容相似度去重（Jaccard相似度）"""

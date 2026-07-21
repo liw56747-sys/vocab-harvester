@@ -1,32 +1,34 @@
-# v1.6.6 更新日志
+# v1.6.7 更新日志
 
-## 🐛 问题修复 + ✨ 功能增强
+## 🐛 重要问题修复
 
-### 定时任务「仅抓取数据」现在会完整导出抓取结果，并可选择保存格式
+### 1. 修复黑词提取结果未写入数据库的严重 Bug（自 v1.5.7 起的回归）
 
-上一版新增的「仅抓取数据」模式存在缺陷：**抓取到的数据实际上不会被完整保存到文件夹**——旧的保存逻辑只写入统计摘要（且因把平台列表当字典遍历的 Bug 会保存失败）。本次彻底修复并增强：
+**问题：** `VocabManager` 中存在**两个同名的 `ingest` 方法**——第二个（v1.5.7「自动去重功能」提交时引入）覆盖了真正写库的第一个。由于 Python 中后定义的方法会覆盖前者，导致实际生效的 `ingest` **只做去重、从不调用 `storage.upsert()`**。
 
-- **完整导出抓取数据** — 「仅抓取数据」任务执行后，会将**本次抓取到的全部帖子**（平台、作者、内容、发布时间、点赞/转发/回复、标签）导出到指定文件夹，不再只是统计摘要，也不受此前 50 条采样上限限制
-- **可选择保存格式** — 任务配置新增「保存格式」下拉框，支持 **CSV** 与 **Excel (xlsx)** 两种格式
-- **未设置保存路径时给出提示** — 当任务未选择保存文件夹时，表单会显示醒目提示：「本任务抓取的数据将不会导出到文件夹」，避免用户误以为已保存
-- **修复保存函数 Bug** — 原 `save_task_results_to_file` 将 `platforms`（列表）当字典调用 `.items()`，会抛异常导致保存失败；本次重写为按统一字段直接写入帖子明细
+**后果：** 「抓取数据 + 分析黑词并提取」模式（定时任务、数据导入）提取出的黑词**根本没有写入数据库**，因此：
+- 词库管理页面看不到定时任务分析出的黑词
+- 重启软件后这些词也不存在（因为压根没落库）
 
-### 兼容性
+**修复：**
+- 删除重复的 `ingest` 方法，恢复真正写库的实现（黑词持久化到 `vocab.db`）
+- 将自动去重逻辑（post_id 精确去重 + 内容相似度去重）抽取为独立的 `_dedup_posts()` 方法，并在 `ingest` 开头调用——**去重与黑词入库两个能力现在同时正常工作**
+- 验证：分析模式定时任务执行后，词库总数从 0 增至 20，确认黑词已持久化；`vocab.db` 为持久化文件，重启后保留
 
-- 「抓取数据 + 分析黑词并提取」模式同样受益：若设置了保存路径，也会导出本次抓取的帖子样本
-- 保存格式存储于任务的 `params.save_format` 字段，**无需数据库迁移**；历史任务缺省时默认为 CSV
+### 2. 修复关键词搜索报错：`null is not an object ('block-resources-toggle')`
+
+**问题：** v1.6.4 删除了重复的「加速模式」复选框 `block-resources-toggle`，但搜索相关 JS 仍引用该已删除元素，导致点击「开始搜索」时抛出 `null is not an object (evaluating 'document.getElementById('block-resources-toggle').checked')`，搜索直接失败。
+
+**修复：** 将单条搜索、批量搜索、结果渲染中 3 处对 `block-resources-toggle` 的引用统一改为现存的关键词搜索加速模式复选框 `user-block-resources`。
 
 ---
 
 ## 🔧 技术实现
 
-- `Pipeline.run(analyze=False)` 在采集完成后向 `stats` 附加 `crawled_posts`（完整帖子列表）
-- `save_task_results_to_file()` 重写：
-  - 新增 `file_format` 参数（csv / xlsx），xlsx 复用现有 `_generate_xlsx_bytes()`
-  - 优先写入 `crawled_posts`，回退 `sampled_posts`，字段自动展平
-  - 修复 platforms 遍历 Bug
-- 定时任务执行逻辑读取 `params.save_format` 并传入；未设置保存路径时记录日志说明
-- 新增 4 个单元测试覆盖 CSV/xlsx 导出、采样回退、空路径场景（全套 57 passed）
+- `src/vocabulary/manager.py`：移除覆盖性重复 `ingest`；新增 `_dedup_posts()`；`ingest` 开头执行去重后再逐条 `storage.upsert()` 写库
+- `static/index.html`：3 处 `getElementById('block-resources-toggle')` → `getElementById('user-block-resources')`
+- `tests/test_dedup.py`：去重测试改为直接校验 `_dedup_posts()`（原测试针对已废弃的旧 ingest 行为）
+- 全套测试 **57 passed**
 
 ---
 
@@ -34,15 +36,14 @@
 
 | 文件 | 修改内容 |
 |---|---|
-| `src/orchestrator/pipeline.py` | 仅抓取模式向 stats 附加完整 `crawled_posts` |
-| `src/api/main.py` | 重写 `save_task_results_to_file`（格式选择 + 写入帖子明细 + 修复 platforms Bug）；执行逻辑传递 `save_format`、未设路径时提示 |
-| `static/index.html` | 定时任务表单新增「保存格式」下拉框与「未设置保存路径」提示；保存/编辑/重置逻辑同步 |
-| `tests/test_schedule_save.py` | 新增：仅抓取落盘 CSV/xlsx、采样回退、空路径 4 项测试 |
-| `VERSION` | `1.6.5` → `1.6.6` |
+| `src/vocabulary/manager.py` | 删除重复 `ingest`（黑词未写库根因）；新增 `_dedup_posts()`；恢复黑词持久化 |
+| `static/index.html` | 修复搜索报错：`block-resources-toggle` → `user-block-resources`（3 处） |
+| `tests/test_dedup.py` | 去重测试改为校验 `_dedup_posts()` |
+| `VERSION` | `1.6.6` → `1.6.7` |
 
 ---
 
 ## 📌 前序版本回顾
 
+- **v1.6.6** — 定时任务「仅抓取数据」完整导出抓取结果 + 可选 CSV/xlsx 格式
 - **v1.6.5** — 定时任务新增「执行目标」（仅抓取 / 抓取+分析）+ 界面深度美工改造
-- **v1.6.4** — 修复加速模式复选框重复；用户主页抓取新增排序与加速模式
