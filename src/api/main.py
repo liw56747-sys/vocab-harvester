@@ -12,7 +12,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -165,8 +165,8 @@ async def save_task_results_to_file(
     if fmt not in ("csv", "xlsx"):
         fmt = "csv"
 
-    # 统一的导出字段顺序
-    fields = ["platform", "post_id", "author", "content", "published_at", "likes", "retweets", "replies", "tags"]
+    # 统一的导出字段顺序（末列标记是否为历史重复帖子）
+    fields = ["platform", "post_id", "author", "content", "published_at", "likes", "retweets", "replies", "tags", "duplicate"]
 
     def _normalize(p: dict) -> dict:
         """将帖子数据展平为导出行（兼容 crawled_posts 与 sampled_posts 两种结构）"""
@@ -181,6 +181,7 @@ async def save_task_results_to_file(
             "retweets": p.get("retweets", metrics.get("retweets", 0)),
             "replies": p.get("replies", metrics.get("replies", 0)),
             "tags": p.get("tags", ""),
+            "duplicate": "是" if p.get("duplicate") else "否",
         }
 
     rows = [_normalize(p) for p in posts]
@@ -720,12 +721,12 @@ async def _load_scheduled_jobs():
     try:
         from src.common.database import get_db
         db = await get_db()
-        cursor = await db.execute("SELECT id, name, cron_expression, params, save_path, workflows FROM scheduled_tasks WHERE enabled=1")
+        cursor = await db.execute("SELECT id, name, cron_expression, params, save_path, workflows, task_type FROM scheduled_tasks WHERE enabled=1")
         rows = await cursor.fetchall()
         for row in rows:
-            task_id, task_name, cron_expr, params_json, save_path, workflows_json = row
+            task_id, task_name, cron_expr, params_json, save_path, workflows_json, task_type = row
             task_config = {
-                "id": task_id, "name": task_name,
+                "id": task_id, "name": task_name, "task_type": task_type or "search",
                 "params": json.loads(params_json) if params_json else {},
                 "save_path": save_path, "workflows": json.loads(workflows_json) if workflows_json else [],
             }
@@ -767,6 +768,19 @@ async def _execute_scheduled_task(task_config: dict):
         opinion_rules = params.get("opinion_rules", "")
         # 执行目标：True=抓取+分析黑词并提取（默认）；False=仅抓取数据
         analyze = params.get("analyze", True)
+
+        # 历史去重上下文（仅定时任务）：按维度+时间窗跳过重复帖子
+        # 关键词维度保留30天，用户主页维度保留90天；不同关键词/主页相互独立
+        _task_type = task_config.get("task_type", "search")
+        if _task_type == "url_fetch":
+            _urls = params.get("urls", []) or keywords
+            _dimension = "user:" + "|".join(sorted(str(u).strip() for u in _urls if str(u).strip()))
+            _retention_days = 90
+        else:
+            _dimension = "kw:" + "|".join(sorted(k.strip() for k in keywords if k.strip()))
+            _retention_days = 30
+        _since_iso = (datetime.now() - timedelta(days=_retention_days)).isoformat()
+        dedup_ctx = {"dimension": _dimension, "since_iso": _since_iso, "task_id": task_id}
 
         # 构建平台枚举
         platform_map = {"twitter": Platform.TWITTER, "reddit": Platform.REDDIT}
@@ -814,7 +828,7 @@ async def _execute_scheduled_task(task_config: dict):
         stats = await pipeline.run(
             query, task_name=task_name,
             opinion_detail=opinion_detail, opinion_rules=opinion_rules,
-            analyze=analyze,
+            analyze=analyze, dedup_ctx=dedup_ctx,
         )
 
         # 保存结果到指定路径

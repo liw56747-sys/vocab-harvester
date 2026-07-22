@@ -87,6 +87,7 @@ class Pipeline:
         opinion_detail: str = "",
         opinion_rules: str = "",
         analyze: bool = True,
+        dedup_ctx: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         执行一次数据处理流程。
@@ -99,6 +100,9 @@ class Pipeline:
             analyze: 是否进行黑词分析并写入词库。
                      True（默认）= 抓取 + 分析黑词并提取；
                      False = 仅抓取数据（跳过工作流分析与词库写入）
+            dedup_ctx: 历史去重上下文（仅定时任务传入）。为 None 时不做跨次去重。
+                     形如 {"dimension": str, "since_iso": str, "task_id": str}；
+                     命中历史的帖子会被标记为重复（不参与黑词分析）。
 
         Returns:
             本次运行统计信息
@@ -152,7 +156,23 @@ class Pipeline:
 
             stats["total_posts"] = len(all_posts)
 
-            # 添加采集到的帖子摘要（最多50条）
+            # 历史去重（仅定时任务传入 dedup_ctx）：标记已在时间窗内抓取过的重复帖子
+            duplicate_ids: set[str] = set()
+            if dedup_ctx and all_posts:
+                _pids = [p.post_id for p in all_posts if p.post_id]
+                duplicate_ids = await self.vocab_manager.storage.filter_seen_posts(
+                    _pids, dedup_ctx["dimension"], dedup_ctx["since_iso"]
+                )
+                _new_ids = [pid for pid in _pids if pid not in duplicate_ids]
+                await self.vocab_manager.storage.record_seen_posts(
+                    _new_ids, dedup_ctx["dimension"], dedup_ctx.get("task_id", ""),
+                    datetime.now().isoformat(),
+                )
+                stats["duplicate_posts"] = len(duplicate_ids)
+                stats["new_posts"] = len(all_posts) - len(duplicate_ids)
+                logger.info(f"历史去重：共 {len(all_posts)} 条，重复 {len(duplicate_ids)} 条，新增 {stats['new_posts']} 条")
+
+            # 添加采集到的帖子摘要（最多50条，带重复标记）
             stats["sampled_posts"] = [
                 {
                     "platform": p.platform,
@@ -162,6 +182,7 @@ class Pipeline:
                     "published_at": p.published_at.isoformat() if p.published_at else "",
                     "metrics": p.metrics,
                     "tags": p.tags,
+                    "duplicate": p.post_id in duplicate_ids,
                 }
                 for p in all_posts[:50]
             ]
@@ -177,7 +198,7 @@ class Pipeline:
                 stats["total_keywords"] = 0
                 stats["analyze"] = False
                 stats["status"] = "success"
-                # 附上完整的帖子数据（用于落盘导出，不受 50 条采样限制）
+                # 附上完整的帖子数据（用于落盘导出，不受 50 条采样限制；带重复标记）
                 stats["crawled_posts"] = [
                     {
                         "platform": p.platform,
@@ -189,6 +210,7 @@ class Pipeline:
                         "retweets": (p.metrics or {}).get("retweets", 0),
                         "replies": (p.metrics or {}).get("replies", 0),
                         "tags": ",".join(p.tags) if p.tags else "",
+                        "duplicate": p.post_id in duplicate_ids,
                     }
                     for p in all_posts
                 ]
@@ -197,10 +219,16 @@ class Pipeline:
                 await self._update_log(db, log_id, stats)
                 return stats
 
+            # 历史去重后，仅对新帖子做黑词分析（重复帖子已标记，不重复分析）
+            posts_for_analysis = (
+                [p for p in all_posts if p.post_id not in duplicate_ids]
+                if dedup_ctx else all_posts
+            )
+
             # ── 阶段二：投递给工作流 ──
-            logger.info(f"投递 {len(all_posts)} 条数据到工作流...")
+            logger.info(f"投递 {len(posts_for_analysis)} 条数据到工作流...")
             result = await self.adapter.submit_and_wait(
-                all_posts,
+                posts_for_analysis,
                 opinion_detail=opinion_detail,
                 opinion_rules=opinion_rules,
             )
@@ -210,7 +238,7 @@ class Pipeline:
 
             # ── 阶段三：写入词库 ──
             logger.info("写入词库...")
-            ingested = await self.vocab_manager.ingest(result, source_posts=all_posts, task_name=task_name)
+            ingested = await self.vocab_manager.ingest(result, source_posts=posts_for_analysis, task_name=task_name)
             stats["ingested_count"] = ingested
             logger.info(f"词库更新 {ingested} 条记录")
 

@@ -50,7 +50,7 @@ async def test_save_crawl_only_csv(tmp_path):
         rows = list(csv.reader(f))
     # 首行表头 + 2 条数据
     assert rows[0] == ["platform", "post_id", "author", "content", "published_at",
-                       "likes", "retweets", "replies", "tags"]
+                       "likes", "retweets", "replies", "tags", "duplicate"]
     assert len(rows) == 3
     assert rows[1][0] == "twitter" and rows[1][2] == "alice"
     assert rows[2][0] == "reddit" and rows[2][3] == "foo bar"

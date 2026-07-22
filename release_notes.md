@@ -1,34 +1,32 @@
-# v1.6.7 更新日志
+# v1.6.8 更新日志
 
-## 🐛 重要问题修复
+## ✨ 新功能：定时任务历史去重（跨次去重 + 重复标记）
 
-### 1. 修复黑词提取结果未写入数据库的严重 Bug（自 v1.5.7 起的回归）
+此前定时任务只有"单次任务内"的去重（抓取滚动按 ID 去重、写库前去重），**跨多次执行之间不会去重**——同一条帖子若在不同日期被重复抓到，会被当作新数据。内存/设计里描述的"维度化历史去重"此前是未接线的死代码。本次真正实现，且**仅作用于定时任务**：
 
-**问题：** `VocabManager` 中存在**两个同名的 `ingest` 方法**——第二个（v1.5.7「自动去重功能」提交时引入）覆盖了真正写库的第一个。由于 Python 中后定义的方法会覆盖前者，导致实际生效的 `ingest` **只做去重、从不调用 `storage.upsert()`**。
+### 去重策略（维度隔离 + 时间窗）
+- **关键词维度**：同一组关键词的定时任务，最近 **30 天**内抓取过的帖子（按 `post_id`）视为重复
+- **用户主页维度**：同一主页的定时任务，最近 **90 天**内抓取过的帖子视为重复
+- **维度隔离**：不同关键词 / 不同主页相互独立，允许各自重复抓取相同内容
+- **自动过期**：超出时间窗的历史记录自动清理，允许重新抓取
 
-**后果：** 「抓取数据 + 分析黑词并提取」模式（定时任务、数据导入）提取出的黑词**根本没有写入数据库**，因此：
-- 词库管理页面看不到定时任务分析出的黑词
-- 重启软件后这些词也不存在（因为压根没落库）
+### 重复内容会被「标记」而非丢弃
+- 导出的 CSV / xlsx 文件**新增「duplicate」列**（是 / 否），完整保留所有抓取到的帖子，仅标注哪些是历史重复，方便你人工识别与筛选
+- 「抓取数据 + 分析黑词并提取」模式下，**重复帖子会被标记但不再参与黑词分析**（避免对旧内容重复提取），只有新帖子进入分析与词库
 
-**修复：**
-- 删除重复的 `ingest` 方法，恢复真正写库的实现（黑词持久化到 `vocab.db`）
-- 将自动去重逻辑（post_id 精确去重 + 内容相似度去重）抽取为独立的 `_dedup_posts()` 方法，并在 `ingest` 开头调用——**去重与黑词入库两个能力现在同时正常工作**
-- 验证：分析模式定时任务执行后，词库总数从 0 增至 20，确认黑词已持久化；`vocab.db` 为持久化文件，重启后保留
-
-### 2. 修复关键词搜索报错：`null is not an object ('block-resources-toggle')`
-
-**问题：** v1.6.4 删除了重复的「加速模式」复选框 `block-resources-toggle`，但搜索相关 JS 仍引用该已删除元素，导致点击「开始搜索」时抛出 `null is not an object (evaluating 'document.getElementById('block-resources-toggle').checked')`，搜索直接失败。
-
-**修复：** 将单条搜索、批量搜索、结果渲染中 3 处对 `block-resources-toggle` 的引用统一改为现存的关键词搜索加速模式复选框 `user-block-resources`。
+### 仅作用于定时任务
+手动的关键词搜索 / 用户主页抓取（页面上的「开始搜索」「抓取推文」）**不受影响**，不做跨次历史去重。
 
 ---
 
 ## 🔧 技术实现
 
-- `src/vocabulary/manager.py`：移除覆盖性重复 `ingest`；新增 `_dedup_posts()`；`ingest` 开头执行去重后再逐条 `storage.upsert()` 写库
-- `static/index.html`：3 处 `getElementById('block-resources-toggle')` → `getElementById('user-block-resources')`
-- `tests/test_dedup.py`：去重测试改为直接校验 `_dedup_posts()`（原测试针对已废弃的旧 ingest 行为）
-- 全套测试 **57 passed**
+- 新增数据表 `scheduled_seen_posts(post_id, dimension, task_id, first_seen_at)`，记录定时任务已抓取的帖子指纹
+- `VocabStorage` 新增 `filter_seen_posts()`（查重 + 清理过期）与 `record_seen_posts()`（记录新帖子）
+- `Pipeline.run()` 新增 `dedup_ctx` 参数（仅定时任务传入）：采集后按维度+时间窗标记重复帖子，仅新帖子进入分析
+- `_execute_scheduled_task` 按 `task_type` 构造去重维度（关键词 30 天 / 用户主页 90 天）
+- 导出函数 `save_task_results_to_file` 新增 `duplicate` 列（是/否）
+- 新增 4 个单元测试覆盖：首次无重复、二次识别重复、维度隔离、过期清理（全套 **61 passed**）
 
 ---
 
@@ -36,14 +34,17 @@
 
 | 文件 | 修改内容 |
 |---|---|
-| `src/vocabulary/manager.py` | 删除重复 `ingest`（黑词未写库根因）；新增 `_dedup_posts()`；恢复黑词持久化 |
-| `static/index.html` | 修复搜索报错：`block-resources-toggle` → `user-block-resources`（3 处） |
-| `tests/test_dedup.py` | 去重测试改为校验 `_dedup_posts()` |
-| `VERSION` | `1.6.6` → `1.6.7` |
+| `src/common/database.py` | 新增 `scheduled_seen_posts` 表及索引 |
+| `src/vocabulary/storage.py` | 新增 `filter_seen_posts()` / `record_seen_posts()` |
+| `src/orchestrator/pipeline.py` | `run()` 新增 `dedup_ctx`：历史去重 + 重复标记 + 仅分析新帖 |
+| `src/api/main.py` | 定时任务构造去重维度并传入；导出新增 `duplicate` 列；调度加载补充 `task_type` |
+| `tests/test_schedule_dedup.py` | 新增历史去重 4 项测试 |
+| `tests/test_schedule_save.py` | 导出表头断言同步新增 `duplicate` 列 |
+| `VERSION` | `1.6.7` → `1.6.8` |
 
 ---
 
 ## 📌 前序版本回顾
 
-- **v1.6.6** — 定时任务「仅抓取数据」完整导出抓取结果 + 可选 CSV/xlsx 格式
-- **v1.6.5** — 定时任务新增「执行目标」（仅抓取 / 抓取+分析）+ 界面深度美工改造
+- **v1.6.7** — 修复黑词未写库（重复 ingest 覆盖）+ 搜索空引用报错
+- **v1.6.6** — 定时任务「仅抓取数据」完整导出 + 可选 CSV/xlsx 格式

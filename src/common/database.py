@@ -77,12 +77,24 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 );
 """
 
+# 定时任务历史去重：记录已抓取过的帖子（按维度 + 时间窗跳过重复）
+CREATE_SEEN_POSTS_TABLE = """
+CREATE TABLE IF NOT EXISTS scheduled_seen_posts (
+    post_id       TEXT NOT NULL,
+    dimension     TEXT NOT NULL,   -- 去重维度："kw:<关键词>" 或 "user:<主页>"
+    task_id       TEXT DEFAULT '',
+    first_seen_at TEXT NOT NULL,
+    PRIMARY KEY (post_id, dimension)
+);
+"""
+
 CREATE_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_vocab_word ON vocabulary(word);
 CREATE INDEX IF NOT EXISTS idx_vocab_status ON vocabulary(status);
 CREATE INDEX IF NOT EXISTS idx_vocab_category ON vocabulary(category);
 CREATE INDEX IF NOT EXISTS idx_vocab_candidate_type ON vocabulary(candidate_type);
 CREATE INDEX IF NOT EXISTS idx_vocab_action ON vocabulary(action);
+CREATE INDEX IF NOT EXISTS idx_seen_dimension ON scheduled_seen_posts(dimension, first_seen_at);
 """
 
 # 已有数据库迁移：为旧表添加新列
@@ -122,6 +134,7 @@ async def init_db(db_path: str | Path | None = None) -> aiosqlite.Connection:
     await _connection.execute(CREATE_CRAWL_LOG_TABLE)
     await _connection.execute(CREATE_MODEL_CONFIG_TABLE)
     await _connection.execute(CREATE_SCHEDULED_TASKS_TABLE)
+    await _connection.execute(CREATE_SEEN_POSTS_TABLE)
     await _connection.executescript(CREATE_INDEX)
 
     # 迁移：为旧表添加新列（忽略已存在的列）

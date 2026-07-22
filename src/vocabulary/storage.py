@@ -193,6 +193,46 @@ class VocabStorage:
         row = await cursor.fetchone()
         return row["cnt"]
 
+    # ── 定时任务历史去重 ──────────────────────────────
+
+    async def filter_seen_posts(self, post_ids: list[str], dimension: str, since_iso: str) -> set[str]:
+        """返回在指定维度、时间窗内已出现过的 post_id 集合（并顺带清理过期记录）。"""
+        if not post_ids:
+            return set()
+        db = await get_db()
+        # 清理超出保留窗口的过期记录（超期后允许重新抓取）
+        await db.execute(
+            "DELETE FROM scheduled_seen_posts WHERE dimension = ? AND first_seen_at < ?",
+            (dimension, since_iso),
+        )
+        await db.commit()
+        seen: set[str] = set()
+        chunk_size = 400
+        for i in range(0, len(post_ids), chunk_size):
+            chunk = [p for p in post_ids[i:i + chunk_size] if p]
+            if not chunk:
+                continue
+            placeholders = ",".join(["?"] * len(chunk))
+            cursor = await db.execute(
+                f"SELECT post_id FROM scheduled_seen_posts WHERE dimension = ? AND post_id IN ({placeholders})",
+                [dimension, *chunk],
+            )
+            for row in await cursor.fetchall():
+                seen.add(row["post_id"])
+        return seen
+
+    async def record_seen_posts(self, post_ids: list[str], dimension: str, task_id: str, seen_at: str) -> None:
+        """记录本次新出现的帖子（已存在则忽略）。"""
+        rows = [(pid, dimension, task_id, seen_at) for pid in post_ids if pid]
+        if not rows:
+            return
+        db = await get_db()
+        await db.executemany(
+            "INSERT OR IGNORE INTO scheduled_seen_posts (post_id, dimension, task_id, first_seen_at) VALUES (?, ?, ?, ?)",
+            rows,
+        )
+        await db.commit()
+
     async def update_status(self, word: str, status: VocabStatus, category: str = "") -> bool:
         """更新词条审核状态"""
         db = await get_db()
