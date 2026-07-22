@@ -1,32 +1,40 @@
-# v1.6.8 更新日志
+# v1.6.9 更新日志
 
-## ✨ 新功能：定时任务历史去重（跨次去重 + 重复标记）
+## ✨ 重大功能：定时任务接入真实抓取
 
-此前定时任务只有"单次任务内"的去重（抓取滚动按 ID 去重、写库前去重），**跨多次执行之间不会去重**——同一条帖子若在不同日期被重复抓到，会被当作新数据。内存/设计里描述的"维度化历史去重"此前是未接线的死代码。本次真正实现，且**仅作用于定时任务**：
+此前定时任务的抓取流水线使用的是 MockCrawler（生成模拟数据），无法真正抓取 X/Twitter、Reddit 的真实内容。原因在于真实抓取需要登录 Cookie，而 Cookie 此前只存在前端 localStorage，后台定时任务（无前端）拿不到。本次彻底打通：
 
-### 去重策略（维度隔离 + 时间窗）
-- **关键词维度**：同一组关键词的定时任务，最近 **30 天**内抓取过的帖子（按 `post_id`）视为重复
-- **用户主页维度**：同一主页的定时任务，最近 **90 天**内抓取过的帖子视为重复
-- **维度隔离**：不同关键词 / 不同主页相互独立，允许各自重复抓取相同内容
-- **自动过期**：超出时间窗的历史记录自动清理，允许重新抓取
+### 1. Cookie 服务端持久化
+- 新增 `platform_cookies` 表（存于 `~/.vocab-harvester/vocab.db`，随更新/重启保留）
+- 在「数据抓取」页保存 Twitter/Reddit Cookie 时，**自动同步一份到服务端**，供后台定时任务使用
+- 新增接口 `POST /api/platform-cookies`（保存）、`GET /api/platform-cookies`（状态查询）
 
-### 重复内容会被「标记」而非丢弃
-- 导出的 CSV / xlsx 文件**新增「duplicate」列**（是 / 否），完整保留所有抓取到的帖子，仅标注哪些是历史重复，方便你人工识别与筛选
-- 「抓取数据 + 分析黑词并提取」模式下，**重复帖子会被标记但不再参与黑词分析**（避免对旧内容重复提取），只有新帖子进入分析与词库
+### 2. 定时任务真实抓取
+- 定时任务执行时从数据库读取各平台 Cookie，调用与手动搜索**相同的真实抓取器**（`TwitterCookieFetcher` / `RedditCookieFetcher`）
+- 真实抓取在**独立后台线程 + 新事件循环**中执行（Playwright 与主事件循环隔离，复用手动搜索的成熟模式）
+- 抓取结果统一映射为 `ParsedPost`，交给 Pipeline 复用「历史去重 → 黑词分析 → 落盘导出」全流程
 
-### 仅作用于定时任务
-手动的关键词搜索 / 用户主页抓取（页面上的「开始搜索」「抓取推文」）**不受影响**，不做跨次历史去重。
+### 3. 缺 Cookie 优雅降级
+- 某平台未配置 Cookie 时**跳过该平台并记录**（写入任务状态 / 日志），其他有 Cookie 的平台正常抓取
+- 若所选平台全部缺 Cookie，任务标记为 `failed` 并给出清晰提示：「请在数据抓取页配置并保存 Cookie」
+
+---
+
+## ⚠️ 使用说明
+
+- 定时任务真实抓取的前提：**先在「数据抓取」页配置并保存对应平台的 Cookie**（保存动作会自动同步到服务端）
+- 与手动搜索共用同一套 Cookie，配置一次即可
+- 真实抓取仍受平台反爬、Cookie 有效期、代理可用性影响，与手动搜索一致
 
 ---
 
 ## 🔧 技术实现
 
-- 新增数据表 `scheduled_seen_posts(post_id, dimension, task_id, first_seen_at)`，记录定时任务已抓取的帖子指纹
-- `VocabStorage` 新增 `filter_seen_posts()`（查重 + 清理过期）与 `record_seen_posts()`（记录新帖子）
-- `Pipeline.run()` 新增 `dedup_ctx` 参数（仅定时任务传入）：采集后按维度+时间窗标记重复帖子，仅新帖子进入分析
-- `_execute_scheduled_task` 按 `task_type` 构造去重维度（关键词 30 天 / 用户主页 90 天）
-- 导出函数 `save_task_results_to_file` 新增 `duplicate` 列（是/否）
-- 新增 4 个单元测试覆盖：首次无重复、二次识别重复、维度隔离、过期清理（全套 **61 passed**）
+- `src/common/database.py`：新增 `platform_cookies` 表
+- `src/api/main.py`：Cookie 存取助手 + `/api/platform-cookies` 接口；`_execute_scheduled_task` 重写为「读库 Cookie → 后台线程真实抓取 → PrefetchedCrawler 交给 Pipeline」；缺 Cookie 跳过/失败处理
+- `src/crawlers/real_crawler.py`（新增）：`crawl_twitter` / `crawl_reddit` 真实抓取封装、dict→ParsedPost 映射、`PrefetchedCrawler`
+- `static/index.html`：保存 Cookie 时调用 `syncCookieToServer()` 同步到服务端
+- 新增 6 个单元测试（映射 / 时间解析 / 预取爬虫 / Cookie 持久化 / upsert），全套 **67 passed**
 
 ---
 
@@ -34,17 +42,16 @@
 
 | 文件 | 修改内容 |
 |---|---|
-| `src/common/database.py` | 新增 `scheduled_seen_posts` 表及索引 |
-| `src/vocabulary/storage.py` | 新增 `filter_seen_posts()` / `record_seen_posts()` |
-| `src/orchestrator/pipeline.py` | `run()` 新增 `dedup_ctx`：历史去重 + 重复标记 + 仅分析新帖 |
-| `src/api/main.py` | 定时任务构造去重维度并传入；导出新增 `duplicate` 列；调度加载补充 `task_type` |
-| `tests/test_schedule_dedup.py` | 新增历史去重 4 项测试 |
-| `tests/test_schedule_save.py` | 导出表头断言同步新增 `duplicate` 列 |
-| `VERSION` | `1.6.7` → `1.6.8` |
+| `src/common/database.py` | 新增 `platform_cookies` 表 |
+| `src/api/main.py` | Cookie 接口与存取助手；定时任务改为真实抓取（后台线程）；缺 Cookie 跳过/失败 |
+| `src/crawlers/real_crawler.py` | 新增：真实抓取封装 + ParsedPost 映射 + PrefetchedCrawler |
+| `static/index.html` | 保存 Cookie 时同步到服务端 |
+| `tests/test_real_crawl.py` | 新增：映射 + Cookie 持久化 6 项测试 |
+| `VERSION` | `1.6.8` → `1.6.9` |
 
 ---
 
 ## 📌 前序版本回顾
 
-- **v1.6.7** — 修复黑词未写库（重复 ingest 覆盖）+ 搜索空引用报错
-- **v1.6.6** — 定时任务「仅抓取数据」完整导出 + 可选 CSV/xlsx 格式
+- **v1.6.8** — 定时任务历史去重（跨次去重 + 重复标记）
+- **v1.6.7** — 修复黑词未写库 + 搜索空引用报错

@@ -4593,6 +4593,19 @@ function saveCookie(platform) {
   // Auto-collapse after saving
   document.getElementById('twitter-login-card').classList.add('collapsed');
   toast(t('cookie_saved'), 'success');
+  // 同步写入服务端，供定时任务（后台无前端）真实抓取使用
+  syncCookieToServer(platform);
+}
+
+// 将平台 Cookie 同步到服务端（持久化，供定时任务使用）
+async function syncCookieToServer(platform) {
+  try {
+    const pc = getPlatformCookies(platform);
+    await api('/api/platform-cookies', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pc),
+    });
+  } catch (e) { console.warn('Cookie 同步服务端失败（不影响手动搜索）:', e); }
 }
 
 function lockCookiePanel(platform) {

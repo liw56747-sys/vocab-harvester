@@ -88,6 +88,15 @@ CREATE TABLE IF NOT EXISTS scheduled_seen_posts (
 );
 """
 
+# 平台 Cookie 服务端持久化：供后台定时任务（无前端）真实抓取使用
+CREATE_PLATFORM_COOKIES_TABLE = """
+CREATE TABLE IF NOT EXISTS platform_cookies (
+    platform    TEXT PRIMARY KEY,   -- twitter | reddit
+    cookie_json TEXT NOT NULL DEFAULT '{}',
+    updated_at  TEXT NOT NULL
+);
+"""
+
 CREATE_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_vocab_word ON vocabulary(word);
 CREATE INDEX IF NOT EXISTS idx_vocab_status ON vocabulary(status);
@@ -135,6 +144,7 @@ async def init_db(db_path: str | Path | None = None) -> aiosqlite.Connection:
     await _connection.execute(CREATE_MODEL_CONFIG_TABLE)
     await _connection.execute(CREATE_SCHEDULED_TASKS_TABLE)
     await _connection.execute(CREATE_SEEN_POSTS_TABLE)
+    await _connection.execute(CREATE_PLATFORM_COOKIES_TABLE)
     await _connection.executescript(CREATE_INDEX)
 
     # 迁移：为旧表添加新列（忽略已存在的列）

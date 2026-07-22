@@ -745,6 +745,44 @@ async def _load_scheduled_jobs():
     except Exception as e:
         logger.error(f"加载定时任务失败: {e}")
 
+
+def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, block_resources) -> dict:
+    """在独立线程的新事件循环中执行真实抓取（Playwright 与主循环隔离）。
+
+    Args:
+        targets: [(platform, cookies, proxy), ...]
+    Returns:
+        {platform: [ParsedPost, ...]}
+    """
+    import asyncio as _aio
+    from src.crawlers.real_crawler import crawl_twitter, crawl_reddit
+
+    loop = _aio.new_event_loop()
+    _aio.set_event_loop(loop)
+    out: dict = {}
+
+    async def _run():
+        for platform, cookies, proxy in targets:
+            try:
+                if platform == "twitter":
+                    out["twitter"] = await crawl_twitter(
+                        keywords, count, cookies, proxy, sort_by, include_replies, block_resources
+                    )
+                elif platform == "reddit":
+                    out["reddit"] = await crawl_reddit(
+                        keywords, count, cookies, proxy, sort_by, include_replies
+                    )
+            except Exception as e:
+                logger.error(f"[定时任务真实抓取] {platform} 失败: {e}")
+                out[platform] = []
+
+    try:
+        loop.run_until_complete(_run())
+    finally:
+        loop.close()
+    return out
+
+
 async def _execute_scheduled_task(task_config: dict):
     """执行单个定时任务：抓取 → 保存 → 分析"""
     task_id = task_config.get("id", "unknown")
@@ -784,18 +822,54 @@ async def _execute_scheduled_task(task_config: dict):
 
         # 构建平台枚举
         platform_map = {"twitter": Platform.TWITTER, "reddit": Platform.REDDIT}
-        platform_list = [platform_map[p] for p in platform_names if p in platform_map]
-        if not platform_list:
-            platform_list = [Platform.TWITTER]
+        block_resources = params.get("block_resources", False)
+
+        # 从服务端读取各平台 Cookie（后台无前端，Cookie 必须持久化在库中）
+        cookie_map = await _get_platform_cookies_db()
+        targets = []            # (platform, cookies, proxy)
+        skipped_platforms = []  # 缺 Cookie 的平台：跳过并记录
+        for p in platform_names:
+            pc = cookie_map.get(p, {})
+            proxy = pc.get("proxy") or None
+            if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
+                proxy = f"http://{proxy}"
+            if p == "twitter":
+                if pc.get("ct0") and pc.get("auth_token"):
+                    targets.append(("twitter", {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}, proxy))
+                else:
+                    skipped_platforms.append({"platform": "twitter", "reason": "Cookie 未配置"})
+            elif p == "reddit":
+                if pc.get("reddit_session"):
+                    rc = {k: pc[k] for k in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout") if pc.get(k)}
+                    if pc.get("extra_cookies"):
+                        rc.update(pc["extra_cookies"])
+                    targets.append(("reddit", rc, proxy))
+                else:
+                    skipped_platforms.append({"platform": "reddit", "reason": "Cookie 未配置"})
+
+        if skipped_platforms:
+            logger.warning(f"[定时任务 {task_id}] 跳过未配置 Cookie 的平台: {skipped_platforms}")
+
+        if not targets:
+            msg = "所选平台均未配置 Cookie，请在『数据抓取』页配置并保存 Cookie（保存时会自动同步到服务端）"
+            await db.execute("UPDATE scheduled_tasks SET last_run_status='failed', last_error=? WHERE id=?", (msg, task_id))
+            await db.commit()
+            logger.warning(f"[定时任务 {task_id}] {msg}")
+            return
 
         query = CrawlQuery(
-            platforms=platform_list,
+            platforms=[platform_map[p] for (p, _, _) in targets],
             keywords=keywords or ["技术", "科技"],
             max_results=count,
             extra={"sort": sort_by, "include_replies": include_replies},
         )
+        logger.info(f"[定时任务 {task_id}] 开始真实抓取，平台: {[p for (p, _, _) in targets]}, 关键词: {query.keywords}")
 
-        logger.info(f"[定时任务 {task_id}] 开始抓取，关键词: {query.keywords}")
+        # 真实抓取放到后台线程 + 新事件循环执行（Playwright 与主事件循环隔离）
+        _loop = asyncio.get_event_loop()
+        posts_by_platform = await _loop.run_in_executor(
+            None, _scheduled_real_crawl, targets, (keywords or []), count, sort_by, include_replies, block_resources
+        )
 
         # 加载模型配置：从数据库读取用户配置的 LLM API，用于自动分析
         cursor_cfg = await db.execute("SELECT config_key, config_value FROM model_config")
@@ -808,28 +882,33 @@ async def _execute_scheduled_task(task_config: dict):
         model_backup_api_key = model_cfg.get("model_backup_api_key", "")
         model_backup_name = model_cfg.get("model_backup_name", "")
 
-        # 根据执行目标选择流水线类型
-        if not analyze:
-            # 仅抓取数据：无需模型 API，使用默认流水线（不会调用 LLM）
-            pipeline = Pipeline.from_config()
-            logger.info(f"[定时任务 {task_id}] 执行目标：仅抓取数据（不分析黑词）")
-        elif model_api_key and model_base_url:
+        # 用预取结果构建 Pipeline（复用去重/分析/落盘逻辑）
+        from src.crawlers.real_crawler import PrefetchedCrawler
+        _crawlers = {p: PrefetchedCrawler(p, posts_by_platform.get(p, [])) for (p, _, _) in targets}
+
+        if analyze and model_api_key and model_base_url:
             pipeline = Pipeline.from_config_with_model(
                 base_url=model_base_url, api_key=model_api_key, model=model_name,
                 backup_model=model_backup_name,
                 backup_base_url=model_backup_base_url or model_base_url,
                 backup_api_key=model_backup_api_key or model_api_key,
             )
+            pipeline.crawlers = _crawlers
             logger.info(f"[定时任务 {task_id}] 使用用户配置的模型 API 进行分析")
         else:
-            pipeline = Pipeline.from_config()
-            logger.info(f"[定时任务 {task_id}] 使用默认配置（无模型 API，可能使用 Mock 适配器）")
+            from src.adapter.mock import MockAdapter
+            pipeline = Pipeline(crawlers=_crawlers, adapter=MockAdapter())
+            if analyze:
+                logger.info(f"[定时任务 {task_id}] 未配置模型 API，分析将使用 Mock 适配器")
+            else:
+                logger.info(f"[定时任务 {task_id}] 执行目标：仅抓取数据（不分析黑词）")
 
         stats = await pipeline.run(
             query, task_name=task_name,
             opinion_detail=opinion_detail, opinion_rules=opinion_rules,
             analyze=analyze, dedup_ctx=dedup_ctx,
         )
+        stats["skipped_platforms"] = skipped_platforms
 
         # 保存结果到指定路径
         save_path = task_config.get("save_path", "")
@@ -2090,6 +2169,77 @@ async def twitter_login(req: TwitterLoginRequest):
 async def twitter_login_status():
     from src.crawlers.twitter_url import TwitterCookieFetcher
     return {"logged_in": TwitterCookieFetcher().is_logged_in()}
+
+
+# ── 平台 Cookie 服务端持久化（供后台定时任务真实抓取使用）──
+
+async def _save_platform_cookies_db(platform: str, cookies: dict) -> None:
+    """将指定平台的 Cookie 以 JSON 存入 platform_cookies 表（upsert）。"""
+    from src.common.database import get_db
+    db = await get_db()
+    now = datetime.now().isoformat()
+    await db.execute(
+        "INSERT INTO platform_cookies (platform, cookie_json, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(platform) DO UPDATE SET cookie_json=excluded.cookie_json, updated_at=excluded.updated_at",
+        (platform, json.dumps(cookies, ensure_ascii=False), now),
+    )
+    await db.commit()
+
+
+async def _get_platform_cookies_db() -> dict:
+    """读取所有平台的持久化 Cookie，返回 {platform: {…}}。"""
+    from src.common.database import get_db
+    db = await get_db()
+    cursor = await db.execute("SELECT platform, cookie_json FROM platform_cookies")
+    rows = await cursor.fetchall()
+    out: dict[str, dict] = {}
+    for row in rows:
+        try:
+            out[row[0]] = json.loads(row[1]) if row[1] else {}
+        except (json.JSONDecodeError, TypeError):
+            out[row[0]] = {}
+    return out
+
+
+class PlatformCookieSaveRequest(BaseModel):
+    platform: str                       # twitter | reddit
+    ct0: str | None = None
+    auth_token: str | None = None
+    reddit_session: str | None = None
+    reddit_token: str | None = None
+    edgebucket: str | None = None
+    redesign_optout: str | None = None
+    extra_cookies: dict[str, str] | None = None
+    proxy: str | None = None
+
+
+@app.post("/api/platform-cookies")
+async def save_platform_cookies(req: PlatformCookieSaveRequest):
+    """保存平台 Cookie 到服务端（供定时任务使用）。"""
+    platform = (req.platform or "").strip().lower()
+    if platform not in ("twitter", "reddit"):
+        raise HTTPException(400, "platform 必须为 twitter 或 reddit")
+    cookies = {
+        "ct0": req.ct0 or "", "auth_token": req.auth_token or "",
+        "reddit_session": req.reddit_session or "", "reddit_token": req.reddit_token or "",
+        "edgebucket": req.edgebucket or "", "redesign_optout": req.redesign_optout or "",
+        "extra_cookies": req.extra_cookies or {}, "proxy": req.proxy or "",
+    }
+    await _save_platform_cookies_db(platform, cookies)
+    return {"status": "ok", "message": f"{platform} Cookie 已保存到服务端"}
+
+
+@app.get("/api/platform-cookies")
+async def get_platform_cookies():
+    """返回已持久化的平台 Cookie 配置状态。"""
+    data = await _get_platform_cookies_db()
+    status = {
+        p: {"configured": bool(
+            (c.get("ct0") and c.get("auth_token")) if p == "twitter" else c.get("reddit_session")
+        ), "proxy": c.get("proxy", "")}
+        for p, c in data.items()
+    }
+    return {"status": "ok", "cookies": data, "summary": status}
 
 
 @app.post("/api/choose-folder")
