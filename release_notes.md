@@ -1,40 +1,48 @@
-# v1.6.9 更新日志
+# v1.7.0 更新日志
 
-## ✨ 重大功能：定时任务接入真实抓取
+> 版本号说明：遵循"段位不出现两位数"的规则，1.6.9 的下一个版本进位为 **1.7.0**（而非 1.6.10）。
 
-此前定时任务的抓取流水线使用的是 MockCrawler（生成模拟数据），无法真正抓取 X/Twitter、Reddit 的真实内容。原因在于真实抓取需要登录 Cookie，而 Cookie 此前只存在前端 localStorage，后台定时任务（无前端）拿不到。本次彻底打通：
+## 🐛 问题修复
 
-### 1. Cookie 服务端持久化
-- 新增 `platform_cookies` 表（存于 `~/.vocab-harvester/vocab.db`，随更新/重启保留）
-- 在「数据抓取」页保存 Twitter/Reddit Cookie 时，**自动同步一份到服务端**，供后台定时任务使用
-- 新增接口 `POST /api/platform-cookies`（保存）、`GET /api/platform-cookies`（状态查询）
+### 1. 抓取失败时透传真实原因，不再笼统显示"无结果"
 
-### 2. 定时任务真实抓取
-- 定时任务执行时从数据库读取各平台 Cookie，调用与手动搜索**相同的真实抓取器**（`TwitterCookieFetcher` / `RedditCookieFetcher`）
-- 真实抓取在**独立后台线程 + 新事件循环**中执行（Playwright 与主事件循环隔离，复用手动搜索的成熟模式）
-- 抓取结果统一映射为 `ParsedPost`，交给 Pipeline 复用「历史去重 → 黑词分析 → 落盘导出」全流程
+此前手动搜索（关键词搜索 / 用户主页抓取）失败时，真实错误（如 **Cookie 已过期**）会被内部 `except` 静默吞掉，界面只显示笼统的"搜索无结果。所有平台均未返回结果"，让人误以为是真的没数据。
 
-### 3. 缺 Cookie 优雅降级
-- 某平台未配置 Cookie 时**跳过该平台并记录**（写入任务状态 / 日志），其他有 Cookie 的平台正常抓取
-- 若所选平台全部缺 Cookie，任务标记为 `failed` 并给出清晰提示：「请在数据抓取页配置并保存 Cookie」
+**修复：**
+- Twitter 抓取器（`search_tweets` / `fetch_user_tweets`）不再吞掉异常，改为**向上抛出真实原因**
+- 新增统一的**友好错误映射** `friendly_error()`，把技术错误翻译成可读提示：
+  - 「Cookie 已过期或无效，请重新从浏览器导出并保存 Cookie」
+  - 「网络/代理异常，请检查代理设置与网络连接」
+  - 「请求过于频繁（被限流），请稍后再试」
+  - 「平台页面异常，请稍后重试」
+- 关键词搜索、批量搜索、用户主页抓取的失败原因都会**直接显示在结果区**
 
----
+### 2. 定时任务执行状态实时展示
 
-## ⚠️ 使用说明
+此前点击「立即执行」后，状态栏不会实时更新，需手动刷新才能看到结果。
 
-- 定时任务真实抓取的前提：**先在「数据抓取」页配置并保存对应平台的 Cookie**（保存动作会自动同步到服务端）
-- 与手动搜索共用同一套 Cookie，配置一次即可
-- 真实抓取仍受平台反爬、Cookie 有效期、代理可用性影响，与手动搜索一致
+**修复：**
+- 点击「立即执行」后**立即刷新为「正在执行」**，随后自动轮询，完成时自动更新为「成功」或「失败」（无需手动刷新）
+- 状态文案本地化：`running → 正在执行`、`success → 成功`、`failed → 失败`（英文环境为 Running/success/failed）
+
+### 3. 定时任务失败时展示具体失败原因
+
+此前定时任务显示 `failed` 却不说明为什么失败。
+
+**修复：**
+- 定时任务真实抓取失败时，**记录具体原因**（Cookie 未配置/已过期、网络代理异常等）到任务记录
+- 定时任务列表的状态列下方**红色小字显示失败原因**（悬停可看完整内容）
+- 部分平台失败但仍有数据时，以橙色标注「（部分平台）…」，任务整体仍算成功
 
 ---
 
 ## 🔧 技术实现
 
-- `src/common/database.py`：新增 `platform_cookies` 表
-- `src/api/main.py`：Cookie 存取助手 + `/api/platform-cookies` 接口；`_execute_scheduled_task` 重写为「读库 Cookie → 后台线程真实抓取 → PrefetchedCrawler 交给 Pipeline」；缺 Cookie 跳过/失败处理
-- `src/crawlers/real_crawler.py`（新增）：`crawl_twitter` / `crawl_reddit` 真实抓取封装、dict→ParsedPost 映射、`PrefetchedCrawler`
-- `static/index.html`：保存 Cookie 时调用 `syncCookieToServer()` 同步到服务端
-- 新增 6 个单元测试（映射 / 时间解析 / 预取爬虫 / Cookie 持久化 / upsert），全套 **67 passed**
+- `src/crawlers/twitter_url.py`：`search_tweets` / `fetch_user_tweets` 外层 `except` 改为 `raise`，透传真实原因
+- `src/crawlers/real_crawler.py`：新增 `friendly_error()` 友好错误映射；`crawl_twitter` / `crawl_reddit` 在零结果且有错误时抛出原因
+- `src/api/main.py`：多平台搜索 / 用户主页抓取的错误信息经 `friendly_error()` 友好化；`_scheduled_real_crawl` 返回 `{posts, errors}`；定时任务执行按抓取错误综合判定 `failed` 并写入 `last_error`
+- `static/index.html`：`runTaskNow` 触发后实时轮询状态；定时任务列表状态列本地化 + 失败原因展示
+- 新增 3 个 `friendly_error` 单元测试，全套 **70 passed**
 
 ---
 
@@ -42,16 +50,16 @@
 
 | 文件 | 修改内容 |
 |---|---|
-| `src/common/database.py` | 新增 `platform_cookies` 表 |
-| `src/api/main.py` | Cookie 接口与存取助手；定时任务改为真实抓取（后台线程）；缺 Cookie 跳过/失败 |
-| `src/crawlers/real_crawler.py` | 新增：真实抓取封装 + ParsedPost 映射 + PrefetchedCrawler |
-| `static/index.html` | 保存 Cookie 时同步到服务端 |
-| `tests/test_real_crawl.py` | 新增：映射 + Cookie 持久化 6 项测试 |
-| `VERSION` | `1.6.8` → `1.6.9` |
+| `src/crawlers/twitter_url.py` | 抓取失败不再吞异常，向上抛出真实原因 |
+| `src/crawlers/real_crawler.py` | 新增 `friendly_error()`；抓取器零结果+错误时抛出原因 |
+| `src/api/main.py` | 搜索/抓取错误友好化透传；定时任务失败判定与原因记录 |
+| `static/index.html` | 定时任务状态实时轮询 + 状态本地化 + 失败原因展示 |
+| `tests/test_real_crawl.py` | 新增 friendly_error 3 项测试 |
+| `VERSION` | `1.6.9` → `1.7.0` |
 
 ---
 
 ## 📌 前序版本回顾
 
+- **v1.6.9** — 定时任务接入真实抓取（Cookie 服务端持久化 + 真实爬虫）
 - **v1.6.8** — 定时任务历史去重（跨次去重 + 重复标记）
-- **v1.6.7** — 修复黑词未写库 + 搜索空引用报错

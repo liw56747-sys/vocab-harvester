@@ -14,6 +14,22 @@ from src.common.models import ParsedPost
 logger = logging.getLogger(__name__)
 
 
+def friendly_error(exc) -> str:
+    """将抓取异常映射为面向用户的友好提示。"""
+    msg = str(exc or "").strip()
+    low = msg.lower()
+    if ("cookie" in low) or ("登录" in msg) or ("login" in low) or ("flow" in low) or ("logout" in low):
+        return "Cookie 已过期或无效，请重新从浏览器导出并保存 Cookie"
+    if ("429" in msg) or ("频繁" in msg) or ("rate limit" in low) or ("too many" in low):
+        return "请求过于频繁（被限流），请稍后再试"
+    if ("代理" in msg) or ("proxy" in low) or ("无法连接" in msg) or ("connect" in low)\
+            or ("timeout" in low) or ("超时" in msg) or ("err_" in low) or ("net::" in low):
+        return "网络/代理异常，请检查代理设置与网络连接"
+    if ("something went wrong" in low) or ("出了点问题" in msg):
+        return "平台页面异常，请稍后重试"
+    return msg[:120] if msg else "未知错误"
+
+
 class PrefetchedCrawler:
     """将已抓取好的 ParsedPost 列表包装为 Pipeline 可用的爬虫。
 
@@ -94,6 +110,7 @@ async def crawl_twitter(
 
     fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=block_resources)
     posts: list[ParsedPost] = []
+    last_error = None
     for kw in keywords:
         kw = (kw or "").strip()
         if not kw:
@@ -106,7 +123,11 @@ async def crawl_twitter(
             posts.extend(_tweet_to_post(t, kw) for t in tweets)
             logger.info(f"[真实抓取] Twitter「{kw}」获取 {len(tweets)} 条")
         except Exception as e:
+            last_error = e
             logger.error(f"[真实抓取] Twitter「{kw}」失败: {e}")
+    # 若未抓到任何数据且存在错误，抛出原因供上层记录/展示
+    if not posts and last_error is not None:
+        raise last_error
     return posts
 
 
@@ -120,6 +141,7 @@ async def crawl_reddit(
     fetcher = RedditCookieFetcher(proxy=proxy)
     sort = "hot" if sort_by == "top" else "new"
     posts: list[ParsedPost] = []
+    last_error = None
     for kw in keywords:
         kw = (kw or "").strip()
         if not kw:
@@ -131,5 +153,8 @@ async def crawl_reddit(
             posts.extend(_reddit_to_post(d, kw) for d in items)
             logger.info(f"[真实抓取] Reddit「{kw}」获取 {len(items)} 条")
         except Exception as e:
+            last_error = e
             logger.error(f"[真实抓取] Reddit「{kw}」失败: {e}")
+    if not posts and last_error is not None:
+        raise last_error
     return posts

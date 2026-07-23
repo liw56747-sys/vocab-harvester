@@ -7,6 +7,27 @@ import pytest
 from src.crawlers.real_crawler import _tweet_to_post, _reddit_to_post, _parse_dt, PrefetchedCrawler
 
 
+# ── 友好错误提示映射 ──
+
+def test_friendly_error_cookie():
+    from src.crawlers.real_crawler import friendly_error
+    assert "Cookie" in friendly_error(RuntimeError("Cookie 已过期，请重新导出"))
+    assert "Cookie" in friendly_error(Exception("redirected to login flow"))
+
+
+def test_friendly_error_network():
+    from src.crawlers.real_crawler import friendly_error
+    assert "网络/代理" in friendly_error(Exception("net::ERR_PROXY_CONNECTION_FAILED"))
+    assert "网络/代理" in friendly_error(RuntimeError("无法连接代理服务器"))
+    assert "网络/代理" in friendly_error(Exception("Timeout 60000ms exceeded"))
+
+
+def test_friendly_error_ratelimit_and_generic():
+    from src.crawlers.real_crawler import friendly_error
+    assert "频繁" in friendly_error(RuntimeError("429 too many requests"))
+    assert friendly_error(Exception("某个未知问题")) == "某个未知问题"
+
+
 # ── dict → ParsedPost 映射 ──
 
 def test_tweet_to_post_mapping():

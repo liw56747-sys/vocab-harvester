@@ -2544,6 +2544,9 @@ const I18N = {
     badge_crawl_only: '仅抓取',
     label_save_format: '保存格式',
     save_path_hint_none: '未设置保存路径：本任务抓取的数据将不会导出到文件夹。如需保存请选择上方文件夹。',
+    status_running: '正在执行',
+    status_success: '成功',
+    status_failed: '失败',
     // Schedule
     schedule_title: '定时任务配置', schedule_desc: '设置自动化定时抓取与分析任务',
     schedule_list: '任务列表', btn_add_task: '+ 新建任务',
@@ -2781,6 +2784,9 @@ const I18N = {
     badge_crawl_only: 'harvest only',
     label_save_format: 'Save format',
     save_path_hint_none: 'No save path set: harvested data will NOT be exported to a folder. Choose a folder above to save.',
+    status_running: 'Running',
+    status_success: 'success',
+    status_failed: 'failed',
     // Schedule
     schedule_title: 'Scheduled Tasks', schedule_desc: 'Configure automated scraping and analysis tasks',
     schedule_list: 'Task List', btn_add_task: '+ New Task',
@@ -4291,6 +4297,16 @@ async function loadScheduleTasks() {
       const statusBadge = task.last_run_status === 'success' ? 'badge-approved' :
                           task.last_run_status === 'failed' ? 'badge-rejected' :
                           task.last_run_status === 'running' ? 'badge-observe' : '';
+      const statusText = task.last_run_status === 'running' ? t('status_running') :
+                         task.last_run_status === 'success' ? t('status_success') :
+                         task.last_run_status === 'failed' ? t('status_failed') :
+                         (task.last_run_status || '-');
+      let errHtml = '';
+      if (task.last_run_status === 'failed' && task.last_error) {
+        errHtml = `<div style="font-size:11px;color:var(--danger);margin-top:4px;max-width:240px;line-height:1.4;white-space:normal" title="${esc(task.last_error)}">${esc(task.last_error)}</div>`;
+      } else if (task.last_error && task.last_error.indexOf('部分平台') >= 0) {
+        errHtml = `<div style="font-size:11px;color:var(--warning);margin-top:4px;max-width:240px;line-height:1.4;white-space:normal" title="${esc(task.last_error)}">${esc(task.last_error)}</div>`;
+      }
       tbody.innerHTML += `<tr>
         <td><strong>${esc(task.name || '-')}</strong></td>
         <td>${task.task_type === 'search' ? t('type_search') : t('type_url')}${modeBadge}</td>
@@ -4298,7 +4314,7 @@ async function loadScheduleTasks() {
         <td title="${esc(keywords)}">${esc(keywords.slice(0, 30))}${keywords.length > 30 ? '...' : ''}</td>
         <td><code>${esc(task.save_path || '-')}</code></td>
         <td>${task.last_run_at ? new Date(task.last_run_at).toLocaleString() : '-'}</td>
-        <td><span class="badge ${statusBadge}">${task.last_run_status || '-'}</span></td>
+        <td><span class="badge ${statusBadge}">${statusText}</span>${errHtml}</td>
         <td>${task.enabled ? '✅' : '❌'}</td>
         <td>
           <button class="btn btn-primary btn-sm" onclick="editScheduleTask('${task.id}')">${t('btn_edit')}</button>
@@ -4550,7 +4566,21 @@ async function runTaskNow(taskId) {
   try {
     await api(`/api/scheduled-tasks/${taskId}/run`, { method: 'POST' });
     toast(t('task_running'), 'info');
-    setTimeout(loadScheduleTasks, 3000);
+    // 立即刷新一次（展示“正在执行/running”），然后轮询直到状态变为 success/failed
+    await loadScheduleTasks();
+    let _elapsed = 0;
+    const _timer = setInterval(async () => {
+      _elapsed += 2;
+      let done = true;
+      try {
+        const data = await api('/api/scheduled-tasks');
+        const task = (data.tasks || []).find(x => x.id === taskId);
+        if (task && task.last_run_status === 'running') done = false;
+      } catch (e) { /* 忽略，下次再试 */ }
+      await loadScheduleTasks();
+      // 状态已结束或超过 3 分钟则停止轮询
+      if (done || _elapsed >= 180) clearInterval(_timer);
+    }, 2000);
   } catch (e) {}
 }
 

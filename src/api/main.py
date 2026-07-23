@@ -755,11 +755,12 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
         {platform: [ParsedPost, ...]}
     """
     import asyncio as _aio
-    from src.crawlers.real_crawler import crawl_twitter, crawl_reddit
+    from src.crawlers.real_crawler import crawl_twitter, crawl_reddit, friendly_error
 
     loop = _aio.new_event_loop()
     _aio.set_event_loop(loop)
     out: dict = {}
+    errs: dict = {}
 
     async def _run():
         for platform, cookies, proxy in targets:
@@ -773,6 +774,7 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
                         keywords, count, cookies, proxy, sort_by, include_replies
                     )
             except Exception as e:
+                errs[platform] = friendly_error(e)
                 logger.error(f"[定时任务真实抓取] {platform} 失败: {e}")
                 out[platform] = []
 
@@ -780,7 +782,7 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
         loop.run_until_complete(_run())
     finally:
         loop.close()
-    return out
+    return {"posts": out, "errors": errs}
 
 
 async def _execute_scheduled_task(task_config: dict):
@@ -867,9 +869,11 @@ async def _execute_scheduled_task(task_config: dict):
 
         # 真实抓取放到后台线程 + 新事件循环执行（Playwright 与主事件循环隔离）
         _loop = asyncio.get_event_loop()
-        posts_by_platform = await _loop.run_in_executor(
+        _crawl_result = await _loop.run_in_executor(
             None, _scheduled_real_crawl, targets, (keywords or []), count, sort_by, include_replies, block_resources
         )
+        posts_by_platform = _crawl_result.get("posts", {})
+        crawl_errors = _crawl_result.get("errors", {})  # {platform: 友好原因}
 
         # 加载模型配置：从数据库读取用户配置的 LLM API，用于自动分析
         cursor_cfg = await db.execute("SELECT config_key, config_value FROM model_config")
@@ -926,8 +930,21 @@ async def _execute_scheduled_task(task_config: dict):
         else:
             logger.info(f"[定时任务 {task_id}] 未设置保存路径，本次不落盘")
 
-        await db.execute("UPDATE scheduled_tasks SET last_run_status=?, last_error='' WHERE id=?",
-                         (stats.get("status", "unknown"), task_id))
+        # 综合状态与失败原因：若本次未拓回任何数据且存在抳错/跳过，则标记 failed 并记录原因
+        _reasons = [f"{p}：{r}" for p, r in (crawl_errors or {}).items()]
+        for _sp in skipped_platforms:
+            _reasons.append(f"{_sp['platform']}：{_sp['reason']}")
+        _final_status = stats.get("status", "unknown")
+        _last_error = ""
+        if stats.get("total_posts", 0) == 0 and _reasons:
+            _final_status = "failed"
+            _last_error = "；".join(_reasons)
+        elif _reasons:
+            # 部分平台失败但仍有数据：保留成功状态，但记录部分失败原因
+            _last_error = "（部分平台）" + "；".join(_reasons)
+
+        await db.execute("UPDATE scheduled_tasks SET last_run_status=?, last_error=? WHERE id=?",
+                         (_final_status, _last_error, task_id))
         await db.commit()
         logger.info(f"[定时任务 {task_id}] 执行完成: {stats.get('status')}, "
                      f"帖子: {stats.get('total_posts', 0)}, 关键词: {stats.get('total_keywords', 0)}")
@@ -1378,7 +1395,8 @@ async def twitter_fetch(req: TwitterUrlFetchRequest):
                 })
             except Exception as e:
                 tb.print_exc()
-                _set_task_status(task_id, {"status": "error", "error": str(e)})
+                from src.crawlers.real_crawler import friendly_error
+                _set_task_status(task_id, {"status": "error", "error": friendly_error(e)})
 
         loop.run_until_complete(_run())
         loop.close()
@@ -1543,7 +1561,8 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
 
                 for plat, result in zip(platform_names, results):
                     if isinstance(result, Exception):
-                        error_msg = f"{plat}: {result}"
+                        from src.crawlers.real_crawler import friendly_error
+                        error_msg = f"{plat}：{friendly_error(result)}"
                         errors.append(error_msg)
                         logger.error(f"平台 {plat} 抓取出错: {result}\n{tb.format_exc()}")
                         tb.print_exc()

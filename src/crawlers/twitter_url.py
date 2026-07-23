@@ -513,6 +513,7 @@ class TwitterCookieFetcher:
 
         except Exception as e:
             logger.error(f"用户主页抓取整体失败: {e}")
+            raise  # 透传真实失败原因，供上层展示给用户
         finally:
             await self._safe_close(context, label="context(user)")
 
@@ -590,6 +591,7 @@ class TwitterCookieFetcher:
 
         except Exception as e:
             logger.error(f"搜索「{keyword}」整体失败: {e}")
+            raise  # 透传真实失败原因（如 Cookie 过期/网络异常），供上层展示给用户
         finally:
             await self._safe_close(context, label="context(search)")
 
