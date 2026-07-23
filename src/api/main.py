@@ -1323,6 +1323,10 @@ async def twitter_fetch(req: TwitterUrlFetchRequest):
     if not req.urls:
         raise HTTPException(400, "请提供至少一个 Twitter/X 用户主页链接")
 
+    # 自动将本次使用的 Cookie 同步到服务端（供定时任务共用）
+    if req.ct0 and req.auth_token:
+        await _auto_persist_cookies(twitter={"ct0": req.ct0, "auth_token": req.auth_token, "proxy": req.proxy or ""})
+
     task_id = str(uuid.uuid4())
     _set_task_status(task_id, {"status": "running", "result": None})
 
@@ -1412,6 +1416,17 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
         raise HTTPException(400, "请输入搜索关键词")
     if not req.platforms:
         raise HTTPException(400, "请至少选择一个搜索平台")
+
+    # 自动将本次使用的各平台 Cookie 同步到服务端（供定时任务共用同一份）
+    for _cfg in (req.cookies or []):
+        if _cfg.platform == "twitter":
+            await _auto_persist_cookies(twitter={"ct0": _cfg.ct0 or "", "auth_token": _cfg.auth_token or "", "proxy": _cfg.proxy or ""})
+        elif _cfg.platform == "reddit":
+            await _auto_persist_cookies(reddit={
+                "reddit_session": _cfg.reddit_session or "", "reddit_token": _cfg.reddit_token or "",
+                "edgebucket": _cfg.edgebucket or "", "redesign_optout": _cfg.redesign_optout or "",
+                "extra_cookies": _cfg.extra_cookies or {}, "proxy": _cfg.proxy or "",
+            })
 
     task_id = str(uuid.uuid4())
     _set_task_status(task_id, {"status": "running", "result": None})
@@ -1677,6 +1692,17 @@ async def batch_search(req: BatchSearchRequest):
     """
     if not req.keywords: raise HTTPException(400, "请提供至少一个关键词")
     if len(req.keywords) > 50: raise HTTPException(400, f"关键词数量过多（{len(req.keywords)} 个），单次最多 50 个")
+
+    # 自动将本次使用的各平台 Cookie 同步到服务端（供定时任务共用同一份）
+    for _cfg in (req.cookies or []):
+        if _cfg.platform == "twitter":
+            await _auto_persist_cookies(twitter={"ct0": _cfg.ct0 or "", "auth_token": _cfg.auth_token or "", "proxy": _cfg.proxy or ""})
+        elif _cfg.platform == "reddit":
+            await _auto_persist_cookies(reddit={
+                "reddit_session": _cfg.reddit_session or "", "reddit_token": _cfg.reddit_token or "",
+                "edgebucket": _cfg.edgebucket or "", "redesign_optout": _cfg.redesign_optout or "",
+                "extra_cookies": _cfg.extra_cookies or {}, "proxy": _cfg.proxy or "",
+            })
 
     task_id = str(uuid.uuid4())
     _set_task_status(task_id, {"status": "running", "result": None, "progress": {"total": 0, "completed": 0, "percent": 0}})
@@ -2218,6 +2244,30 @@ async def _get_platform_cookies_db() -> dict:
         except (json.JSONDecodeError, TypeError):
             out[row[0]] = {}
     return out
+
+
+async def _auto_persist_cookies(twitter: dict | None = None, reddit: dict | None = None) -> None:
+    """手动搜索/抓取时自动把正在使用的 Cookie 同步到服务端，确保定时任务与手动共用同一份。
+
+    只在字段有效时写入，避免用空值覆盖已有配置。异常静默忽略（不影响抓取）。
+    """
+    try:
+        if twitter and twitter.get("ct0") and twitter.get("auth_token"):
+            await _save_platform_cookies_db("twitter", {
+                "ct0": twitter.get("ct0", ""), "auth_token": twitter.get("auth_token", ""),
+                "proxy": twitter.get("proxy", ""),
+            })
+        if reddit and reddit.get("reddit_session"):
+            await _save_platform_cookies_db("reddit", {
+                "reddit_session": reddit.get("reddit_session", ""),
+                "reddit_token": reddit.get("reddit_token", ""),
+                "edgebucket": reddit.get("edgebucket", ""),
+                "redesign_optout": reddit.get("redesign_optout", ""),
+                "extra_cookies": reddit.get("extra_cookies", {}),
+                "proxy": reddit.get("proxy", ""),
+            })
+    except Exception as e:
+        logger.warning(f"自动同步 Cookie 到服务端失败（不影响本次抓取）: {e}")
 
 
 class PlatformCookieSaveRequest(BaseModel):
