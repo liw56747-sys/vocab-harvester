@@ -1510,6 +1510,29 @@ kbd {
   .filters-advanced { flex-direction: column; align-items: stretch; }
   .page-title { font-size: 22px; }
 }
+
+/* ── 定时任务完成弹窗 ── */
+.task-notif-overlay {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(14,55,52,0.35);
+  display: flex; align-items: center; justify-content: center;
+}
+.task-notif-card {
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow-md); padding: 26px 30px;
+  max-width: 420px; width: 88%; text-align: center;
+  animation: fadeIn 0.2s ease;
+}
+.task-notif-icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 14px;
+}
+.task-notif-icon svg { width: 30px; height: 30px; }
+.task-notif-icon.ok { background: var(--success-light); color: var(--success); }
+.task-notif-icon.fail { background: var(--danger-light); color: var(--danger); }
+.task-notif-title { font-size: 17px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+.task-notif-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 18px; word-break: break-word; }
 </style>
 <!-- v1.5.5: SheetJS 本地打包，用于上传 xlsx/xls 解析（离线可用） -->
 <script src="/static/vendor/xlsx.mini.min.js"></script>
@@ -2547,6 +2570,12 @@ const I18N = {
     status_running: '正在执行',
     status_success: '成功',
     status_failed: '失败',
+    notif_task_done_title: '定时任务已完成',
+    notif_task_failed_title: '定时任务执行失败',
+    notif_posts: '，本次抓取 {n} 条数据',
+    notif_empty: '，本次未抓取到数据',
+    notif_failed_generic: '，执行失败',
+    notif_ok: '知道了',
     // Schedule
     schedule_title: '定时任务配置', schedule_desc: '设置自动化定时抓取与分析任务',
     schedule_list: '任务列表', btn_add_task: '+ 新建任务',
@@ -2787,6 +2816,12 @@ const I18N = {
     status_running: 'Running',
     status_success: 'success',
     status_failed: 'failed',
+    notif_task_done_title: 'Scheduled task completed',
+    notif_task_failed_title: 'Scheduled task failed',
+    notif_posts: ', harvested {n} items',
+    notif_empty: ', no data harvested',
+    notif_failed_generic: ', execution failed',
+    notif_ok: 'OK',
     // Schedule
     schedule_title: 'Scheduled Tasks', schedule_desc: 'Configure automated scraping and analysis tasks',
     schedule_list: 'Task List', btn_add_task: '+ New Task',
@@ -3378,6 +3413,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 4 * 60 * 60 * 1000);
   // Chromium 安装引导
   initChromiumSetup();
+  // 定时任务完成弹窗：全局轮询（首次对齐最新、跳过历史）
+  pollScheduledNotifications();
+  setInterval(pollScheduledNotifications, 10000);
 });
 
 // ── Chromium 安装引导 ──
@@ -3687,6 +3725,62 @@ function toast(msg, type = 'info') {
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3000);
+}
+
+// ── 定时任务完成弹窗（全局轮询） ──
+let _notifLastId = null;      // null = 尚未初始化（首次对齐到最新，跳过历史）
+let _notifQueue = [];
+let _notifShowing = false;
+
+async function pollScheduledNotifications() {
+  try {
+    // 直接用 fetch，避免 api() 失败时弹错提示
+    if (_notifLastId === null) {
+      const r0 = await fetch('/api/scheduled-notifications?after=0');
+      const d0 = await r0.json();
+      _notifLastId = (d0 && typeof d0.latest_id === 'number') ? d0.latest_id : 0;
+      return;
+    }
+    const r = await fetch('/api/scheduled-notifications?after=' + _notifLastId);
+    const d = await r.json();
+    (d.notifications || []).forEach(n => {
+      _notifQueue.push(n);
+      if (n.id > _notifLastId) _notifLastId = n.id;
+    });
+    _drainNotifQueue();
+  } catch (e) { /* 静默忽略，下次轮询再试 */ }
+}
+
+function _drainNotifQueue() {
+  if (_notifShowing || !_notifQueue.length) return;
+  _notifShowing = true;
+  showTaskDonePopup(_notifQueue.shift());
+}
+
+function showTaskDonePopup(n) {
+  const ok = (n.status === 'success' || n.status === 'empty');
+  const title = ok ? t('notif_task_done_title') : t('notif_task_failed_title');
+  let desc = '「' + esc(n.name || '-') + '」';
+  if (ok) {
+    desc += (n.status === 'empty') ? t('notif_empty') : t('notif_posts', { n: n.total_posts || 0 });
+  } else {
+    desc += (n.error ? esc(n.error) : t('notif_failed_generic'));
+  }
+  const iconSvg = ok
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+  const overlay = document.createElement('div');
+  overlay.className = 'task-notif-overlay';
+  overlay.innerHTML = '<div class="task-notif-card">'
+    + '<div class="task-notif-icon ' + (ok ? 'ok' : 'fail') + '">' + iconSvg + '</div>'
+    + '<div class="task-notif-title">' + esc(title) + '</div>'
+    + '<div class="task-notif-desc">' + desc + '</div>'
+    + '<button class="btn btn-primary btn-sm" id="notif-ok-btn">' + esc(t('notif_ok')) + '</button>'
+    + '</div>';
+  document.body.appendChild(overlay);
+  const close = () => { overlay.remove(); _notifShowing = false; setTimeout(_drainNotifQueue, 200); };
+  overlay.querySelector('#notif-ok-btn').onclick = close;
+  overlay.onclick = (ev) => { if (ev.target === overlay) close(); };
 }
 
 // ── API helpers ──

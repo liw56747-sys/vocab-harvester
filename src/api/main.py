@@ -785,6 +785,29 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
     return {"posts": out, "errors": errs}
 
 
+# ── 定时任务完成通知（供前端轮询后弹窗提示）──
+_scheduled_notifications: list[dict] = []
+_scheduled_notif_seq = 0
+_SCHED_NOTIF_MAX = 50
+
+
+def _push_scheduled_notification(task_id: str, name: str, status: str, total_posts: int = 0, error: str = "") -> None:
+    """记录一次定时任务完成事件，供前端轮询后弹窗提示。"""
+    global _scheduled_notif_seq
+    _scheduled_notif_seq += 1
+    _scheduled_notifications.append({
+        "id": _scheduled_notif_seq,
+        "task_id": task_id,
+        "name": name,
+        "status": status,            # success | empty | failed
+        "total_posts": total_posts,
+        "error": error or "",
+        "finished_at": datetime.now().isoformat(),
+    })
+    if len(_scheduled_notifications) > _SCHED_NOTIF_MAX:
+        del _scheduled_notifications[: len(_scheduled_notifications) - _SCHED_NOTIF_MAX]
+
+
 async def _execute_scheduled_task(task_config: dict):
     """执行单个定时任务：抓取 → 保存 → 分析"""
     task_id = task_config.get("id", "unknown")
@@ -857,6 +880,7 @@ async def _execute_scheduled_task(task_config: dict):
             await db.execute("UPDATE scheduled_tasks SET last_run_status='failed', last_error=? WHERE id=?", (msg, task_id))
             await db.commit()
             logger.warning(f"[定时任务 {task_id}] {msg}")
+            _push_scheduled_notification(task_id, task_name, "failed", 0, msg)
             return
 
         query = CrawlQuery(
@@ -948,6 +972,7 @@ async def _execute_scheduled_task(task_config: dict):
         await db.commit()
         logger.info(f"[定时任务 {task_id}] 执行完成: {stats.get('status')}, "
                      f"帖子: {stats.get('total_posts', 0)}, 关键词: {stats.get('total_keywords', 0)}")
+        _push_scheduled_notification(task_id, task_name, _final_status, stats.get("total_posts", 0), _last_error)
     except Exception as e:
         logger.error(f"[定时任务 {task_id}] 执行失败: {e}")
         try:
@@ -958,6 +983,17 @@ async def _execute_scheduled_task(task_config: dict):
             await db.commit()
         except Exception:
             pass
+        try:
+            _push_scheduled_notification(task_id, task_name, "failed", 0, str(e))
+        except Exception:
+            pass
+
+
+@app.get("/api/scheduled-notifications")
+async def get_scheduled_notifications(after: int = 0):
+    """返回 id 大于 after 的定时任务完成通知，供前端轮询弹窗。"""
+    items = [n for n in _scheduled_notifications if n["id"] > after]
+    return {"status": "ok", "notifications": items, "latest_id": _scheduled_notif_seq}
 
 
 @app.get("/")
