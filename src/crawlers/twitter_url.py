@@ -612,10 +612,10 @@ class TwitterCookieFetcher:
     async def _parallel_scrape_replies(
         self, context, tweets: list[dict], ct0_token: str = "",
     ):
-        """并发抓取多条推文的评论（Semaphore 限制 5 个并发标签页）"""
+        """并发抓取多条推文的评论（Semaphore 限制 3 个并发标签页，降低内存/崩溃风险）"""
         from src.crawlers.browser_manager import apply_request_interceptors
 
-        sem = asyncio.Semaphore(5)
+        sem = asyncio.Semaphore(3)
 
         async def _scrape_one_reply(tweet: dict):
             async with sem:

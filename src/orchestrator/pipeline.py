@@ -182,9 +182,29 @@ class Pipeline:
                     "published_at": p.published_at.isoformat() if p.published_at else "",
                     "metrics": p.metrics,
                     "tags": p.tags,
+                    "type": (p.raw_data or {}).get("type", "post"),
+                    "parent_id": (p.raw_data or {}).get("parent_id", ""),
                     "duplicate": p.post_id in duplicate_ids,
                 }
                 for p in all_posts[:50]
+            ]
+
+            # 完整帖子明细（用于落盘导出，不受 50 条采样限制；含评论行、type/parent_id）
+            stats["crawled_posts"] = [
+                {
+                    "platform": p.platform,
+                    "post_id": p.post_id,
+                    "author": p.author,
+                    "content": p.content,
+                    "published_at": p.published_at.isoformat() if p.published_at else "",
+                    "likes": (p.metrics or {}).get("likes", 0),
+                    "retweets": (p.metrics or {}).get("retweets", 0),
+                    "replies": (p.metrics or {}).get("replies", 0),
+                    "tags": ",".join(p.tags) if p.tags else "",
+                    "type": (p.raw_data or {}).get("type", "post"),
+                    "parent_id": (p.raw_data or {}).get("parent_id", ""),
+                }
+                for p in all_posts
             ]
 
             if not all_posts:
@@ -198,22 +218,6 @@ class Pipeline:
                 stats["total_keywords"] = 0
                 stats["analyze"] = False
                 stats["status"] = "success"
-                # 附上完整的帖子数据（用于落盘导出，不受 50 条采样限制；带重复标记）
-                stats["crawled_posts"] = [
-                    {
-                        "platform": p.platform,
-                        "post_id": p.post_id,
-                        "author": p.author,
-                        "content": p.content,
-                        "published_at": p.published_at.isoformat() if p.published_at else "",
-                        "likes": (p.metrics or {}).get("likes", 0),
-                        "retweets": (p.metrics or {}).get("retweets", 0),
-                        "replies": (p.metrics or {}).get("replies", 0),
-                        "tags": ",".join(p.tags) if p.tags else "",
-                        "duplicate": p.post_id in duplicate_ids,
-                    }
-                    for p in all_posts
-                ]
                 logger.info(f"仅抓取模式：已采集 {len(all_posts)} 条数据，跳过黑词分析与词库写入")
                 stats["finished_at"] = datetime.now().isoformat()
                 await self._update_log(db, log_id, stats)

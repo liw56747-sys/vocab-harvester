@@ -165,15 +165,18 @@ async def save_task_results_to_file(
     if fmt not in ("csv", "xlsx"):
         fmt = "csv"
 
-    # 统一的导出字段顺序（末列标记是否为历史重复帖子）
-    fields = ["platform", "post_id", "author", "content", "published_at", "likes", "retweets", "replies", "tags", "duplicate"]
+    # 统一的导出字段顺序（type=帖子/评论；评论行以 parent_id 关联所属帖子）
+    fields = ["type", "platform", "post_id", "parent_id", "author", "content", "published_at", "likes", "retweets", "replies", "tags"]
 
     def _normalize(p: dict) -> dict:
         """将帖子数据展平为导出行（兼容 crawled_posts 与 sampled_posts 两种结构）"""
         metrics = p.get("metrics") or {}
+        _type = p.get("type", "post")
         return {
+            "type": "评论" if _type == "comment" else "帖子",
             "platform": p.get("platform", ""),
             "post_id": p.get("post_id", ""),
+            "parent_id": p.get("parent_id", ""),
             "author": p.get("author", ""),
             "content": p.get("content", ""),
             "published_at": p.get("published_at", ""),
@@ -181,7 +184,6 @@ async def save_task_results_to_file(
             "retweets": p.get("retweets", metrics.get("retweets", 0)),
             "replies": p.get("replies", metrics.get("replies", 0)),
             "tags": p.get("tags", ""),
-            "duplicate": "是" if p.get("duplicate") else "否",
         }
 
     rows = [_normalize(p) for p in posts]
@@ -746,17 +748,19 @@ async def _load_scheduled_jobs():
         logger.error(f"加载定时任务失败: {e}")
 
 
-def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, block_resources) -> dict:
+def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, block_resources, seen_ids=None) -> dict:
     """在独立线程的新事件循环中执行真实抓取（Playwright 与主循环隔离）。
 
     Args:
         targets: [(platform, cookies, proxy), ...]
+        seen_ids: 已抓过的帖子 id 集合（用于丢弃历史重复 + 迭代补足到 count）
     Returns:
         {platform: [ParsedPost, ...]}
     """
     import asyncio as _aio
     from src.crawlers.real_crawler import crawl_twitter, crawl_reddit, friendly_error
 
+    seen_ids = seen_ids or set()
     loop = _aio.new_event_loop()
     _aio.set_event_loop(loop)
     out: dict = {}
@@ -767,11 +771,12 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
             try:
                 if platform == "twitter":
                     out["twitter"] = await crawl_twitter(
-                        keywords, count, cookies, proxy, sort_by, include_replies, block_resources
+                        keywords, count, cookies, proxy, sort_by, include_replies,
+                        block_resources, seen_ids,
                     )
                 elif platform == "reddit":
                     out["reddit"] = await crawl_reddit(
-                        keywords, count, cookies, proxy, sort_by, include_replies
+                        keywords, count, cookies, proxy, sort_by, include_replies, seen_ids,
                     )
             except Exception as e:
                 errs[platform] = friendly_error(e)
@@ -832,8 +837,7 @@ async def _execute_scheduled_task(task_config: dict):
         # 执行目标：True=抓取+分析黑词并提取（默认）；False=仅抓取数据
         analyze = params.get("analyze", True)
 
-        # 历史去重上下文（仅定时任务）：按维度+时间窗跳过重复帖子
-        # 关键词维度保留30天，用户主页维度保留90天；不同关键词/主页相互独立
+        # 历史去重维度（仅定时任务）：关键词维度保留30天，用户主页维度保留90天
         _task_type = task_config.get("task_type", "search")
         if _task_type == "url_fetch":
             _urls = params.get("urls", []) or keywords
@@ -843,7 +847,10 @@ async def _execute_scheduled_task(task_config: dict):
             _dimension = "kw:" + "|".join(sorted(k.strip() for k in keywords if k.strip()))
             _retention_days = 30
         _since_iso = (datetime.now() - timedelta(days=_retention_days)).isoformat()
-        dedup_ctx = {"dimension": _dimension, "since_iso": _since_iso, "task_id": task_id}
+        # 一次性取出该维度全部已见 post_id，传入抓取层用于丢弃历史重复 + 迭代补足到设定条数
+        from src.vocabulary.storage import VocabStorage
+        _storage = VocabStorage()
+        _seen_ids = await _storage.get_seen_post_ids(_dimension, _since_iso)
 
         # 构建平台枚举
         platform_map = {"twitter": Platform.TWITTER, "reddit": Platform.REDDIT}
@@ -892,12 +899,27 @@ async def _execute_scheduled_task(task_config: dict):
         logger.info(f"[定时任务 {task_id}] 开始真实抓取，平台: {[p for (p, _, _) in targets]}, 关键词: {query.keywords}")
 
         # 真实抓取放到后台线程 + 新事件循环执行（Playwright 与主事件循环隔离）
+        # 使用专用单线程 executor（而非共享默认线程池），与手动搜索的独立守护线程一致，
+        # 避免 Windows 上 Chromium 子进程在被复用的池化线程中运行导致不稳定
+        import concurrent.futures as _cf
         _loop = asyncio.get_event_loop()
-        _crawl_result = await _loop.run_in_executor(
-            None, _scheduled_real_crawl, targets, (keywords or []), count, sort_by, include_replies, block_resources
-        )
+        with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="sched-crawl") as _ex:
+            _crawl_result = await _loop.run_in_executor(
+                _ex, _scheduled_real_crawl, targets, (keywords or []), count,
+                sort_by, include_replies, block_resources, _seen_ids,
+            )
         posts_by_platform = _crawl_result.get("posts", {})
         crawl_errors = _crawl_result.get("errors", {})  # {platform: 友好原因}
+
+        # 记录本次新抓到的帖子 id（仅"帖子"，评论不参与去重），供后续执行去重
+        _new_ids = [
+            pp.post_id
+            for _plist in posts_by_platform.values()
+            for pp in _plist
+            if (pp.raw_data or {}).get("type") == "post" and pp.post_id
+        ]
+        if _new_ids:
+            await _storage.record_seen_posts(_new_ids, _dimension, task_id, datetime.now().isoformat())
 
         # 加载模型配置：从数据库读取用户配置的 LLM API，用于自动分析
         cursor_cfg = await db.execute("SELECT config_key, config_value FROM model_config")
@@ -934,7 +956,7 @@ async def _execute_scheduled_task(task_config: dict):
         stats = await pipeline.run(
             query, task_name=task_name,
             opinion_detail=opinion_detail, opinion_rules=opinion_rules,
-            analyze=analyze, dedup_ctx=dedup_ctx,
+            analyze=analyze, dedup_ctx=None,  # 去重已在抓取层完成，Pipeline 不再标记 duplicate
         )
         stats["skipped_platforms"] = skipped_platforms
 

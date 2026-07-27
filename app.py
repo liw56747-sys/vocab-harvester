@@ -431,6 +431,14 @@ def main():
     webview_data = _DATA_DIR / "webview"
     webview_data.mkdir(parents=True, exist_ok=True)
 
+    # Windows：关闭 WebView2 的 GPU 硬件加速，规避显卡驱动/GPU 合成导致的界面崩溃、卡顿
+    # （本应用界面简单，不需要 GPU 加速；软件渲染更稳定）
+    if sys.platform == "win32":
+        os.environ.setdefault(
+            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+            "--disable-gpu --disable-gpu-compositing",
+        )
+
     webview.start(
         debug=False,
         private_mode=False,

@@ -221,6 +221,25 @@ class VocabStorage:
                 seen.add(row["post_id"])
         return seen
 
+    async def get_seen_post_ids(self, dimension: str, since_iso: str) -> set[str]:
+        """返回指定维度、时间窗内全部已见 post_id 集合（并顺带清理过期记录）。
+
+        供抓取层去重+迭代补足使用：抓取在独立线程无法访问数据库，
+        故在主线程一次性取出全量已见 id 传入。
+        """
+        db = await get_db()
+        # 清理超出保留窗口的过期记录（超期后允许重新抓取）
+        await db.execute(
+            "DELETE FROM scheduled_seen_posts WHERE dimension = ? AND first_seen_at < ?",
+            (dimension, since_iso),
+        )
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT post_id FROM scheduled_seen_posts WHERE dimension = ?",
+            (dimension,),
+        )
+        return {row["post_id"] for row in await cursor.fetchall()}
+
     async def record_seen_posts(self, post_ids: list[str], dimension: str, task_id: str, seen_at: str) -> None:
         """记录本次新出现的帖子（已存在则忽略）。"""
         rows = [(pid, dimension, task_id, seen_at) for pid in post_ids if pid]

@@ -148,6 +148,7 @@ a = Analysis(
         'src.crawlers.platform_config',
         'src.crawlers.reddit_crawler',
         'src.crawlers.twitter_url',
+        'src.crawlers.real_crawler',
         'src.orchestrator',
         'src.orchestrator.pipeline',
         'src.orchestrator.scheduler',
