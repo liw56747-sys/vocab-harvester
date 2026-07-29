@@ -158,13 +158,15 @@ def _reddit_comment_to_post(c: dict, keyword: str) -> ParsedPost:
 
 # ── 单关键词：去重 + 严格迭代补足到 count ──────────────────
 
-async def _collect_new_twitter(fetcher, kw, count, cookies, sort_by, include_replies, seen_ids):
+async def _collect_new_twitter(fetcher, kw, count, cookies, sort_by, include_replies, seen_ids, heartbeat=None):
     """抓取单个关键词的 Twitter 新帖（去重 + 迭代补足），返回 [帖子, 其评论...] 交错列表。"""
     collected: list[ParsedPost] = []
     collected_ids: set[str] = set()
     target = count
     prev_fetched = -1
     for _round in range(_BACKFILL_MAX_ROUNDS):
+        if heartbeat:
+            heartbeat()  # 每轮开始上报心跳，供上层"无进展看门狗"判活
         fetch_n = min(target, _BACKFILL_ABS_CAP)
         tweets, _ = await fetcher.search_tweets(
             kw, count=fetch_n, include_replies=include_replies,
@@ -192,13 +194,15 @@ async def _collect_new_twitter(fetcher, kw, count, cookies, sort_by, include_rep
     return collected
 
 
-async def _collect_new_reddit(fetcher, kw, count, cookies, sort, include_replies, seen_ids):
+async def _collect_new_reddit(fetcher, kw, count, cookies, sort, include_replies, seen_ids, heartbeat=None):
     """抓取单个关键词的 Reddit 新帖（去重 + 迭代补足），返回 [帖子, 其评论...] 交错列表。"""
     collected: list[ParsedPost] = []
     collected_ids: set[str] = set()
     target = count
     prev_posts = -1
     for _round in range(_BACKFILL_MAX_ROUNDS):
+        if heartbeat:
+            heartbeat()  # 每轮开始上报心跳，供上层"无进展看门狗"判活
         fetch_n = min(target, _BACKFILL_ABS_CAP)
         rows, _ = await fetcher.search_posts(
             kw, count=fetch_n, cookies=cookies, sort=sort, include_replies=include_replies,
@@ -233,7 +237,7 @@ async def _collect_new_reddit(fetcher, kw, count, cookies, sort, include_replies
 async def crawl_twitter(
     keywords: list[str], count: int, cookies: dict, proxy: str | None,
     sort_by: str = "top", include_replies: bool = False, block_resources: bool = False,
-    seen_ids: set[str] | None = None,
+    seen_ids: set[str] | None = None, heartbeat=None,
 ) -> list[ParsedPost]:
     """对每个关键词抓取 Twitter 新帖（去重+补足），聚合为 ParsedPost 列表（含评论行）。"""
     from src.crawlers.twitter_url import TwitterCookieFetcher
@@ -246,9 +250,11 @@ async def crawl_twitter(
         kw = (kw or "").strip()
         if not kw:
             continue
+        if heartbeat:
+            heartbeat()  # 每个关键词开始上报心跳
         try:
             posts.extend(await _collect_new_twitter(
-                fetcher, kw, count, cookies, sort_by, include_replies, seen_ids
+                fetcher, kw, count, cookies, sort_by, include_replies, seen_ids, heartbeat
             ))
         except Exception as e:
             last_error = e
@@ -261,7 +267,7 @@ async def crawl_twitter(
 async def crawl_reddit(
     keywords: list[str], count: int, cookies: dict, proxy: str | None,
     sort_by: str = "top", include_replies: bool = False,
-    seen_ids: set[str] | None = None,
+    seen_ids: set[str] | None = None, heartbeat=None,
 ) -> list[ParsedPost]:
     """对每个关键词抓取 Reddit 新帖（去重+补足），聚合为 ParsedPost 列表（含评论行）。"""
     from src.crawlers.reddit_crawler import RedditCookieFetcher
@@ -275,9 +281,11 @@ async def crawl_reddit(
         kw = (kw or "").strip()
         if not kw:
             continue
+        if heartbeat:
+            heartbeat()  # 每个关键词开始上报心跳
         try:
             posts.extend(await _collect_new_reddit(
-                fetcher, kw, count, cookies, sort, include_replies, seen_ids
+                fetcher, kw, count, cookies, sort, include_replies, seen_ids, heartbeat
             ))
         except Exception as e:
             last_error = e

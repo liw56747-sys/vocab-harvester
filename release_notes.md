@@ -1,52 +1,46 @@
-# v1.7.3 更新日志
+# v1.7.4 更新日志
 
-本次一次性处理三件事：定时任务导出评论、去重后补足到设定条数、Windows 稳定性加固。
+## 🛡️ 定时任务健壮性：告别"卡在正在执行、无产出"
 
-## ✨ 1. 定时任务导出评论（单独成行）
-此前定时任务勾选"同时抓取评论"后，导出表格里看不到评论内容——评论在"抓取→转换→落盘"链路中被丢弃了。现已修复：
-- 抓到的评论作为**独立行**写入表格，新增 `type` 列区分「帖子/评论」，评论行以 `parent_id` 关联所属帖子；
-- Twitter 回复、Reddit 评论均正确导出，与手动搜索导出保持一致；
-- 分析模式（抓取+分析）也导出完整明细，不再受 50 条采样限制。
+修复定时任务在抓取环节卡住后，**永远停在"正在执行"、不产出文件、还堆积一堆浏览器进程**的问题。
 
-## ✨ 2. 历史重复：丢弃并严格补足到设定条数
-此前重复数据仅被标记（`duplicate` 列）仍展示。现改为：
-- **直接丢弃**历史重复数据，不再展示，移除 `duplicate` 列；
-- **严格迭代补足**：去掉重复后自动继续抓取，补足到任务设定的条数；
-- 当平台**已无更多新结果**时，直接输出当前已抓到的结果（不无限重试）。
+### 问题现象
+定时任务从某时刻起一直显示"正在执行"（超过一天），保存目录里没有新表格，后台残留大量 Chromium 进程。
 
-## 🛡️ 3. Windows 客户端稳定性加固
-针对交互过程中"无响应/崩溃"，做代码层最佳缓解：
-- **关闭界面 WebView2 的 GPU 硬件加速**（仅 Windows）——规避显卡驱动/GPU 合成导致的原生崩溃；本软件为表单+表格界面，不需要 GPU 加速，体验基本无差别；
-- 评论抓取并发标签页 5 → 3，降低内存/标签压力；
-- 定时抓取改用专用单线程执行，降低 Chromium 子进程在池化线程中运行的不稳定性；
-- 打包补回 `real_crawler` 模块（保证 Windows 定时任务真实抓取可用）。
+### 根本原因
+- 抓取在浏览器/网络（如代理不稳）环节卡住，而任务**没有整体防卡机制**，主流程一直等 → 状态永远停在"正在执行"，也走不到"保存文件"那步；
+- 即使重启软件，数据库里的 `running` 状态**没有任何重置逻辑**，会一直显示"正在执行"；
+- 卡住时浏览器未被回收，Chromium 进程越堆越多。
+
+### 修复（四重加固）
+1. **无进展看门狗**：抓取过程按关键词/轮次上报"心跳"，主程序**仅在连续无进展超过 40 分钟**（可配置）时才判定卡死并中止——**只要任务还在推进（哪怕大任务跑好几个小时）就绝不会被误中断**；
+2. **启动自愈**：软件启动、调度器启动前，把上一次进程遗留的 `running` 自动重置为"失败（上次被中断）"；仅重置 5 分钟前的记录，**不会误伤当前会话正在执行的任务**；
+3. **浏览器防累积**：每次抓取结束都在抓取线程内关闭浏览器池，避免 Chromium 跨次堆积；
+4. **卡死清理**：判定卡死时弃置并重置浏览器池单例，下次执行全新启动。
+
+> 效果：再遇到卡死，任务会在限定时间内自动结束并标记失败（附原因），状态可自愈、不再堆积浏览器；而正常的大任务（多关键词、双平台、含评论）能安心长时间跑完。
 
 ---
 
 ## 🔧 技术实现
-- `src/crawlers/real_crawler.py`：评论映射为独立 ParsedPost（`raw_data.type="comment"` + `parent_id`）；新增 `seen_ids` 去重 + 迭代补足（最多 4 轮 / 单词上限 300 条兜底，无更多新结果即停）。
-- `src/vocabulary/storage.py`：新增 `get_seen_post_ids()`（主线程一次性取全量已见 id 传入抓取层）。
-- `src/api/main.py`：`_execute_scheduled_task` 抓取前载入 seen_ids、抓取后记录新帖 id、`dedup_ctx=None`、专用单线程 executor；`save_task_results_to_file` 增 `type/parent_id` 列、移除 `duplicate` 列。
-- `src/orchestrator/pipeline.py`：`crawled_posts`/`sampled_posts` 增加 `type/parent_id`，两种模式都输出完整明细。
-- `app.py`：Windows 下设置 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--disable-gpu`。
-- 测试：新增 real_crawler 去重/补足/评论映射单测 + 更新落盘导出测试，全套 **73 passed**。
+- `src/api/main.py`：
+  - `_execute_scheduled_task` 用"无进展看门狗"包裹抓取（心跳 + 每 30s 检查 + 40 分钟无进展阈值 `VOCAB_SCHED_STALL_LIMIT` 可配），卡死时中止并重置浏览器池单例；
+  - `_load_scheduled_jobs` 启动时（调度器启动前）重置遗留 `running`（仅 `last_run_at` 早于 5 分钟前的，双重保险）；
+  - `_scheduled_real_crawl` 结束后在本线程事件循环内关闭浏览器池。
+- `src/crawlers/real_crawler.py`：`crawl_twitter/crawl_reddit` 及补足循环支持 `heartbeat` 心跳回调（按关键词/每轮上报进展）。
+- 测试：全套 **73 passed**；实测：卡死可自动中止、重启后遗留 `running` 自动重置为失败。
 
 ---
 
 ## 📁 修改文件
 | 文件 | 修改内容 |
 |---|---|
-| `src/crawlers/real_crawler.py` | 评论单独成行、seen_ids 去重 + 严格迭代补足 |
-| `src/vocabulary/storage.py` | 新增 `get_seen_post_ids()` |
-| `src/api/main.py` | 定时任务去重/补足接线、导出列调整（type/parent_id，移除 duplicate） |
-| `src/orchestrator/pipeline.py` | crawled_posts/sampled_posts 增 type/parent_id |
-| `src/crawlers/twitter_url.py` | 评论并发标签页 5→3 |
-| `app.py` | Windows 关闭 WebView2 GPU 加速 |
-| `build.spec` / `build_mac.spec` | hiddenimports 补回 real_crawler |
-| `VERSION` | `1.7.2` → `1.7.3` |
+| `src/api/main.py` | 无进展看门狗、启动自愈重置、抓取后关闭浏览器池 |
+| `src/crawlers/real_crawler.py` | 抓取链路加入 heartbeat 心跳上报 |
+| `VERSION` | `1.7.3` → `1.7.4` |
 
 ---
 
 ## 📌 前序版本回顾
+- **v1.7.3** — 定时任务导出评论（单独成行）+ 去重补足到设定条数 + Windows 稳定性
 - **v1.7.2** — 定时任务完成弹窗提示
-- **v1.7.1** — 手动搜索自动同步 Cookie 到服务端

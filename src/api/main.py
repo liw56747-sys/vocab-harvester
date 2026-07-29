@@ -723,6 +723,17 @@ async def _load_scheduled_jobs():
     try:
         from src.common.database import get_db
         db = await get_db()
+        # 启动自愈：把上一次进程遗留的 running 状态重置为 failed（调度器尚未启动，
+        # 当前会话还没有任何任务在跑，因此这些 running 只可能是上次崩溃/关闭的残留）。
+        # 双重保险：仅重置 last_run_at 早于 5 分钟前的，杜绝任何边界误伤。
+        _stale_cut = (datetime.now() - timedelta(minutes=5)).isoformat()
+        await db.execute(
+            "UPDATE scheduled_tasks SET last_run_status='failed', "
+            "last_error='上次执行被中断（应用关闭或卡死），已自动重置' "
+            "WHERE last_run_status='running' AND (last_run_at IS NULL OR last_run_at < ?)",
+            (_stale_cut,),
+        )
+        await db.commit()
         cursor = await db.execute("SELECT id, name, cron_expression, params, save_path, workflows, task_type FROM scheduled_tasks WHERE enabled=1")
         rows = await cursor.fetchall()
         for row in rows:
@@ -748,12 +759,13 @@ async def _load_scheduled_jobs():
         logger.error(f"加载定时任务失败: {e}")
 
 
-def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, block_resources, seen_ids=None) -> dict:
+def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, block_resources, seen_ids=None, heartbeat=None) -> dict:
     """在独立线程的新事件循环中执行真实抓取（Playwright 与主循环隔离）。
 
     Args:
         targets: [(platform, cookies, proxy), ...]
         seen_ids: 已抓过的帖子 id 集合（用于丢弃历史重复 + 迭代补足到 count）
+        heartbeat: 抓取进展回调，供上层"无进展看门狗"判活
     Returns:
         {platform: [ParsedPost, ...]}
     """
@@ -772,11 +784,11 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
                 if platform == "twitter":
                     out["twitter"] = await crawl_twitter(
                         keywords, count, cookies, proxy, sort_by, include_replies,
-                        block_resources, seen_ids,
+                        block_resources, seen_ids, heartbeat,
                     )
                 elif platform == "reddit":
                     out["reddit"] = await crawl_reddit(
-                        keywords, count, cookies, proxy, sort_by, include_replies, seen_ids,
+                        keywords, count, cookies, proxy, sort_by, include_replies, seen_ids, heartbeat,
                     )
             except Exception as e:
                 errs[platform] = friendly_error(e)
@@ -786,6 +798,12 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
     try:
         loop.run_until_complete(_run())
     finally:
+        # 抓取结束后在本线程事件循环内关闭浏览器池，避免 Chromium 跨次累积
+        try:
+            from src.crawlers.browser_manager import BrowserManager
+            loop.run_until_complete(BrowserManager.get().close())
+        except Exception:
+            pass
         loop.close()
     return {"posts": out, "errors": errs}
 
@@ -898,16 +916,44 @@ async def _execute_scheduled_task(task_config: dict):
         )
         logger.info(f"[定时任务 {task_id}] 开始真实抓取，平台: {[p for (p, _, _) in targets]}, 关键词: {query.keywords}")
 
-        # 真实抓取放到后台线程 + 新事件循环执行（Playwright 与主事件循环隔离）
-        # 使用专用单线程 executor（而非共享默认线程池），与手动搜索的独立守护线程一致，
-        # 避免 Windows 上 Chromium 子进程在被复用的池化线程中运行导致不稳定
+        # 真实抓取放到后台线程 + 新事件循环执行（Playwright 与主事件循环隔离）；
+        # 专用单线程 executor 提升 Windows 稳定性；外层"无进展看门狗"防卡死。
         import concurrent.futures as _cf
+        import time as _time
         _loop = asyncio.get_event_loop()
-        with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="sched-crawl") as _ex:
-            _crawl_result = await _loop.run_in_executor(
+        _hb = {"ts": _time.time()}
+        def _beat():
+            _hb["ts"] = _time.time()
+        # 无进展超时：连续 N 秒抓取无任何推进才判定卡死（默认 40 分钟）。
+        # 只要任务仍在推进（哪怕总耗时数小时）心跳就会刷新，不会被误中断。
+        _STALL_LIMIT = int(os.environ.get("VOCAB_SCHED_STALL_LIMIT", "2400"))
+        _ex = _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="sched-crawl")
+        _stalled = False
+        try:
+            _future = _loop.run_in_executor(
                 _ex, _scheduled_real_crawl, targets, (keywords or []), count,
-                sort_by, include_replies, block_resources, _seen_ids,
+                sort_by, include_replies, block_resources, _seen_ids, _beat,
             )
+            while True:
+                _done, _ = await asyncio.wait({_future}, timeout=30)
+                if _future in _done:
+                    _crawl_result = _future.result()
+                    break
+                if _time.time() - _hb["ts"] > _STALL_LIMIT:
+                    _stalled = True
+                    logger.error(f"[定时任务 {task_id}] 抓取连续 {_STALL_LIMIT}s 无进展，判定卡死，中止并清理浏览器")
+                    # 放弃卡死的浏览器池：重置单例，下次执行全新启动
+                    try:
+                        from src.crawlers.browser_manager import BrowserPool, BrowserManager
+                        BrowserPool._instance = None
+                        BrowserManager._instance = None
+                    except Exception:
+                        pass
+                    break
+        finally:
+            _ex.shutdown(wait=False)  # 不阻塞：卡死线程随浏览器被弃置后自行结束
+        if _stalled:
+            _crawl_result = {"posts": {}, "errors": {p: "抓取长时间无进展（疑似卡死），已自动中止" for (p, _, _) in targets}}
         posts_by_platform = _crawl_result.get("posts", {})
         crawl_errors = _crawl_result.get("errors", {})  # {platform: 友好原因}
 

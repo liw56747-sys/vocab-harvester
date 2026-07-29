@@ -45,3 +45,7 @@ installer/*.exe
 
 # Qoder IDE cache
 .qoder/
+
+# 本地安装包产物，勿入库
+*.exe
+vocab-harvester-*-setup.exe
