@@ -4,7 +4,7 @@
 两套配置：twitter_config / reddit_config
 公共逻辑：
   - 达到目标数量 → 立即停止
-  - 连续 2 次滚动无新增 → 触底停止
+  - 搜索页连续 2 次无新增停止；评论页使用独立停滞阈值，容忍延迟加载
   - 滚动轮数仅为保底硬上限
 """
 
@@ -48,6 +48,12 @@ class PlatformTiming:
     single_keyword_timeout: int         # 单关键词整体超时（秒）
     batch_max_timeout: int              # 批量搜索整体超时上限（秒）
 
+    search_max_stalls: int = 4          # 搜索页等待延迟结果，不能有新增仍误判触底
+    comment_max_stalls: int = 4         # 连续无新增的容忍轮数（评论可能延迟加载）
+    comment_request_timeout: float = 30.0
+    comment_retry_attempts: int = 3
+    comment_retry_wait: float = 2.0
+
     def scroll_wait(self, page_type: str = "search") -> float:
         """返回指定页面类型的随机滚动等待值"""
         if page_type == "search":
@@ -75,9 +81,9 @@ twitter_config = PlatformTiming(
     # 评论页
     comment_scroll_min=2.5,
     comment_scroll_max=4.0,
-    comment_max_rounds=8,
-    comment_max_replies=50,
-    comment_more_wait=0.5,
+    comment_max_rounds=200,
+    comment_max_replies=5000,
+    comment_more_wait=2.0,
     comment_expand_wait=0.5,
 
     # 用户主页
@@ -111,8 +117,8 @@ reddit_config = PlatformTiming(
     # 评论页
     comment_scroll_min=1.0,
     comment_scroll_max=1.8,
-    comment_max_rounds=6,
-    comment_max_replies=30,
+    comment_max_rounds=200,
+    comment_max_replies=5000,
     comment_more_wait=0.5,
     comment_expand_wait=0.0,         # Reddit 无"展开全文"
 

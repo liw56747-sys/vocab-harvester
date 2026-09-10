@@ -1787,7 +1787,7 @@ kbd {
           </label>
           <label class="checkbox-label">
             <input type="checkbox" id="twitter-block-resources">
-            <span data-i18n="block_resources">加速模式（屏蔽图片/CSS，页面加载更快）</span>
+            <span data-i18n="block_resources">加速模式（屏蔽图片/媒体，页面加载更快）</span>
           </label>
           <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
             <span id="twitter-url-count" class="text-muted text-sm">0 个链接</span>
@@ -1867,7 +1867,7 @@ kbd {
           </label>
           <label class="checkbox-label">
             <input type="checkbox" id="user-block-resources">
-            <span data-i18n="block_resources">加速模式（屏蔽图片/CSS，页面加载更快）</span>
+            <span data-i18n="block_resources">加速模式（屏蔽图片/媒体，页面加载更快）</span>
           </label>
           <div style="margin-left:auto;display:flex;gap:8px">
             <button class="btn btn-primary" id="multi-search-btn" onclick="startMultiSearch()" data-i18n="btn_search">开始搜索</button>
@@ -2503,7 +2503,7 @@ const I18N = {
     platform_label: '搜索平台', platform_hint: '（至少选一个）',
     per_platform_count: '每平台条数', sort_label: '排序',
     sort_top: '热门', sort_live: '最新',
-    block_resources: '加速模式（屏蔽图片/CSS，页面加载更快）',
+    block_resources: '加速模式（屏蔽图片/媒体，页面加载更快）',
     btn_search: '开始搜索',
     btn_cancel_search: '取消搜索',
     // Import
@@ -2751,7 +2751,7 @@ const I18N = {
     platform_label: 'Platforms', platform_hint: '(select at least one)',
     per_platform_count: 'Results per platform', sort_label: 'Sort',
     sort_top: 'Top', sort_live: 'Latest',
-    block_resources: 'Speed mode (block images/CSS for faster loading)',
+    block_resources: 'Speed mode (block images/media for faster loading)',
     btn_search: 'Start Search',
     btn_cancel_search: 'Cancel Search',
     import_title: 'Data Import',
@@ -5154,7 +5154,7 @@ async function startBatchSearch(keywords) {
   if (load > 5000) {
     // 粗略预估耗时（分钟）
     const estMin = Math.max(3, Math.round(load / 250));
-    const hasReplies = includeReplies ? '\n• 含评论抓取（Twitter 单 kw 会自动降为 20 条以防限流）' : '';
+    const hasReplies = includeReplies ? '\n• 含评论抓取（按设定主帖数量执行，评论另计，耗时更长）' : '';
     const advice = (load > 15000)
       ? '\n\n⚠️ 任务规模非常大，强烈建议：\n' +
         '  1) 关闭"同时抓取评论"（可省 5 倍时间）\n' +
@@ -5251,7 +5251,7 @@ async function startBatchSearch(keywords) {
   try {
     const initRes = await api('/api/batch-search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('user-block-resources').checked, stagger_platforms: true, worker_concurrency: 3, max_retries: 2, batch_size: 0, batch_cooldown: 30, twitter_count_cap_with_replies: 20 })
+      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('user-block-resources').checked, stagger_platforms: true, worker_concurrency: 3, max_retries: 2, batch_size: 0, batch_cooldown: 30, twitter_count_cap_with_replies: 0 })
     });
     
     const taskId = initRes.task_id;
@@ -5556,7 +5556,7 @@ function togglePostContent(btn, id) { var el = document.getElementById(id); if (
       <div class="form-group">
         <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-secondary)">
           <input type="checkbox" id="modal-block-resources">
-          <span>加速模式（屏蔽图片/CSS，页面加载更快）</span>
+          <span>加速模式（屏蔽图片/媒体，页面加载更快）</span>
         </label>
       </div>
     </div>

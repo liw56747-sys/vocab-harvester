@@ -24,6 +24,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from src.crawlers.comment_results import (
+    search_export_rows, comment_warnings, search_count_result, search_count_warning,
+)
 from src.common.config import load_settings
 from src.common.database import init_db, close_db
 from src.common.models import CrawlQuery, ParsedPost, Platform, VocabStatus
@@ -354,7 +357,7 @@ class BatchSearchRequest(BaseModel):
     # v1.5.4 新增
     batch_size: int = 0                    # 大规模抓取分批 size（>0 生效；0=不分批）
     batch_cooldown: float = 30.0           # 批次间冷却秒数
-    twitter_count_cap_with_replies: int = 20  # 含评论时 Twitter 单 kw 抓取条数上限（防限流）
+    twitter_count_cap_with_replies: int = 0  # 0=按用户设置；正数为显式选择的主帖上限
 
 
 # ── API 路由 ─────────────────────────────────────────────
@@ -1678,7 +1681,13 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                 errors: list[str] = []
                 platform_counts: dict[str, int] = {}
 
+                count_results = []
                 for plat, result in zip(platform_names, results):
+                    available_posts = result[0] if isinstance(result, tuple) else []
+                    count_result = search_count_result(available_posts, req.count, plat, req.keyword.strip())
+                    count_results.append(count_result)
+                    if count_result["missing_count"] and isinstance(result, tuple):
+                        errors.append(search_count_warning(count_result))
                     if isinstance(result, Exception):
                         from src.crawlers.real_crawler import friendly_error
                         error_msg = f"{plat}：{friendly_error(result)}"
@@ -1702,7 +1711,7 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
 
                 if not all_posts:
                     error_msg = "、".join(errors) if errors else "所有平台均未返回结果"
-                    _set_task_status(task_id, {"status": "success", "result": {"status": "empty", "total_posts": 0, "sampled_posts": [], "csv_data": "", "csv_filename": "", "error": f"搜索无结果。{error_msg}", "platform_counts": platform_counts, "skipped_platforms": skipped_platforms}})
+                    _set_task_status(task_id, {"status": "success", "result": {"status": "empty", "total_posts": 0, "sampled_posts": [], "csv_data": "", "csv_filename": "", "error": f"搜索无结果。{error_msg}", "count_results": count_results, "platform_counts": platform_counts, "skipped_platforms": skipped_platforms}})
                     return
 
                 sampled = []
@@ -1715,45 +1724,17 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                         sampled.append({"platform": "reddit", "post_id": t.get("post_id", ""), "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", ""))[:200].strip(), "published_at": t.get("created_at", ""), "metrics": {"score": t.get("score", 0), "comments": t.get("num_comments", 0)}, "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"), "media_urls": t.get("media_urls", ""), "replies_count": t.get("comments_fetched", 0)})
                     if len(sampled) >= 500: break
 
+                export_rows = search_export_rows(all_posts)
+                errors.extend(comment_warnings(all_posts))
                 csv_buf = io.StringIO()
                 csv_buf.write("\ufeff")
-                all_csv_fields = ["platform", "type", "post_id", "parent_id", "author", "commenter", "content", "created_at", "url", "likes", "retweets", "replies", "score", "num_comments", "has_media", "media_type", "media_urls"]
+                all_csv_fields = ['platform', 'type', 'post_id', 'parent_id', 'author', 'commenter', 'content', 'created_at', 'url', 'likes', 'retweets', 'replies', 'score', 'num_comments', 'has_media', 'media_type', 'media_urls', 'comments_status', 'comments_warning']
                 writer = csv.DictWriter(csv_buf, fieldnames=all_csv_fields, extrasaction="ignore")
                 writer.writeheader()
-                for t in all_posts:
-                    plat, row_type = t.get("platform", ""), t.get("type", "post")
-                    if plat == "twitter":
-                        row = dict(t)
-                        row["post_id"] = t.get("tweet_id", "")
-                        row.setdefault("parent_id", "")
-                        row.setdefault("commenter", "")
-                        row["author"] = t.get("author_name", "") or t.get("author", "")
-                        writer.writerow(row)
-                        replies_raw = t.get("replies_data", "[]")
-                        if replies_raw and replies_raw != "[]":
-                            try:
-                                import json as _json
-                                replies = _json.loads(replies_raw) if isinstance(replies_raw, str) else replies_raw
-                                for reply in replies:
-                                    writer.writerow({"platform": "twitter", "type": "comment", "post_id": reply.get("tweet_id", ""), "parent_id": t.get("tweet_id", ""), "author": reply.get("display_name", ""), "commenter": reply.get("display_name", ""), "content": reply.get("content", ""), "created_at": reply.get("created_at", ""), "has_media": reply.get("has_media", False), "media_type": reply.get("media_type", "none"), "media_urls": reply.get("media_urls", "")})
-                            except Exception: pass
-                    elif plat == "reddit":
-                        row = dict(t)
-                        if row_type == "post": row["content"] = (t.get("title", "") + "\n" + t.get("content", "")).strip()
-                        writer.writerow(row)
-                    else:
-                        writer.writerow(t)
-
+                writer.writerows(export_rows)
                 csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
-                # v1.5.5: 生成 xlsx 数据
-                xlsx_fields = ["platform", "type", "post_id", "author", "content", "created_at", "url", "likes", "retweets", "replies", "score", "num_comments"]
-                xlsx_rows = []
-                for t in all_posts:
-                    plat, row_type = t.get("platform", ""), t.get("type", "post")
-                    if plat == "twitter":
-                        xlsx_rows.append({"platform": "twitter", "type": row_type, "post_id": t.get("tweet_id", ""), "author": t.get("author_name", "") or t.get("author", ""), "content": t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)})
-                    elif plat == "reddit":
-                        xlsx_rows.append({"platform": "reddit", "type": row_type, "post_id": t.get("post_id", ""), "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", "")).strip() if row_type == "post" else t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "score": t.get("score", 0), "num_comments": t.get("num_comments", 0)})
+                xlsx_fields = all_csv_fields
+                xlsx_rows = export_rows
                 try:
                     xlsx_b64 = base64.b64encode(_generate_xlsx_bytes(xlsx_rows, xlsx_fields, "搜索结果")).decode("ascii")
                 except Exception as xlsx_err:
@@ -1768,7 +1749,7 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 result_status = "cancelled" if was_cancelled else "success"
                 result_msg = "搜索已取消，数据已保存" if was_cancelled else None
-                _set_task_status(task_id, {"status": "success", "result": {"status": result_status, "total_posts": sum(1 for p in all_posts if p.get("type", "post") != "comment"), "total_rows": len(all_posts), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"multi_search_{timestamp}.csv", "xlsx_data": xlsx_b64, "xlsx_filename": f"multi_search_{timestamp}.xlsx", "platform_counts": platform_counts, "skipped_platforms": skipped_platforms, "errors": errors, "message": result_msg}})
+                _set_task_status(task_id, {"status": "success", "result": {"status": result_status, "total_posts": sum(1 for p in all_posts if p.get("type", "post") != "comment"), "total_rows": len(export_rows), "count_results": count_results, "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"multi_search_{timestamp}.csv", "xlsx_data": xlsx_b64, "xlsx_filename": f"multi_search_{timestamp}.xlsx", "platform_counts": platform_counts, "skipped_platforms": skipped_platforms, "errors": errors, "message": result_msg}})
             except Exception as e:
                 tb.print_exc()
                 _set_task_status(task_id, {"status": "error", "error": str(e)})
@@ -1785,12 +1766,12 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
 @app.post("/api/batch-search")
 async def batch_search(req: BatchSearchRequest):
     """
-    批量关键词搜索（v1.5.3 引入关键词级 Job 队列，v1.5.4 加入自动分批与评论降配）
+    批量关键词搜索（关键词级 Job 队列，按用户目标数量分页采集）
 
     - 每 (keyword, platform) 独立成一个 job：失败可单独重试
     - 支持平台错峰（stagger_platforms=True 时先跑 Reddit 再跑 Twitter）
     - 支持自动分批（batch_size>0 时切分大规模任务，每批间冷却降低 IP 限流风险）
-    - 含评论时 Twitter 自动降 count（避免 tab 爆炸 + 单 Cookie 限流）
+    - 主帖数量与评论数量独立统计；默认不自动降低用户设置的 count
     - 进度实时上报到 /api/task-status 的 progress 字段
     - 关键词上限 50（前端亦已同步）
     """
@@ -1815,7 +1796,6 @@ async def batch_search(req: BatchSearchRequest):
         import asyncio
         import base64
         import traceback as tb
-        import json as _json
         import io
         import csv
         from src.crawlers.twitter_url import TwitterCookieFetcher
@@ -1860,11 +1840,11 @@ async def batch_search(req: BatchSearchRequest):
 
                 valid_keywords = [kw.strip() for kw in req.keywords if kw.strip()]
 
-                # v1.5.4: 含评论时降 Twitter 单 kw 抓取条数（避免 50 tab/kw × 大规模关键词导致
-                # 内存 + 单 Cookie 限流双重灾难）；Reddit 用 JSON API 廉价，不降。
+                # 默认尊重用户设置的主帖条数；仅显式设置正数上限时降量并提示。
                 twitter_effective_count = req.count
-                if req.include_replies and req.count > req.twitter_count_cap_with_replies:
+                if req.include_replies and 0 < req.twitter_count_cap_with_replies < req.count:
                     twitter_effective_count = req.twitter_count_cap_with_replies
+                    errors.append(f"已按设置将 Twitter 每关键词主帖上限调整为 {twitter_effective_count} 条")
                     logger.info(
                         f"[batch-search {task_id}] include_replies=True 且 count={req.count} > "
                         f"{req.twitter_count_cap_with_replies}: Twitter 单关键词条数自动降为 "
@@ -1956,13 +1936,19 @@ async def batch_search(req: BatchSearchRequest):
 
                 # 按关键词汇总
                 by_keyword: dict[str, dict] = {kw: {"keyword": kw, "post_count": 0, "total_rows": 0} for kw in valid_keywords}
+                count_results = []
                 for j in jobs:
+                    target_count = twitter_effective_count if j.platform == "twitter" else req.count
+                    count_result = search_count_result(j.result or [], target_count, j.platform, j.keyword)
+                    count_results.append(count_result)
                     if j.status == JobStatus.SUCCESS:
+                        if count_result["missing_count"]:
+                            errors.append(search_count_warning(count_result))
                         posts = j.result or []
                         all_rows.extend(posts)
                         post_cnt = sum(1 for p in posts if p.get("type", "post") != "comment")
                         by_keyword[j.keyword]["post_count"] += post_cnt
-                        by_keyword[j.keyword]["total_rows"] += len(posts)
+                        by_keyword[j.keyword]["total_rows"] += len(search_export_rows(posts))
                         for p in posts:
                             if p.get("type", "post") != "comment":
                                 platform_counts[j.platform] = platform_counts.get(j.platform, 0) + 1
@@ -1978,6 +1964,7 @@ async def batch_search(req: BatchSearchRequest):
                         "keyword_results": keyword_results, "sampled_posts": [],
                         "csv_data": "", "csv_filename": "",
                         "error": f"批量搜索无结果。{'、'.join(errors)}" if errors else "批量搜索无结果",
+                        "count_results": count_results,
                         "skipped_platforms": skipped_platforms,
                     }})
                     return
@@ -1990,37 +1977,17 @@ async def batch_search(req: BatchSearchRequest):
                     elif plat == "reddit": sampled.append({"platform": "reddit", "post_id": t.get("post_id", ""), "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", ""))[:200].strip(), "published_at": t.get("created_at", ""), "keyword": t.get("keyword", ""), "metrics": {"score": t.get("score", 0), "comments": t.get("num_comments", 0)}, "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"), "media_urls": t.get("media_urls", ""), "replies_count": t.get("comments_fetched", 0)})
                     if len(sampled) >= 500: break
 
-                csv_buf = io.StringIO(); csv_buf.write("\ufeff")
-                all_csv_fields = ["keyword", "platform", "type", "post_id", "parent_id", "author", "commenter", "content", "created_at", "url", "likes", "retweets", "replies", "score", "num_comments", "has_media", "media_type", "media_urls"]
-                writer = csv.DictWriter(csv_buf, fieldnames=all_csv_fields, extrasaction="ignore"); writer.writeheader()
-                for t in all_rows:
-                    plat, row_type = t.get("platform", ""), t.get("type", "post")
-                    if plat == "twitter":
-                        row = dict(t); row["post_id"] = t.get("tweet_id", ""); row.setdefault("parent_id", ""); row.setdefault("commenter", ""); row["author"] = t.get("author_name", "") or t.get("author", ""); writer.writerow(row)
-                        replies_raw = t.get("replies_data", "[]")
-                        if replies_raw and replies_raw != "[]":
-                            try:
-                                replies = _json.loads(replies_raw) if isinstance(replies_raw, str) else replies_raw
-                                for reply in replies:
-                                    writer.writerow({"keyword": t.get("keyword", ""), "platform": "twitter", "type": "comment", "post_id": reply.get("tweet_id", ""), "parent_id": t.get("tweet_id", ""), "author": reply.get("display_name", ""), "commenter": reply.get("display_name", ""), "content": reply.get("content", ""), "created_at": reply.get("created_at", ""), "has_media": reply.get("has_media", False), "media_type": reply.get("media_type", "none"), "media_urls": reply.get("media_urls", "")})
-                            except Exception: pass
-                    elif plat == "reddit":
-                        row = dict(t)
-                        if row_type == "post":
-                            row["content"] = (t.get("title", "") + "\n" + t.get("content", "")).strip()
-                        writer.writerow(row)
-                    else: writer.writerow(t)
-
+                export_rows = search_export_rows(all_rows)
+                errors.extend(comment_warnings(all_rows))
+                csv_buf = io.StringIO()
+                csv_buf.write("\ufeff")
+                all_csv_fields = ['keyword', 'platform', 'type', 'post_id', 'parent_id', 'author', 'commenter', 'content', 'created_at', 'url', 'likes', 'retweets', 'replies', 'score', 'num_comments', 'has_media', 'media_type', 'media_urls', 'comments_status', 'comments_warning']
+                writer = csv.DictWriter(csv_buf, fieldnames=all_csv_fields, extrasaction="ignore")
+                writer.writeheader()
+                writer.writerows(export_rows)
                 csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
-                # v1.5.5: 生成 xlsx 数据
-                xlsx_fields = ["keyword", "platform", "type", "post_id", "author", "content", "created_at", "url", "likes", "retweets", "replies", "score", "num_comments"]
-                xlsx_rows = []
-                for t in all_rows:
-                    plat, row_type = t.get("platform", ""), t.get("type", "post")
-                    if plat == "twitter":
-                        xlsx_rows.append({"keyword": t.get("keyword", ""), "platform": "twitter", "type": row_type, "post_id": t.get("tweet_id", ""), "author": t.get("author_name", "") or t.get("author", ""), "content": t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)})
-                    elif plat == "reddit":
-                        xlsx_rows.append({"keyword": t.get("keyword", ""), "platform": "reddit", "type": row_type, "post_id": t.get("post_id", ""), "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", "")).strip() if row_type == "post" else t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "score": t.get("score", 0), "num_comments": t.get("num_comments", 0)})
+                xlsx_fields = all_csv_fields
+                xlsx_rows = export_rows
                 try:
                     xlsx_b64 = base64.b64encode(_generate_xlsx_bytes(xlsx_rows, xlsx_fields, "批量搜索结果")).decode("ascii")
                 except Exception as xlsx_err:
@@ -2040,7 +2007,7 @@ async def batch_search(req: BatchSearchRequest):
                 _set_task_status(task_id, {"status": "success", "progress": final_snap, "result": {
                     "status": result_status,
                     "total_posts": sum(1 for p in all_rows if p.get("type", "post") != "comment"),
-                    "total_rows": len(all_rows),
+                    "total_rows": len(export_rows), "count_results": count_results,
                     "keyword_results": keyword_results,
                     "sampled_posts": sampled,
                     "csv_data": csv_b64,

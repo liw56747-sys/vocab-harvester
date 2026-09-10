@@ -37,12 +37,6 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
-      - name: Inject GitHub Token into .env
-        shell: pwsh
-        run: |
-          echo "GITHUB_TOKEN=${{ secrets.GH_PAT }}" > .env
-          echo ".env created with GH_PAT"
-
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
@@ -190,11 +184,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-
-      - name: Inject GitHub Token into .env
-        run: |
-          echo "GITHUB_TOKEN=${{ secrets.GH_PAT }}" > .env
-          echo ".env created with GH_PAT"
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -426,6 +415,10 @@ jobs:
             CHANGELOG=$(git log -20 --pretty=format:"- %s" --no-merges 2>/dev/null || echo "")
           fi
 
+          if [ -s release_notes.md ]; then
+            CHANGELOG="$(cat release_notes.md)"
+          fi
+
           # 如果 changelog 为空，使用 --generate-notes
           if [ -z "$CHANGELOG" ]; then
             echo "No commit log available, will use GitHub auto-generated notes"
@@ -499,12 +492,12 @@ jobs:
               gh release create "$TAG" \
                 --title "$RELEASE_NAME" \
                 --generate-notes \
-                --latest
+                --draft
             else
               gh release create "$TAG" \
                 --title "$RELEASE_NAME" \
                 --notes-file "$BODY_FILE" \
-                --latest
+                --draft
             fi
           fi
 
@@ -515,4 +508,5 @@ jobs:
             --clobber
 
           echo ""
+          gh release edit "$TAG" --draft=false --latest
           echo "Release published: https://github.com/${GH_REPO}/releases/tag/${TAG}"

@@ -79,6 +79,7 @@ _CSV_FIELDS = [
     "likes", "retweets", "replies", "quotes", "url",
     "has_media", "media_type", "media_urls",
     "replies_count",
+    "comments_status", "comments_warning",
     "is_retweet", "is_reply",
 ]
 
@@ -616,34 +617,48 @@ class TwitterCookieFetcher:
         from src.crawlers.browser_manager import apply_request_interceptors
 
         sem = asyncio.Semaphore(3)
+        for tweet in tweets:
+            tweet["comments_status"] = "pending"
+            tweet["comments_warning"] = "评论任务尚未完成"
+            tweet["replies_count"] = 0
+            tweet["replies_data"] = "[]"
 
         async def _scrape_one_reply(tweet: dict):
             async with sem:
                 if not tweet.get("url"):
-                    tweet["replies_count"] = 0
-                    tweet["replies_data"] = "[]"
+                    tweet["comments_status"] = "failed"
+                    tweet["comments_warning"] = "缺少帖子链接，无法抓取评论"
                     return
-                page = await context.new_page()
-                page.set_default_timeout(30000)  # 30 秒兜底：防止 CDP 命令无限挂起
-                await apply_request_interceptors(
-                    page, block_resources=self.block_resources,
-                    ct0_token=ct0_token,
-                )
-                try:
-                    replies = await self._scrape_replies_page(page, tweet["url"])
-                    tweet["replies_count"] = len(replies)
-                    tweet["replies_data"] = json.dumps(replies, ensure_ascii=False)
-                except Exception as e:
-                    logger.warning(f"评论抓取失败 ({tweet.get('url')}): {e}")
-                    tweet["replies_count"] = 0
-                    tweet["replies_data"] = "[]"
-                finally:
-                    await self._safe_close(page, label="page(reply)")
+                for attempt in range(_TC.comment_retry_attempts):
+                    page = None
+                    try:
+                        page = await context.new_page()
+                        page.set_default_timeout(_TC.comment_request_timeout * 1000)
+                        await apply_request_interceptors(
+                            page, block_resources=self.block_resources, ct0_token=ct0_token,
+                        )
+                        await self._scrape_replies_page(page, tweet["url"], progress=tweet)
+                        if not tweet["replies_count"] and tweet.get("replies", 0):
+                            raise RuntimeError("页面显示有回复，但未加载出评论，请稍后重试")
+                        return
+                    except asyncio.CancelledError:
+                        tweet["comments_status"] = "partial" if tweet["replies_count"] else "failed"
+                        tweet["comments_warning"] = "评论抓取超时或被取消，已保留已采集评论"
+                        raise
+                    except Exception as e:
+                        tweet["comments_status"] = "partial" if tweet["replies_count"] else "failed"
+                        tweet["comments_warning"] = f"评论抓取未完成: {e}"
+                        logger.warning(f"评论抓取失败 ({tweet.get('url')}): {e}")
+                        # 已采到的评论不丢弃；登录失效无需重复请求。
+                        if tweet["replies_count"] or "Cookie" in str(e):
+                            return
+                    finally:
+                        if page is not None:
+                            await self._safe_close(page, label="page(reply)")
+                    if attempt + 1 < _TC.comment_retry_attempts:
+                        await asyncio.sleep(_TC.comment_retry_wait * (2 ** attempt))
 
-        await asyncio.gather(
-            *[_scrape_one_reply(t) for t in tweets],
-            return_exceptions=True,
-        )
+        await asyncio.gather(*[_scrape_one_reply(t) for t in tweets])
 
     # ── 页面级抓取方法 ────────────────────────────────────
 
@@ -690,25 +705,15 @@ class TwitterCookieFetcher:
         # 逐轮滚动 + 提取 + 去重（虚拟滚动：DOM 同时仅保留 ~15-25 条）
         all_tweets: dict[str, dict] = {}
         stall_count = 0
-        max_rounds = min(_TC.user_max_rounds, count)
+        max_rounds = max(_TC.user_max_rounds, count * 2 + _TC.search_max_stalls)
 
         # 点击"加载更多"的 JS
         _CLICK_MORE_USER_JS = r"""() => {
-            const spans = document.querySelectorAll('span');
-            for (const span of spans) {
-                const t = (span.textContent || '').toLowerCase().trim();
-                if (t.includes('show') || t.includes('more') || t.includes('显示')
-                    || t.includes('更多') || t.includes('load') || t.includes('查看')) {
-                    let el = span;
-                    for (let i = 0; i < 5; i++) {
-                        if (!el) break;
-                        if (el.getAttribute('role') === 'button' || el.tagName === 'BUTTON'
-                            || el.tagName === 'A' || el.onclick
-                            || el.getAttribute('tabindex') === '0') {
-                            el.click(); return true;
-                        }
-                        el = el.parentElement;
-                    }
+            for (const el of document.querySelectorAll('[role="button"], button')) {
+                if (el.closest('article') || !el.getClientRects().length) continue;
+                if (/^(show more|load more|show more (posts|results)|显示更多|加载更多|查看更多(结果|帖子)?)$/i.test((el.textContent || '').trim())) {
+                    el.click();
+                    return true;
                 }
             }
             return false;
@@ -722,23 +727,25 @@ class TwitterCookieFetcher:
             expanded = await page.evaluate(_EXPAND_TWEETS_JS)
             if expanded > 0:
                 await asyncio.sleep(_TC.user_expand_wait)
-            
+
+            prev_count = len(all_tweets)
             # 提取当前 DOM 中的推文（排除已见过的 ID）
             new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, {"alreadySeenIds": list(all_tweets.keys()), "skipMedia": self.block_resources})
             for t in new_tweets:
                 tid = t.get("tweet_id", "")
                 if tid and tid not in all_tweets:
                     all_tweets[tid] = t
-            
-            prev_count = len(all_tweets)
-            
-            # 触底加载
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+
+
+            if len(all_tweets) >= count:
+                break
+            # 逐屏加载虚拟列表
+            await page.evaluate("window.scrollBy(0, Math.max(300, window.innerHeight * 0.75))")
             await asyncio.sleep(_TC.scroll_wait("user"))
-                        
+
             if len(all_tweets) == prev_count:
                 stall_count += 1
-                        
+
                 # 停滞时尝试点击"加载更多"
                 if stall_count >= 2:
                     clicked = await page.evaluate(_CLICK_MORE_USER_JS)
@@ -747,12 +754,12 @@ class TwitterCookieFetcher:
                         await asyncio.sleep(_TC.click_more_wait)
                         stall_count = 0
                         continue
-            
-                if stall_count >= 2:
+
+                if stall_count >= _TC.search_max_stalls:
                     logger.info(f"@{username}: 滚动加载完成 ({len(all_tweets)} 条，连续 {stall_count} 轮无新增)")
                     break
-                else:
-                    stall_count = 0
+            else:
+                stall_count = 0
 
 
         tweets = list(all_tweets.values())[:count]
@@ -854,33 +861,23 @@ class TwitterCookieFetcher:
                 return []
 
         # 逐轮滚动 + 提取 + 去重（虚拟滚动：DOM 同时仅保留 ~15-25 条）
-        SEARCH_MAX_ROUNDS = _TC.search_max_rounds
+        SEARCH_MAX_ROUNDS = max(_TC.search_max_rounds, count * 2 + _TC.search_max_stalls)
         all_tweets: dict[str, dict] = {}
         stall_count = 0
-        MAX_STALLS = 2  # 连续 2 次无新增即停止
-        
+        MAX_STALLS = _TC.search_max_stalls
+
         # 点击“显示更多的”类按钮
         _CLICK_MORE_JS = r"""() => {
-            const spans = document.querySelectorAll('span');
-            for (const span of spans) {
-                const t = (span.textContent || '').toLowerCase().trim();
-                if (t.includes('show') || t.includes('more') || t.includes('显示')
-                    || t.includes('更多') || t.includes('load') || t.includes('查看')) {
-                    let el = span;
-                    for (let i = 0; i < 5; i++) {
-                        if (!el) break;
-                        if (el.getAttribute('role') === 'button' || el.tagName === 'BUTTON'
-                            || el.tagName === 'A' || el.onclick
-                            || el.getAttribute('tabindex') === '0') {
-                            el.click(); return true;
-                        }
-                        el = el.parentElement;
-                    }
+            for (const el of document.querySelectorAll('[role="button"], button')) {
+                if (el.closest('article') || !el.getClientRects().length) continue;
+                if (/^(show more|load more|show more (posts|results)|显示更多|加载更多|查看更多(结果|帖子)?)$/i.test((el.textContent || '').trim())) {
+                    el.click();
+                    return true;
                 }
             }
             return false;
         }"""
-        
+
         for round_num in range(SEARCH_MAX_ROUNDS):
             try:
                 # 检查取消信号
@@ -900,6 +897,7 @@ class TwitterCookieFetcher:
                 if expanded > 0:
                     await asyncio.sleep(_TC.search_expand_wait)
 
+                prev_count = len(all_tweets)
                 # 提取当前 DOM 中的推文
                 new_tweets = await page.evaluate(_EXTRACT_TWEETS_JS, {"alreadySeenIds": list(all_tweets.keys()), "skipMedia": self.block_resources})
                 for t in new_tweets:
@@ -907,14 +905,15 @@ class TwitterCookieFetcher:
                     if tid and tid not in all_tweets:
                         all_tweets[tid] = t
 
-                prev_count = len(all_tweets)
 
-                # 滚动到页面底部（触底加载）
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                if len(all_tweets) >= count:
+                    break
+                # 逐屏加载，避免跳过虚拟列表中的中间结果
+                await page.evaluate("window.scrollBy(0, Math.max(300, window.innerHeight * 0.75))")
                 # 随机等待
                 await asyncio.sleep(_TC.scroll_wait("search"))
 
-                # 条件 B（保底/触底检测）：连续 2 次无新增即停止
+                # 无新增达到阈值后结束；持续有新结果时继续补足目标
                 if len(all_tweets) == prev_count:
                     stall_count += 1
 
@@ -950,7 +949,7 @@ class TwitterCookieFetcher:
 
         tweets = list(all_tweets.values())[:count]
         logger.info(f"搜索「{keyword}」: 最终提取 {len(tweets)} 条推文")
-        
+
         # 调试截图：滚动结束后仍然 0 条结果
         if not tweets:
             try:
@@ -964,7 +963,7 @@ class TwitterCookieFetcher:
                 logger.info(f"调试截图(滚动后)已保存: {screenshot_path}, URL={page.url}")
             except Exception as ss_err:
                 logger.warning(f"保存调试截图失败: {ss_err}")
-        
+
         return tweets
 
     # ── 评论/回复抓取 ─────────────────────────────────────
@@ -1097,134 +1096,92 @@ class TwitterCookieFetcher:
         return results;
     }"""
 
-    async def _scrape_replies_page(self, page, tweet_url: str, max_replies: int | None = None) -> list[dict]:
-        """
-        在给定页面上抓取推文回复（渐进式滚动+去重）。
-        由 _parallel_scrape_replies 调用，每个并发任务使用独立 page。
-        """
+    # 仅点击明确的展开回复控件，避免点击“回复”发帖按钮或导航链接。
+    _CLICK_SHOW_MORE_REPLIES_JS = r"""() => {
+        const controls = document.querySelectorAll('[role="button"], button');
+        const pattern = /^(show (more replies|replies|additional replies|probable spam)|more replies|view (more replies|replies)|显示(更多回复|回复|可能的垃圾信息)|查看更多回复|查看(更多回复|回复)|更多回复)(\s*\(.*\))?$/i;
+        for (const el of controls) {
+            if (el.closest('[data-testid="tweetText"]')) continue;
+            if (!el.getClientRects().length) continue;
+            if (pattern.test((el.textContent || '').trim())) {
+                el.click();
+                return true;
+            }
+        }
+        return false;
+    }"""
+
+    async def _scrape_replies_page(
+        self, page, tweet_url: str, max_replies: int | None = None,
+        *, progress: dict | None = None,
+    ) -> list[dict]:
+        """渐进式滚动采集；每轮保存结果，超时/页面异常也不会丢失已采评论。"""
         import time as _time
 
         if max_replies is None:
             max_replies = _TC.comment_max_replies
-
-        logger.info(f"抓取回复: {tweet_url}")
-        try:
-            await page.goto(tweet_url, wait_until="domcontentloaded", timeout=60000)
-        except Exception as e:
-            logger.warning(f"打开推文详情页失败: {e}")
-            return []
-
+        if progress is None:
+            progress = {}
+        await page.goto(tweet_url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(_TC.search_initial_wait)
-
-        # 检查是否被重定向
         if "login" in page.url or "flow" in page.url:
-            logger.warning("Cookie 已过期，跳过回复抓取")
-            return []
+            raise RuntimeError("Cookie 已过期，请重新登录后抓取评论")
+        await page.wait_for_selector('article[data-testid="tweet"]', timeout=_TC.search_load_timeout)
 
-        # 点击"Show more replies"按钮的 JS
-        _CLICK_SHOW_MORE_JS = r"""() => {
-            const allSpans = document.querySelectorAll('span');
-            for (const span of allSpans) {
-                const text = (span.textContent || '').toLowerCase().trim();
-                if (text.includes('show') || text.includes('more replies')
-                    || text.includes('显示') || text.includes('更多')
-                    || text.includes('load more') || text.includes('查看')) {
-                    let el = span;
-                    for (let i = 0; i < 5; i++) {
-                        if (!el) break;
-                        if (el.getAttribute('role') === 'button'
-                            || el.tagName === 'BUTTON'
-                            || el.tagName === 'A'
-                            || el.onclick
-                            || el.getAttribute('tabindex') === '0') {
-                            el.click();
-                            return true;
-                        }
-                        el = el.parentElement;
-                    }
-                }
-            }
-            const buttons = document.querySelectorAll('[role="button"]');
-            for (const btn of buttons) {
-                const t = (btn.textContent || '').toLowerCase().trim();
-                if (t.includes('more') || t.includes('reply') || t.includes('show')
-                    || t.includes('显示') || t.includes('回复') || t.includes('更多')) {
-                    btn.click();
-                    return true;
-                }
-            }
-            return false;
-        }"""
-
-        # 渐进式滚动 + 去重采集
-        COMMENT_MAX_ROUNDS = _TC.comment_max_rounds
         collected = {}
         stall_count = 0
-        max_stalls = 2
-        per_tweet_budget = _TC.single_keyword_timeout / 3
-        _tweet_start = _time.time()
-
-        for round_num in range(COMMENT_MAX_ROUNDS):
-            # 超时保护
-            if _time.time() - _tweet_start > per_tweet_budget:
-                logger.info(f"回复超时保护: 已用 {int(_time.time() - _tweet_start)} 秒，停止")
+        started = _time.monotonic()
+        main_id = extract_tweet_id(tweet_url) or ""
+        warning = "达到评论滚动轮数上限，可能仍有未采集评论"
+        for round_num in range(_TC.comment_max_rounds):
+            if _time.monotonic() - started > _TC.single_keyword_timeout / 3:
+                warning = "单帖评论抓取超时，已保留已采集评论"
                 break
-
-            # 展开截断的长回复
+            # 必须在本轮提取前记录数量，否则每轮都会误判为无新增。
+            prev_count = len(collected)
             expanded = await page.evaluate(_EXPAND_TWEETS_JS)
             if expanded > 0:
                 await asyncio.sleep(_TC.comment_expand_wait)
-
-            # 提取当前 DOM 中的回复
-            main_id = tweet_url.split("/status/")[-1].split("?")[0] if "/status/" in tweet_url else ""
-            exclude_set = {main_id} | set(collected.keys())
-            new_replies = await page.evaluate(self._EXTRACT_REPLIES_JS, list(exclude_set))
-
+            new_replies = await page.evaluate(
+                self._EXTRACT_REPLIES_JS, list({main_id} | set(collected)),
+            )
             for r in new_replies:
                 tid = r.get("tweetId", "")
-                if tid and tid not in collected:
+                if tid and tid != main_id and tid not in collected and len(collected) < max_replies:
                     collected[tid] = {
-                        "tweet_id": tid,
-                        "author": r.get("author", ""),
+                        "tweet_id": tid, "author": r.get("author", ""),
                         "display_name": r.get("displayName", ""),
-                        "content": r.get("text", ""),
-                        "created_at": r.get("datetime", ""),
+                        "content": r.get("text", ""), "created_at": r.get("datetime", ""),
                         "has_media": r.get("hasMedia", False),
                         "media_type": r.get("mediaType", "none"),
                         "media_urls": r.get("mediaUrls", ""),
                     }
-
-            prev_count = len(collected)
-
-            # 触底加载
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            progress["replies_count"] = len(collected)
+            progress["replies_data"] = json.dumps(list(collected.values()), ensure_ascii=False)
+            if len(collected) >= max_replies:
+                warning = f"达到单帖评论上限 {max_replies} 条，可能仍有未采集评论"
+                break
+            stall_count = stall_count + 1 if len(collected) == prev_count else 0
+            if stall_count >= 2:
+                clicked = await page.evaluate(self._CLICK_SHOW_MORE_REPLIES_JS)
+                if clicked:
+                    await asyncio.sleep(_TC.comment_more_wait)
+                    stall_count = 0
+                    continue
+            if stall_count >= _TC.comment_max_stalls:
+                warning = ""
+                break
+            # X 使用虚拟列表，直接跳到底部会跳过尚未提取的中间评论。
+            await page.evaluate("window.scrollBy(0, Math.max(300, window.innerHeight * 0.75))")
             await asyncio.sleep(_TC.scroll_wait("comment"))
 
-            if len(collected) == prev_count:
-                stall_count += 1
-
-                # 连续停滞 2 轮时，尝试点击"加载更多"按钮
-                if stall_count >= 2:
-                    clicked = await page.evaluate(_CLICK_SHOW_MORE_JS)
-                    if clicked:
-                        logger.info(f"第 {round_num+1} 轮: 点击了'加载更多回复'按钮")
-                        await asyncio.sleep(_TC.comment_more_wait)
-                        stall_count = 0
-                        continue
-
-                if stall_count >= max_stalls:
-                    logger.info(f"回复加载完成: {len(collected)} 条 (连续 {stall_count} 轮无新增)")
-                    break
-            else:
-                stall_count = 0
-
-            if len(collected) >= max_replies:
-                logger.info(f"回复达到上限 {max_replies} 条")
-                break
-
-        replies = list(collected.values())
-        logger.info(f"共获取 {len(replies)} 条回复")
-        return replies
+        expected = progress.get("replies", 0)
+        if not warning and isinstance(expected, (int, float)) and len(collected) < expected:
+            warning = f"页面显示 {expected} 条回复，实际采集 {len(collected)} 条；可能存在未加载或不可访问的回复"
+        progress["comments_status"] = "partial" if warning else "finished"
+        progress["comments_warning"] = warning
+        logger.info(f"共获取 {len(collected)} 条回复" + (f"（{warning}）" if warning else ""))
+        return list(collected.values())
 
     # ── 导出 ──────────────────────────────────────────────
 
