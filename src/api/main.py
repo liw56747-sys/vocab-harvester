@@ -406,6 +406,13 @@ def _set_task_status(task_id: str, data: dict) -> None:
         ]
         for tid in expired:
             del _BACKGROUND_TASKS[tid]
+    # 结果页只显示汇总；逐帖提示与底层错误写入诊断日志，便于后续排查。
+    if data.get("status") != "running":
+        result = data.get("result") or {}
+        diagnostics = [data.get("error"), result.get("error"), *(result.get("errors") or [])]
+        for detail in diagnostics:
+            if detail:
+                logger.warning("任务 %s 采集诊断: %s", task_id, detail)
 
 
 def _get_task_status(task_id: str) -> dict | None:
@@ -1502,7 +1509,7 @@ async def twitter_fetch(req: TwitterUrlFetchRequest):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 _set_task_status(task_id, {
                     "status": "success",
-                    "result": {"status": "success", "total_posts": len(tweets), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"tweets_{timestamp}.csv", "xlsx_data": xlsx_b64, "xlsx_filename": f"tweets_{timestamp}.xlsx"}
+                    "result": {"status": "success", "total_posts": len(tweets), "total_comments": sum(t.get("replies_count", 0) for t in tweets), "errors": comment_warnings(tweets), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"tweets_{timestamp}.csv", "xlsx_data": xlsx_b64, "xlsx_filename": f"tweets_{timestamp}.xlsx"}
                 })
             except Exception as e:
                 tb.print_exc()

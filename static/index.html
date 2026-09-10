@@ -2704,6 +2704,13 @@ const I18N = {
     searching: '搜索中... ({t})',
     search_result: '关键词搜索结果',
     no_search_result: '无搜索结果', search_complete: '搜索完成', search_failed: '搜索失败',
+    summary_complete: '采集完成', summary_partial: '采集完成（部分未完成）',
+    summary_failed: '采集失败', summary_cancelled: '采集已取消',
+    summary_target: '目标主帖数', summary_comments: '已采集评论', summary_missing: '主帖缺口', summary_posts_unit: '条主帖',
+    summary_partial_note: '部分主帖或评论未采集完整，已保留现有结果。',
+    summary_cancelled_note: '任务已停止；如有可下载的结果，可在下方保存。',
+    summary_retry: '请检查账号和网络，或调整抓取条件后重试。',
+    summary_skipped: '{n} 个平台因未配置账号而跳过。',
     total_results: '总结果',
     multi_search_done: '多平台搜索完成！',
     cookie_not_configured_short: 'Cookie 未配置',
@@ -2948,6 +2955,13 @@ const I18N = {
     searching: 'Searching... ({t})',
     search_result: 'Search Results',
     no_search_result: 'No results', search_complete: 'Search complete', search_failed: 'Search failed',
+    summary_complete: 'Collection complete', summary_partial: 'Collection complete (partial)',
+    summary_failed: 'Collection failed', summary_cancelled: 'Collection cancelled',
+    summary_target: 'Target posts', summary_comments: 'Comments collected', summary_missing: 'Missing posts', summary_posts_unit: 'posts',
+    summary_partial_note: 'Some posts or comments could not be collected. Available results have been retained.',
+    summary_cancelled_note: 'The task has stopped. Save any available results using the download buttons below.',
+    summary_retry: 'Check your account and connection, or adjust the collection settings and try again.',
+    summary_skipped: '{n} platform(s) skipped because no account was configured.',
     total_results: 'Total results',
     multi_search_done: 'Multi-platform search complete!',
     cookie_not_configured_short: 'Cookie not configured',
@@ -3692,12 +3706,6 @@ let currentPage = 0;
 const pageSize = 20;
 let totalItems = 0;
 let debounceTimer = null;
-
-// ── 结果卡片分页 ──
-let _resultPosts = [];          // 当前搜索结果的全部帖子
-let _resultPageIdx = 0;        // 当前页码
-let _resultPageSize = 20;      // 每页条数
-let _resultContainerId = '';    // 帖子容器 ID
 
 // ── 手动取消控制器 ──
 let _fetchController = null;
@@ -4923,6 +4931,57 @@ function setTwitterSortBy(val) {
 // 🚀 以下是完全替换为防堵塞安全轮询的核心函数
 // ==========================================
 
+// 采集结果只渲染汇总；详细数据通过文件下载，异常正文保留在后台诊断中。
+function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skippedPlatforms = []} = {}) {
+  const div = document.getElementById(containerId);
+  const number = value => Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : 0;
+  const counts = Array.isArray(stats.count_results) ? stats.count_results : [];
+  const requested = counts.reduce((sum, item) => sum + number(item.requested_count), 0);
+  const missing = counts.reduce((sum, item) => sum + number(item.missing_count), 0);
+  const posts = number(stats.total_posts);
+  const hasRows = stats.total_rows != null;
+  const comments = stats.total_comments != null ? number(stats.total_comments)
+    : (hasRows ? Math.max(0, number(stats.total_rows) - posts) : null);
+  const failed = !['success', 'empty', 'cancelled'].includes(stats.status);
+  const empty = stats.status === 'empty';
+  const cancelled = stats.status === 'cancelled';
+  const partial = missing > 0 || Boolean(stats.error) || Boolean(stats.errors?.length);
+  const warning = !failed && (empty || cancelled || partial);
+  const heading = failed ? 'summary_failed' : cancelled ? 'summary_cancelled'
+    : empty ? 'no_search_result' : partial ? 'summary_partial' : 'summary_complete';
+  const metrics = [];
+  const metric = (value, key) => metrics.push(`<div class="result-stat"><div class="num">${number(value)}</div><div class="lbl">${t(key)}</div></div>`);
+  if (!failed || stats.total_posts != null) {
+    if (counts.length) metric(requested, 'summary_target');
+    metric(posts, 'stat_total_posts');
+    if (comments !== null) metric(comments, 'summary_comments');
+    if (hasRows) metric(stats.total_rows, 'stat_total_rows');
+    if (counts.length) metric(missing, 'summary_missing');
+    if (keywordCount) metric(keywordCount, 'stat_keyword_count');
+  }
+  const platforms = {...(stats.platform_counts || {})};
+  if (!stats.platform_counts) {
+    for (const item of counts) platforms[item.platform] = number(platforms[item.platform]) + number(item.actual_count);
+  }
+  const platformHtml = Object.entries(platforms).map(([platform, count]) =>
+    `<span>${esc(platform === 'twitter' ? 'Twitter / X' : platform === 'reddit' ? 'Reddit' : platform)}: ${number(count)} ${t('summary_posts_unit')}</span>`).join(' · ');
+  const note = failed || empty ? t('summary_retry') : cancelled ? t('summary_cancelled_note') : partial ? t('summary_partial_note') : '';
+  div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${esc(title || t('search_result'))}</h4>
+    <div class="crawl-result ${failed ? 'error' : warning ? 'warning' : ''}">
+      <strong>${t(heading)}</strong>
+      ${note ? `<p style="margin-top:8px;font-size:13px">${note}</p>` : ''}
+      ${skippedPlatforms.length ? `<p style="margin-top:8px;font-size:13px">${t('summary_skipped', {n: skippedPlatforms.length})}</p>` : ''}
+      ${metrics.length ? `<div class="result-stats">${metrics.join('')}</div>` : ''}
+      ${platformHtml ? `<div style="margin-top:8px;font-size:13px">${platformHtml}</div>` : ''}
+      ${stats.csv_data || stats.xlsx_data ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+        ${stats.csv_data ? `<button class="btn btn-download" data-download="csv">${t('btn_download_csv')}</button>` : ''}
+        ${stats.xlsx_data ? `<button class="btn btn-download" data-download="xlsx">${t('btn_download_xlsx')}</button>` : ''}
+      </div>` : ''}
+    </div>`;
+  div.querySelector('[data-download="csv"]')?.addEventListener('click', () => downloadCsv(stats.csv_data, stats.csv_filename || 'results.csv'));
+  div.querySelector('[data-download="xlsx"]')?.addEventListener('click', () => downloadXlsx(stats.xlsx_data, stats.xlsx_filename || 'results.xlsx'));
+}
+
 async function startTwitterFetch() {
   const textarea = document.getElementById('twitter-urls');
   const urls = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
@@ -4945,53 +5004,10 @@ async function startTwitterFetch() {
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
     const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
     const _resultDiv = document.getElementById('twitter-result');
-    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+    if (_resultDiv.innerHTML) _resultDiv.insertAdjacentHTML('afterbegin', _timeBadge);
   };
 
-  const renderFinalResult = (stats) => {
-    const div = document.getElementById('twitter-result');
-    if (stats.status === 'success' || stats.status === 'empty') {
-      let postsHtml = '';
-      if (stats.sampled_posts && stats.sampled_posts.length > 0) {
-        postsHtml = `<div class="sampled-posts">
-          <h4>${t('scraped_posts', {n: stats.sampled_posts.length})}</h4>
-          ${stats.sampled_posts.map((post, idx) => {
-            let mediaHtml = '';
-            const _isAccel = document.getElementById('twitter-block-resources')?.checked;
-            if (post.has_media && !_isAccel) {
-              const badge = post.media_type === 'image' ? '&#128247; ' + t('images') : post.media_type === 'video' ? '&#127909; ' + t('videos') : post.media_type === 'mixed' ? '&#128247;&#127909; ' + t('images') + '+' + t('videos') : '&#128206; ' + t('media');
-              const urls = (post.media_urls || '').split(';').filter(Boolean);
-              const thumbsHtml = urls.map((u, i) => {
-                const isVideo = post.media_type === 'video' || (post.media_type === 'mixed' && i === urls.length - 1);
-                return '<div class="media-thumb-wrap" onclick="openMediaLightbox(\'' + esc(u) + '\')"><img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="' + t('media') + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">' + (isVideo ? '<div class="media-play-icon">&#9654;</div>' : '') + '</div>';
-              }).join('');
-              mediaHtml = '<div class="post-media"><span style="margin-right:8px">' + badge + '</span><div class="media-thumb-grid">' + thumbsHtml + '</div></div>';
-            }
-            const _cid = 'twf-' + idx;
-            const _raw = post.content || '';
-            const _isLong = _raw.length >= 200;
-            const _displayText = _isLong ? _raw.slice(0, 200) + '…' : _raw;
-            const _toggleBtn = (!_isLong && _raw.length > 80) ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">' + t('expand') + '</button>' : '';
-            return `<div class="post-card"><div class="post-header"><span class="post-platform">${esc(post.platform)}</span><span class="post-author">${esc(post.author)}</span></div><div class="post-content${_isLong ? ' long-truncated' : ''}" id="${_cid}">${esc(_displayText)}</div>${_toggleBtn}${mediaHtml}<div class="post-meta"><span>${t('likes')} ${(post.metrics?.likes || 0).toLocaleString()}</span><span>${t('retweets')} ${(post.metrics?.retweets || 0).toLocaleString()}</span><span>${t('replies')} ${(post.metrics?.replies || 0).toLocaleString()}</span><span>${post.published_at?.slice(0, 16).replace('T', ' ') || ''}</span>${post.replies_count > 0 ? `<span style="color:var(--primary);font-weight:600">${t('replies_collected', {n: post.replies_count})}</span>` : ''}</div></div>`
-          }).join('')}
-        </div>`;
-      }
-      const isError = stats.status === 'empty';
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4>
-      <div class="crawl-result ${isError ? 'error' : ''}">
-        <strong>${isError ? t('no_valid_result') : t('scrape_complete')}</strong>
-        ${stats.error ? `<div style="font-size:12px;color:var(--danger);margin-top:4px">${esc(stats.error)}</div>` : ''}
-        <div class="result-stats">
-          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('stat_scraped')}</div></div>
-        </div>
-        ${stats.csv_data || stats.xlsx_data ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">${stats.csv_data ? `<button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'tweets.csv')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_csv')}</button>` : ''}${stats.xlsx_data ? `<button class="btn btn-download" onclick="downloadXlsx('${stats.xlsx_data}','${esc(stats.xlsx_filename || 'tweets.xlsx')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_xlsx')}</button>` : ''}<div class="text-muted mt-8">${t('scrape_hint')}</div></div>` : ''}
-        ${postsHtml}
-      </div>`;
-      if (!isError) toast(t('tw_scrape_done'), 'success');
-    } else {
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('scrape_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
-    }
-  };
+  const renderFinalResult = stats => renderCrawlResult('twitter-result', stats, {title: t('user_scrape_result')});
 
   try {
     const initRes = await api('/api/twitter-fetch', {
@@ -5013,7 +5029,7 @@ async function startTwitterFetch() {
         if (statusRes.status === 'success') {
           isPolling = false; renderFinalResult(statusRes.result); finishUI();
         } else if (statusRes.status === 'error') {
-          isPolling = false; document.getElementById('twitter-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('scrape_failed')}</strong>: ${esc(statusRes.error)}</div>`; finishUI();
+          isPolling = false; renderFinalResult({status: 'error'}); finishUI();
         } else {
           setTimeout(poll, 1000)
         }
@@ -5022,7 +5038,7 @@ async function startTwitterFetch() {
     setTimeout(poll, 1000)
 
   } catch (e) {
-    document.getElementById('twitter-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('user_scrape_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
+    renderFinalResult({status: 'error'});
     finishUI();
   }
 }
@@ -5093,48 +5109,10 @@ async function startMultiSearch() {
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
     const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
     const _resultDiv = document.getElementById('multi-search-result');
-    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+    if (_resultDiv.innerHTML) _resultDiv.insertAdjacentHTML('afterbegin', _timeBadge);
   };
 
-  const renderFinalResult = (stats) => {
-    const div = document.getElementById('multi-search-result');
-    const isCancelled = stats.status === 'cancelled';
-    if (stats.status === 'success' || stats.status === 'empty' || isCancelled) {
-      _resultPosts = stats.sampled_posts || [];
-      _resultPageIdx = 0;
-      _resultContainerId = 'result-posts-container';
-
-      let countsHtml = '';
-      if (stats.platform_counts) {
-        countsHtml = Object.entries(stats.platform_counts).map(([p, c]) => `<div class="result-stat"><div class="num">${c}</div><div class="lbl">${p === 'twitter' ? 'Twitter' : 'Reddit'}</div></div>`).join('');
-      }
-
-      const isError = stats.status === 'empty';
-      let skippedHtml = '';
-      if (skippedPlatforms.length > 0) {
-        const skippedLabels = skippedPlatforms.map(s => (s.platform === 'twitter' ? 'Twitter / X' : 'Reddit') + ' (' + t('cookie_not_configured_short') + ')').join(', ');
-        skippedHtml = `<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px"><span style="font-size:16px;flex-shrink:0">\u26A0</span><div><strong>${t('skipped_platforms')}</strong>${esc(skippedLabels)}<div style="margin-top:4px;font-size:11px;color:#B45309">${t('configure_cookie_first')}</div></div></div>`;
-      }
-
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4>
-        <div class="crawl-result ${isError ? 'error' : (isCancelled ? 'warning' : '')}">
-        <strong>${isCancelled ? (stats.message || '搜索已取消，数据已保存') : (isError ? t('no_search_result') : t('search_complete'))}</strong>
-        ${stats.error ? `<div style="font-size:12px;color:var(--danger);margin-top:4px">${esc(stats.error)}</div>` : ''}
-        ${stats.errors && stats.errors.length ? `<div class="error-box" style="margin-top:8px">${stats.errors.map(e => `<p>${esc(e)}</p>`).join('')}</div>` : ''}
-        ${skippedHtml}
-        <div class="result-stats">
-          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('total_results')}</div></div>
-          ${countsHtml}
-        </div>
-        ${stats.csv_data || stats.xlsx_data ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">${stats.csv_data ? `<button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${esc(stats.csv_filename || 'multi_search.csv')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_csv')}</button>` : ''}${stats.xlsx_data ? `<button class="btn btn-download" onclick="downloadXlsx('${stats.xlsx_data}','${esc(stats.xlsx_filename || 'multi_search.xlsx')}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${t('btn_download_xlsx')}</button>` : ''}<div class="text-muted mt-8">${t('scrape_hint')}</div></div>` : ''}
-        ${_resultPosts.length ? '<div id="result-posts-container"></div>' : ''}
-        </div>`;
-      if (_resultPosts.length) renderResultPosts();
-      if (!isError) toast(isCancelled ? '搜索已取消' : t('multi_search_done'), isCancelled ? 'warning' : 'success');
-    } else {
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('search_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
-    }
-  };
+  const renderFinalResult = stats => renderCrawlResult('multi-search-result', stats, {title: t('search_result'), skippedPlatforms});
 
   try {
     const initRes = await api('/api/search', {
@@ -5159,7 +5137,7 @@ async function startMultiSearch() {
         if (statusRes.status === 'success') {
           isPolling = false; renderFinalResult(statusRes.result); finishUI();
         } else if (statusRes.status === 'error') {
-          isPolling = false; document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('search_failed')}</strong>: ${esc(statusRes.error)}</div>`; finishUI();
+          isPolling = false; renderFinalResult({status: 'error'}); finishUI();
         } else {
           setTimeout(poll, 1000)
         }
@@ -5168,7 +5146,7 @@ async function startMultiSearch() {
     setTimeout(poll, 1000)
 
   } catch (e) {
-    document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('search_result')}</h4><div class="crawl-result error"><strong>${t('request_failed')}</strong>: ${esc(e.message)}</div>`;
+    renderFinalResult({status: 'error'});
     finishUI();
   }
 }
@@ -5261,53 +5239,10 @@ async function startBatchSearch(keywords) {
     const _em = Math.floor(_elapsed / 60), _es = _elapsed % 60;
     const _timeBadge = `<div style="display:inline-block;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px">${t('elapsed', {m: _em, s: String(_es).padStart(2,'0')})}</div>`;
     const _resultDiv = document.getElementById('multi-search-result');
-    if (_resultDiv.innerHTML) _resultDiv.innerHTML = _timeBadge + _resultDiv.innerHTML;
+    if (_resultDiv.innerHTML) _resultDiv.insertAdjacentHTML('afterbegin', _timeBadge);
   };
 
-  const renderFinalResult = (stats) => {
-    const div = document.getElementById('multi-search-result');
-    const isCancelled = stats.status === 'cancelled';
-    if (stats.status === 'success' || stats.status === 'empty' || isCancelled) {
-      let kwSummary = '';
-      if (stats.keyword_results) {
-        kwSummary = stats.keyword_results.map(kr => `<span class="keyword-result">「${esc(kr.keyword)}」: ${kr.post_count} ${t('stat_scraped')}</span>`).join('');
-      }
-
-      _resultPosts = stats.sampled_posts || [];
-      _resultPageIdx = 0;
-      _resultContainerId = 'batch-posts-container';
-
-      let errorsHtml = '';
-      if (stats.errors && stats.errors.length) { errorsHtml = `<div class="error-box">${stats.errors.map(e => `<p>${esc(e)}</p>`).join('')}</div>`; }
-
-      let skippedHtml = '';
-      if (skippedPlatforms.length > 0) {
-        const skippedLabels = skippedPlatforms.map(s => (s.platform === 'twitter' ? 'Twitter / X' : 'Reddit') + ' (' + t('cookie_not_configured_short') + ')').join(', ');
-        skippedHtml = `<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:flex-start;gap:8px"><span style="font-size:16px;flex-shrink:0">\u26A0</span><div><strong>${t('skipped_platforms')}</strong>${esc(skippedLabels)}<div style="margin-top:4px;font-size:11px;color:#B45309">${t('configure_cookie_first')}</div></div></div>`;
-      }
-
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4>
-        ${skippedHtml}
-        ${isCancelled ? `<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E"><strong>${stats.message || '搜索已取消，数据已保存'}</strong></div>` : ''}
-        <div class="stats-success">
-          <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('stat_total_posts')}</div></div>
-          <div class="result-stat"><div class="num">${stats.total_rows}</div><div class="lbl">${t('stat_total_rows')}</div></div>
-          <div class="result-stat"><div class="num">${keywords.length}</div><div class="lbl">${t('stat_keyword_count')}</div></div>
-        </div>
-        ${kwSummary ? `<div style="margin:8px 0;font-size:13px;display:flex;flex-wrap:wrap;gap:8px">${kwSummary}</div>` : ''}
-        <div style="margin:16px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          ${stats.csv_data ? `<button class="btn btn-download" onclick="downloadCsv('${stats.csv_data}','${stats.csv_filename || 'batch.csv'}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:6px;vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${t('btn_download_csv')}</button>` : ''}
-          ${stats.xlsx_data ? `<button class="btn btn-download" onclick="downloadXlsx('${stats.xlsx_data}','${stats.xlsx_filename || 'batch.xlsx'}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:6px;vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${t('btn_download_xlsx')}</button>` : ''}
-          <span class="text-sm text-muted">${t('scrape_hint')}</span>
-        </div>
-        ${_resultPosts.length ? '<div id="batch-posts-container"></div>' : ''}
-        ${errorsHtml}
-      `;
-      if (_resultPosts.length) renderResultPosts();
-    } else {
-      div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-muted">${t('search_failed')}: ${esc(stats.error || t('unknown_error'))}</p>`;
-    }
-  };
+  const renderFinalResult = stats => renderCrawlResult('multi-search-result', stats, {title: t('batch_result'), skippedPlatforms, keywordCount: keywords.length});
 
   try {
     const initRes = await api('/api/batch-search', {
@@ -5341,7 +5276,7 @@ async function startBatchSearch(keywords) {
         if (statusRes.status === 'success') {
           isPolling = false; renderFinalResult(statusRes.result); finishUI();
         } else if (statusRes.status === 'error') {
-          isPolling = false; document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-error">${t('request_failed')}: ${esc(statusRes.error)}</p>`; finishUI();
+          isPolling = false; renderFinalResult({status: 'error'}); finishUI();
         } else {
           setTimeout(poll, 1000)
         }
@@ -5350,7 +5285,7 @@ async function startBatchSearch(keywords) {
     setTimeout(poll, 1000)
 
   } catch (e) {
-    document.getElementById('multi-search-result').innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${t('batch_result')}</h4><p class="text-error">${t('request_failed')}: ${esc(e.message)}</p>`;
+    renderFinalResult({status: 'error'});
     finishUI();
   }
 }
@@ -5414,108 +5349,7 @@ function downloadXlsx(b64Data, filename) {
   }).catch(e => toast(t('download_failed'), 'error'));
 }
 
-function renderResultPosts() {
-  const container = document.getElementById(_resultContainerId);
-  if (!container || !_resultPosts.length) return;
-  const total = _resultPosts.length;
-  const totalPages = Math.ceil(total / _resultPageSize);
-  if (_resultPageIdx >= totalPages) _resultPageIdx = totalPages - 1;
-  const start = _resultPageIdx * _resultPageSize;
-  const pagePosts = _resultPosts.slice(start, start + _resultPageSize);
-
-  let html = '<div class="posts-toolbar">'
-    + '<div style="display:flex;align-items:center;gap:12px">'
-    + '<strong style="font-size:14px">' + t('results_heading') + '</strong>'
-    + '<span class="posts-info">' + t('total_n_showing', {n: total, x: start+1, y: Math.min(start+_resultPageSize, total)}) + '</span>'
-    + '</div>'
-    + '<div style="display:flex;align-items:center;gap:8px">'
-    + '<label style="font-size:12px;color:var(--text-muted)">' + t('per_page') + '</label>'
-    + '<select onchange="postsPageSize(this.value)" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:13px;min-width:80px">'
-    + [10,20,50,100].map(function(n){ return '<option value="'+n+'" '+(n===_resultPageSize?'selected':'')+'>'+t('n_items',{n})+'</option>'; }).join('')
-    + '</select>'
-    + '</div>'
-    + '</div>';
-
-  html += '<div class="sampled-posts">';
-  html += pagePosts.map((post, idx) => {
-    const platformLabel = post.platform === 'twitter' ? 'Twitter / X'
-                        : post.platform === 'reddit' ? 'Reddit'
-                        : (post.platform || 'unknown');
-    let metricsHtml = '';
-    if (post.platform === 'twitter') {
-      metricsHtml = `<span>${t('likes')} ${(post.metrics?.likes||0).toLocaleString()}</span>
-        <span>${t('retweets')} ${(post.metrics?.retweets||0).toLocaleString()}</span>
-        <span>${t('replies')} ${(post.metrics?.replies||0).toLocaleString()}</span>`;
-    } else if (post.platform === 'reddit') {
-      metricsHtml = `<span>${t('score')} ${(post.metrics?.score||0).toLocaleString()}</span>
-        <span>${t('comments')} ${(post.metrics?.comments||0).toLocaleString()}</span>`;
-    }
-    let mediaHtml = '';
-    const _isAccel2 = document.getElementById('user-block-resources')?.checked;
-    if (post.has_media && !_isAccel2) {
-      const badge = post.media_type === 'image' ? '&#128247; ' + t('images')
-                  : post.media_type === 'video' ? '&#127909; ' + t('videos')
-                  : post.media_type === 'mixed' ? '&#128247;&#127909; ' + t('images') + '+' + t('videos')
-                  : '&#128206; ' + t('media');
-      const urls = (post.media_urls||'').split(';').filter(Boolean);
-      const thumbsHtml = urls.map((u, i) => {
-        const isVideo = post.media_type === 'video' || (post.media_type === 'mixed' && i === urls.length - 1);
-        return '<div class="media-thumb-wrap" onclick="openMediaLightbox(\'' + esc(u) + '\')">'
-          + '<img class="media-thumb" src="' + esc(u) + '" loading="lazy" alt="' + t('media') + (i+1) + '" onerror="this.parentElement.style.display=\'none\'">'
-          + (isVideo ? '<div class="media-play-icon">&#9654;</div>' : '')
-          + '</div>';
-      }).join('');
-      mediaHtml = '<div class="post-media"><span style="margin-right:8px">' + badge + '</span><div class="media-thumb-grid">' + thumbsHtml + '</div></div>';
-    }
-    const kwBadge = post.keyword ? `<span style="background:var(--primary-light);color:var(--primary);font-size:11px;padding:2px 8px;border-radius:4px;margin-left:8px">${esc(post.keyword)}</span>` : '';
-    const _cid = 'rp-' + idx;
-    const _raw = post.content || '';
-    const _isLong = _raw.length >= 200;
-    const _displayText = _isLong ? _raw.slice(0, 200) + '…' : _raw;
-    const _toggleBtn = (!_isLong && _raw.length > 80)
-      ? '<button class="post-toggle-btn" onclick="togglePostContent(this,\'' + _cid + '\')">' + t('expand') + '</button>' : '';
-    return `<div class="post-card" style="border-left-color:${post.platform==='reddit'?'#FF4500':'var(--primary)'}">
-      <div class="post-header">
-        <span class="post-platform-badge ${post.platform||''}">${esc(platformLabel)}</span>
-        ${kwBadge}
-        <span class="post-author">${esc(post.author)}</span>
-      </div>
-      <div class="post-content${_isLong ? ' long-truncated' : ''}" id="${_cid}">${esc(_displayText)}</div>
-      ${_toggleBtn}
-      ${mediaHtml}
-      <div class="post-meta">
-        ${metricsHtml}
-        <span>${post.published_at?.slice(0,16).replace('T',' ')||''}</span>
-        ${post.replies_count>0?`<span style="color:var(--primary);font-weight:600">${t('replies_collected', {n: post.replies_count})}</span>`:''}
-      </div>
-    </div>`;
-  }).join('');
-  html += '</div>';
-
-  if (totalPages > 1) {
-    html += `<div class="posts-pager">
-      <button class="btn btn-secondary btn-sm" onclick="postsPage(0)" ${_resultPageIdx===0?'disabled':''}>${t('first_page')}</button>
-      <button class="btn btn-secondary btn-sm" onclick="postsPage(${_resultPageIdx-1})" ${_resultPageIdx===0?'disabled':''}>${t('btn_prev')}</button>
-      <span class="posts-page-info">${_resultPageIdx+1} / ${totalPages}</span>
-      <button class="btn btn-secondary btn-sm" onclick="postsPage(${_resultPageIdx+1})" ${_resultPageIdx>=totalPages-1?'disabled':''}>${t('btn_next')}</button>
-      <button class="btn btn-secondary btn-sm" onclick="postsPage(${totalPages-1})" ${_resultPageIdx>=totalPages-1?'disabled':''}>${t('last_page')}</button>
-    </div>`;
-  }
-  container.innerHTML = html;
-}
-
-function postsPage(idx) { _resultPageIdx = idx; renderResultPosts(); }
-function postsPageSize(val) { _resultPageSize = parseInt(val)||20; _resultPageIdx = 0; renderResultPosts(); }
-function openMediaLightbox(url) { document.getElementById('media-lightbox-img').src = url; document.getElementById('media-lightbox').classList.add('active'); }
-function closeMediaLightbox() { document.getElementById('media-lightbox').classList.remove('active'); }
-function togglePostContent(btn, id) { var el = document.getElementById(id); if (!el) return; var expanded = el.classList.toggle('expanded'); btn.textContent = expanded ? t('collapse') : t('expand'); }
-
 </script>
-
-<div id="media-lightbox" class="media-lightbox" onclick="closeMediaLightbox()">
-  <img id="media-lightbox-img" src="" alt="">
-  <div class="media-lightbox-close">&times;</div>
-</div>
 
 <div id="update-banner" class="update-banner">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
