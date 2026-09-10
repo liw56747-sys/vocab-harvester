@@ -460,6 +460,18 @@ jobs:
           echo "=== Release body preview ==="
           cat /tmp/release_body.md
 
+      - name: Generate public update manifest
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          WIN_EXE: ${{ steps.files.outputs.win_exe }}
+          MAC_DMG: ${{ steps.files.outputs.mac_dmg }}
+        run: |
+          python build_update_manifest.py \
+            --version "$RELEASE_VERSION" \
+            --windows-file "$WIN_EXE" \
+            --macos-file "$MAC_DMG" \
+            --output /tmp/update.json
+
       - name: Create GitHub Release & upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -505,6 +517,7 @@ jobs:
           gh release upload "$TAG" \
             "$WIN_EXE" \
             "$MAC_DMG" \
+            /tmp/update.json \
             --clobber
 
           echo ""

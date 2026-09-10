@@ -2704,6 +2704,7 @@ const I18N = {
     searching: '搜索中... ({t})',
     search_result: '关键词搜索结果',
     no_search_result: '无搜索结果', search_complete: '搜索完成', search_failed: '搜索失败',
+    open_download_page: '打开下载页', update_temporarily_unavailable: '暂时无法检查更新，可打开下载页手动更新。',
     summary_complete: '采集完成', summary_partial: '采集完成（部分未完成）',
     summary_failed: '采集失败', summary_cancelled: '采集已取消',
     summary_target: '目标主帖数', summary_comments: '已采集评论', summary_missing: '主帖缺口', summary_posts_unit: '条主帖',
@@ -2955,6 +2956,7 @@ const I18N = {
     searching: 'Searching... ({t})',
     search_result: 'Search Results',
     no_search_result: 'No results', search_complete: 'Search complete', search_failed: 'Search failed',
+    open_download_page: 'Open download page', update_temporarily_unavailable: 'Update check is temporarily unavailable. Open the download page to update manually.',
     summary_complete: 'Collection complete', summary_partial: 'Collection complete (partial)',
     summary_failed: 'Collection failed', summary_cancelled: 'Collection cancelled',
     summary_target: 'Target posts', summary_comments: 'Comments collected', summary_missing: 'Missing posts', summary_posts_unit: 'posts',
@@ -3294,7 +3296,11 @@ async function doExport(format) {
 }
 
 // ── 版本更新检查 ──
+const UPDATE_RELEASE_PAGE = 'https://github.com/liw56747-sys/vocab-harvester/releases/latest';
+let _manualUpdateCheckPending = false;
 async function manualCheckUpdate() {
+  if (_manualUpdateCheckPending) return;
+  _manualUpdateCheckPending = true;
   toast(t('checking_update'), 'info');
   try {
     // 手动检查时清除 dismiss 记录，确保一键更新按钮与横幅正常出现
@@ -3305,15 +3311,26 @@ async function manualCheckUpdate() {
       showUpdateBanner(info, true);
       toast(t('update_available', { version: info.latest_version }), 'success');
     } else if (info.up_to_date) {
+      dismissUpdate();
       toast(t('no_update'), 'info');
     } else if (info.status === 'checking') {
       toast(t('checking_update'), 'info');
     } else if (info.error) {
-      toast(t('update_check_failed') + ': ' + info.error, 'error');
+      showUpdateCheckFallback();
     }
   } catch (e) {
-    toast(t('update_check_failed'), 'error');
+    showUpdateCheckFallback();
+  } finally {
+    _manualUpdateCheckPending = false;
   }
+}
+
+function showUpdateCheckFallback() {
+  showUpdateBanner({release_page: UPDATE_RELEASE_PAGE}, true);
+  document.getElementById('update-banner-text').style.display = 'none';
+  const text = document.getElementById('update-fallback-text');
+  text.textContent = t('update_temporarily_unavailable');
+  text.style.display = '';
 }
 
 function showUpdateBanner(info, force) {
@@ -3325,7 +3342,10 @@ function showUpdateBanner(info, force) {
   const actionBtn = document.getElementById('update-action-btn');
   const progressBar = document.getElementById('update-progress-bar');
   const progressText = document.getElementById('update-progress-text');
-  if (versionEl) versionEl.textContent = 'v' + info.latest_version;
+  if (banner) banner.dataset.version = info.latest_version || '';
+  document.getElementById('update-banner-text').style.display = '';
+  document.getElementById('update-fallback-text').style.display = 'none';
+  if (versionEl) versionEl.textContent = info.latest_version ? 'v' + info.latest_version : '';
   if (linkEl) {
     linkEl.href = info.download_url || info.release_page || '#';
     linkEl.target = '_blank';
@@ -3335,8 +3355,9 @@ function showUpdateBanner(info, force) {
     actionBtn.disabled = false;
     actionBtn.style.opacity = '1';
     actionBtn.style.display = '';
-    actionBtn.textContent = t('one_click_update');
-    actionBtn.onclick = startOneClickUpdate;
+    actionBtn.textContent = t(info.download_url ? 'one_click_update' : 'open_download_page');
+    actionBtn.onclick = info.download_url ? startOneClickUpdate
+      : () => window.open(info.release_page || UPDATE_RELEASE_PAGE, '_blank');
   }
   if (progressBar) progressBar.style.display = 'none';
   if (progressText) progressText.style.display = 'none';
@@ -3345,10 +3366,8 @@ function showUpdateBanner(info, force) {
 }
 
 function dismissUpdate() {
-  const versionEl = document.getElementById('update-version');
-  if (versionEl) {
-    localStorage.setItem('update_dismissed_version', versionEl.textContent.replace('v', ''));
-  }
+  const version = document.getElementById('update-banner').dataset.version;
+  if (version) localStorage.setItem('update_dismissed_version', version);
   document.getElementById('update-banner').classList.remove('show');
   document.querySelector('.main')?.classList.remove('has-banner');
 }
@@ -3577,12 +3596,16 @@ function reinstallAppFromChromium() {
     if (info.latest_version) {
       showUpdateBanner(info);
       // 自动开始下载
-      startOneClickUpdate();
+      if (info.download_url) startOneClickUpdate();
+    } else if (info.up_to_date) {
+      toast(t('no_update'), 'info');
+    } else if (info.status === 'checking') {
+      toast(t('checking_update'), 'info');
     } else {
-      toast('当前已是最新版本，无需更新', 'info');
+      showUpdateCheckFallback();
     }
   }).catch(() => {
-    toast('检查更新失败，请稍后重试', 'error');
+    showUpdateCheckFallback();
   });
 }
 
@@ -5354,6 +5377,7 @@ function downloadXlsx(b64Data, filename) {
 <div id="update-banner" class="update-banner">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
   <span id="update-banner-text"><span data-i18n="new_version">新版本</span> <strong id="update-version">v0.0.0</strong> <span data-i18n="released">已发布</span></span>
+  <span id="update-fallback-text" style="display:none" role="status"></span>
   <div id="update-progress-bar" style="display:none;width:120px;height:6px;background:rgba(255,255,255,0.3);border-radius:3px;overflow:hidden;margin:0 8px">
     <div id="update-progress-fill" style="width:0%;height:100%;background:#fff;transition:width 0.3s"></div>
   </div>
