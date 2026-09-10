@@ -4,6 +4,36 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vocab Harvester - 词库构建系统</title>
+<script>
+// Windows 内嵌窗口使用保守渲染；外部浏览器保持原有样式。
+if (new URLSearchParams(location.search).get('desktop') === 'windows') {
+  document.documentElement.classList.add('windows-webview');
+}
+(() => {
+  const queue = [];
+  let ready = false;
+  window.reportDesktopEvent = (kind, details = {}) => {
+    const event = { kind, page: document.querySelector('.page.active')?.id || '', ...details };
+    if (!ready) {
+      if (queue.length < 30) queue.push(event);
+      return;
+    }
+    try { Promise.resolve(window.pywebview.api.report_ui_event(event)).catch(() => {}); }
+    catch (_) { /* 诊断失败不能影响导航 */ }
+  };
+  window.addEventListener('pywebviewready', () => {
+    ready = true;
+    for (const event of queue.splice(0)) window.reportDesktopEvent(event.kind, event);
+  });
+  window.addEventListener('error', e => window.reportDesktopEvent('javascript_error', {
+    error_type: e.error?.name || 'Error',
+    file: (e.filename || '').split('?')[0].split('/').pop(), line: e.lineno, column: e.colno
+  }));
+  window.addEventListener('unhandledrejection', e => window.reportDesktopEvent('promise_error', {
+    error_type: e.reason?.name || 'Error'
+  }));
+})();
+</script>
 <style>
 /* ═══════════════════════════════════════════════════
    Design System — Modern Minimalist
@@ -1533,6 +1563,25 @@ kbd {
 .task-notif-icon.fail { background: var(--danger-light); color: var(--danger); }
 .task-notif-title { font-size: 17px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
 .task-notif-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 18px; word-break: break-word; }
+/* Windows WebView2：减少导航与弹窗的离屏合成，保留加载指示器。 */
+.windows-webview .page,
+.windows-webview .chromium-overlay-card,
+.windows-webview .fetch-modal-overlay,
+.windows-webview .fetch-modal { animation: none; }
+.windows-webview .topbar,
+.windows-webview .chromium-overlay,
+.windows-webview .fetch-modal-overlay {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.windows-webview .topbar { background: var(--surface); }
+.windows-webview .card,
+.windows-webview .stat-card,
+.windows-webview .btn-primary { transition: none; }
+.windows-webview .card:hover,
+.windows-webview .stat-card:hover,
+.windows-webview .btn-primary:hover,
+.windows-webview .btn-primary:active { transform: none; }
 </style>
 <!-- v1.5.5: SheetJS 本地打包，用于上传 xlsx/xls 解析（离线可用） -->
 <script src="/static/vendor/xlsx.mini.min.js"></script>
@@ -3657,19 +3706,31 @@ let _batchController = null;
 
 // ── Navigation ──
 function showPage(name, el) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-' + name).classList.add('active');
-  el.classList.add('active');
-  updateBreadcrumb();
-  if (name === 'dashboard') loadStats();
-  if (name === 'vocabulary') { loadVocab(); loadVocabFilterOptions(); }
-  if (name === 'schedule') loadScheduleTasks();
-  if (name === 'twitter') loadAllCookies();
+  const target = document.getElementById('page-' + name);
+  const nav = [...document.querySelectorAll('.nav-item')].find(item =>
+    item.getAttribute('onclick')?.includes("showPage('" + name + "'"));
+  // 校验后再切换，避免错误目标把当前页面全部隐藏。
+  if (!target || !target.classList.contains('page') || !nav) {
+    reportDesktopEvent('navigation_invalid');
+    return;
+  }
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p === target));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n === nav));
+  reportDesktopEvent('navigation');
+  const run = fn => {
+    try {
+      Promise.resolve(fn()).catch(e => reportDesktopEvent('page_load_error', {error_type: e?.name || 'Error'}));
+    } catch (e) { reportDesktopEvent('page_load_error', {error_type: e?.name || 'Error'}); }
+  };
+  run(updateBreadcrumb);
+  if (name === 'dashboard') run(loadStats);
+  if (name === 'vocabulary') { run(loadVocab); run(loadVocabFilterOptions); }
+  if (name === 'schedule') run(loadScheduleTasks);
+  if (name === 'twitter') run(loadAllCookies);
   if (name === 'import') {
-    loadModelSettings();
-    // 从数据库恢复模型配置（确保跨版本持久化）
-    loadModelConfigFromDB().then(cfg => {
+    run(loadModelSettings);
+    run(async () => {
+      const cfg = await loadModelConfigFromDB();
       if (cfg && cfg.model_api_key) {
         document.getElementById('model-base-url').value = cfg.model_base_url || '';
         document.getElementById('model-api-key').value = cfg.model_api_key || '';
@@ -3681,7 +3742,7 @@ function showPage(name, el) {
       }
     });
   }
-  if (name === 'settings') loadSettings();
+  if (name === 'settings') run(loadSettings);
 }
 
 // 从空状态按钮等处跳转页面（自动定位导航项）

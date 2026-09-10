@@ -12,18 +12,6 @@ import asyncio
 import traceback
 from pathlib import Path
 
-# 🌟 修复 Bug：强制在全局作用域导入核心模块 🌟
-# 这样可以让 PyInstaller 的静态分析器识别并打包这些依赖，防止运行时报 ModuleNotFoundError
-import src.api.main
-import src.api.routes
-import src.common.config
-import src.common.database
-import src.common.version
-import src.orchestrator.pipeline
-import src.orchestrator.job_queue
-import src.orchestrator.scheduler
-
-
 # ── PyInstaller 路径处理 ──
 # sys._MEIPASS = _internal/ 目录（打包进来的静态资源）
 # sys.executable 父目录 = exe 所在目录（用于写日志、数据库等可变文件）
@@ -40,17 +28,30 @@ else:
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
 os.environ["VOCAB_DATA_DIR"] = str(_DATA_DIR)
 
-# 日志文件写到 exe 旁边，方便排查问题
-_LOG_FILE = _EXE_DIR / "vocab-harvester.log"
+# 在加载界面/后端前初始化 Windows 兼容参数与日志。
+from src.common.desktop_runtime import (
+    configure_windows_rendering, install_desktop_logging,
+    WindowsRenderMonitor, report_ui_event,
+)
+configure_windows_rendering()
+_LOG_FILE = install_desktop_logging(_DATA_DIR)
 
 
 def _log(msg: str):
-    """写一行到日志文件，静默失败"""
-    try:
-        with open(_LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
-    except Exception:
-        pass
+    import logging
+    logging.getLogger("desktop").info(msg)
+
+
+# 🌟 修复 Bug：强制在全局作用域导入核心模块 🌟
+# 这样可以让 PyInstaller 的静态分析器识别并打包这些依赖，防止运行时报 ModuleNotFoundError
+import src.api.main
+import src.api.routes
+import src.common.config
+import src.common.database
+import src.common.version
+import src.orchestrator.pipeline
+import src.orchestrator.job_queue
+import src.orchestrator.scheduler
 
 
 # ── Playwright 浏览器路径 ──
@@ -380,6 +381,9 @@ def main():
         def __init__(self):
             self.window = None
 
+        def report_ui_event(self, event):
+            report_ui_event(event)
+
         def save_file(self, b64_data: str, filename: str, folder: str = ""):
             """将 base64 数据保存到指定文件夹（或默认 Downloads）"""
             import base64
@@ -417,9 +421,10 @@ def main():
         icon_path = _EXE_DIR / "icon.ico"
 
     js_api = JsApi()
+    desktop_url = URL + ("/?desktop=windows" if sys.platform == "win32" else "")
     window = webview.create_window(
         "vocab-harvester",
-        url=URL,
+        url=desktop_url,
         width=1200,
         height=800,
         min_size=(900, 600),
@@ -431,15 +436,21 @@ def main():
     webview_data = _DATA_DIR / "webview"
     webview_data.mkdir(parents=True, exist_ok=True)
 
-    # Windows：关闭 WebView2 的 GPU 硬件加速，规避显卡驱动/GPU 合成导致的界面崩溃、卡顿
-    # （本应用界面简单，不需要 GPU 加速；软件渲染更稳定）
+    desktop_menu = []
     if sys.platform == "win32":
-        os.environ.setdefault(
-            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-            "--disable-gpu --disable-gpu-compositing",
-        )
+        from webview.menu import Menu, MenuAction
+        monitor = WindowsRenderMonitor(window, desktop_url, _LOG_FILE)
+        window.events.loaded += monitor.attach
+        window.events.shown += monitor.attach
+        # 原生菜单不依赖网页渲染，即使页面白屏仍可打开备用界面和日志。
+        desktop_menu = [Menu("帮助", [
+            MenuAction("在系统浏览器中打开（请勿关闭本窗口）", monitor.open_in_browser),
+            MenuAction("打开诊断日志目录", lambda: os.startfile(str(_LOG_FILE.parent))),
+        ])]
 
     webview.start(
+        gui="edgechromium" if sys.platform == "win32" else None,
+        menu=desktop_menu,
         debug=False,
         private_mode=False,
         storage_path=str(webview_data),
