@@ -7,6 +7,7 @@ import csv
 import io
 import json
 import logging
+import os
 import uuid
 import threading
 import time
@@ -1052,7 +1053,7 @@ async def _execute_scheduled_task(task_config: dict):
                      f"帖子: {stats.get('total_posts', 0)}, 关键词: {stats.get('total_keywords', 0)}")
         _push_scheduled_notification(task_id, task_name, _final_status, stats.get("total_posts", 0), _last_error)
     except Exception as e:
-        logger.error(f"[定时任务 {task_id}] 执行失败: {e}")
+        logger.exception("[定时任务 %s] 执行失败: %s", task_id, e)
         try:
             from src.common.database import get_db
             db = await get_db()
