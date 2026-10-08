@@ -79,3 +79,42 @@ async def test_browser_follows_server_cookie_rotation_across_pages(speed):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+async def test_parallel_thread_browser_cleanup_does_not_close_other_run():
+    """两个真实浏览器归属不同线程；关闭其中一个不影响另一个继续操作。"""
+    import asyncio
+    from src.crawlers.browser_manager import BrowserManager
+    barrier = threading.Barrier(2)
+    first_closed = threading.Event()
+
+    def worker(first):
+        async def run():
+            async with async_playwright() as pw:
+                executable = os.environ.get('VOCAB_TEST_BROWSER_EXECUTABLE') or pw.chromium.executable_path
+                if not Path(executable).exists():
+                    return None
+                manager = BrowserManager.get()
+                browser = await pw.chromium.launch(executable_path=executable, headless=True)
+                manager._pool.slots[0].browser = browser
+                context = await manager.new_context()
+                page = await context.new_page()
+                try:
+                    await page.goto('about:blank')
+                    barrier.wait(timeout=15)
+                    if first:
+                        await manager.close()
+                        first_closed.set()
+                    else:
+                        assert first_closed.wait(timeout=15)
+                        assert browser.is_connected()
+                        assert await page.evaluate('6 * 7') == 42
+                    return manager
+                finally:
+                    await manager.close()
+        return asyncio.run(run())
+
+    a, b = await asyncio.gather(asyncio.to_thread(worker, True), asyncio.to_thread(worker, False))
+    if a is None or b is None:
+        pytest.skip('需要 Chromium')
+    assert a is not b and a._pool is not b._pool

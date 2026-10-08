@@ -239,7 +239,14 @@ async def lifespan(app: FastAPI):
         logger.error(f"Lifespan startup failed: {e}", exc_info=True)
         raise
     yield
-    # 关闭共享浏览器实例
+    with _scheduled_runs_lock:
+        active_runs = list(_scheduled_runs.values())
+    for run in active_runs:
+        run.cancel()
+    pending_runs = [run.future for run in active_runs if run.future is not None and not run.future.done()]
+    if pending_runs:
+        await asyncio.wait(pending_runs, timeout=_SCHED_STOP_GRACE_SECONDS)
+    # 关闭主循环自己的浏览器实例
     try:
         from src.crawlers.browser_manager import BrowserManager
         await BrowserManager.get().close()
@@ -701,8 +708,10 @@ async def run_scheduled_task_now(task_id: str):
             "params": json.loads(row[5]) if row[5] else {},
             "save_path": row[6], "workflows": json.loads(row[7]) if row[7] else [],
         }
-        # 异步执行
-        asyncio.create_task(_execute_scheduled_task(task))
+        run = _claim_scheduled_run(task_id)
+        if run is None:
+            return {"status": "error", "message": "该任务正在运行或正在停止，请勿重复执行", "error": "该任务正在运行或正在停止，请勿重复执行"}
+        asyncio.create_task(_execute_scheduled_task(task, _claimed=run))
         return {"status": "ok", "message": "任务已触发"}
     except Exception as e:
         logger.error(f"触发定时任务失败: {e}")
@@ -718,9 +727,8 @@ def _reload_scheduler():
     global _task_scheduler
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        if _task_scheduler:
-            _task_scheduler.shutdown(wait=False)
-        _task_scheduler = AsyncIOScheduler()
+        if _task_scheduler is None:
+            _task_scheduler = AsyncIOScheduler()
         # 异步加载任务
         asyncio.create_task(_load_scheduled_jobs())
     except Exception as e:
@@ -734,19 +742,24 @@ async def _load_scheduled_jobs():
     try:
         from src.common.database import get_db
         db = await get_db()
-        # 启动自愈：把上一次进程遗留的 running 状态重置为 failed（调度器尚未启动，
-        # 当前会话还没有任何任务在跑，因此这些 running 只可能是上次崩溃/关闭的残留）。
-        # 双重保险：仅重置 last_run_at 早于 5 分钟前的，杜绝任何边界误伤。
+        # 只恢复上个进程留下的状态；重载调度器时不能覆盖本进程的在途任务。
+        with _scheduled_runs_lock:
+            active_ids = list(_scheduled_runs)
+        active_filter = (" AND id NOT IN (" + ",".join("?" for _ in active_ids) + ")") if active_ids else ""
         _stale_cut = (datetime.now() - timedelta(minutes=5)).isoformat()
         await db.execute(
             "UPDATE scheduled_tasks SET last_run_status='failed', "
             "last_error='上次执行被中断（应用关闭或卡死），已自动重置' "
-            "WHERE last_run_status='running' AND (last_run_at IS NULL OR last_run_at < ?)",
-            (_stale_cut,),
+            "WHERE last_run_status='running' AND (last_run_at IS NULL OR last_run_at < ?)" + active_filter,
+            (_stale_cut, *active_ids),
         )
         await db.commit()
         cursor = await db.execute("SELECT id, name, cron_expression, params, save_path, workflows, task_type FROM scheduled_tasks WHERE enabled=1")
         rows = await cursor.fetchall()
+        desired = {f"task_{row[0]}" for row in rows if len(row[2].split()) == 5}
+        for job in _task_scheduler.get_jobs():
+            if job.id.startswith("task_") and job.id not in desired:
+                _task_scheduler.remove_job(job.id)
         for row in rows:
             task_id, task_name, cron_expr, params_json, save_path, workflows_json, task_type = row
             task_config = {
@@ -764,59 +777,101 @@ async def _load_scheduled_jobs():
                     args=[task_config], id=f"task_{task_id}",
                     name=task_id, replace_existing=True,
                 )
-        _task_scheduler.start()
+        if not _task_scheduler.running:
+            _task_scheduler.start()
         logger.info(f"调度器已加载 {len(rows)} 个定时任务")
     except Exception as e:
         logger.error(f"加载定时任务失败: {e}")
 
 
-def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, block_resources, seen_ids=None, heartbeat=None) -> dict:
-    """在独立线程的新事件循环中执行真实抓取（Playwright 与主循环隔离）。
+# 同一任务的所有入口共用占用记录；保留到抓取线程确实退出。
+from src.crawlers.scheduled_run import ScheduledRun
 
-    Args:
-        targets: [(platform, cookies, proxy), ...]
-        seen_ids: 已抓过的帖子 id 集合（用于丢弃历史重复 + 迭代补足到 count）
-        heartbeat: 抓取进展回调，供上层"无进展看门狗"判活
-    Returns:
-        {platform: [ParsedPost, ...]}
-    """
-    import asyncio as _aio
-    from src.crawlers.real_crawler import crawl_twitter, crawl_reddit, friendly_error
+_scheduled_runs: dict[str, ScheduledRun] = {}
+_scheduled_runs_lock = threading.Lock()
+_SCHED_POLL_SECONDS = 1.0
+_SCHED_STOP_GRACE_SECONDS = 30.0
 
-    seen_ids = seen_ids or set()
-    loop = _aio.new_event_loop()
-    _aio.set_event_loop(loop)
-    out: dict = {}
-    errs: dict = {}
 
-    async def _run():
-        for platform, cookies, proxy in targets:
-            try:
-                if platform == "twitter":
-                    out["twitter"] = await crawl_twitter(
-                        keywords, count, cookies, proxy, sort_by, include_replies,
-                        block_resources, seen_ids, heartbeat,
-                    )
-                elif platform == "reddit":
-                    out["reddit"] = await crawl_reddit(
-                        keywords, count, cookies, proxy, sort_by, include_replies, seen_ids, heartbeat,
-                    )
-            except Exception as e:
-                errs[platform] = friendly_error(e)
-                logger.error(f"[定时任务真实抓取] {platform} 失败: {e}")
-                out[platform] = []
+def _claim_scheduled_run(task_id):
+    with _scheduled_runs_lock:
+        if task_id in _scheduled_runs:
+            return None
+        run = ScheduledRun()
+        _scheduled_runs[task_id] = run
+        return run
 
+
+def _release_scheduled_run(task_id, run):
+    with _scheduled_runs_lock:
+        if _scheduled_runs.get(task_id) is run:
+            _scheduled_runs.pop(task_id)
+
+
+def _close_crawl_loop(loop):
+    async def cleanup():
+        from src.crawlers.browser_manager import BrowserManager
+        await BrowserManager.get().close()
+        pending = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            done, unfinished = await asyncio.wait(pending, timeout=5)
+            for task in done:
+                if not task.cancelled():
+                    task.exception()
+            if unfinished:
+                logger.warning("抓取循环退出时仍有 %s 个未响应取消的协程", len(unfinished))
     try:
-        loop.run_until_complete(_run())
+        loop.run_until_complete(cleanup())
     finally:
-        # 抓取结束后在本线程事件循环内关闭浏览器池，避免 Chromium 跨次累积
-        try:
-            from src.crawlers.browser_manager import BrowserManager
-            loop.run_until_complete(BrowserManager.get().close())
-        except Exception:
-            pass
         loop.close()
-    return {"posts": out, "errors": errs}
+
+
+def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, block_resources, seen_ids=None, heartbeat=None) -> dict:
+    """线程内创建/关闭独立浏览器；结果快照由主循环读取，取消在所属循环执行。"""
+    from src.crawlers.real_crawler import crawl_twitter, crawl_reddit, friendly_error
+    from src.crawlers.progress import progress_scope
+
+    run = heartbeat if isinstance(heartbeat, ScheduledRun) else ScheduledRun()
+    beat = heartbeat or run
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def crawl():
+        for platform, cookies, proxy in targets:
+            if run.cancelled.is_set():
+                break
+            run.start_platform(platform)
+            logger.info("[定时运行 %s] 开始平台 %s", run.run_id, platform)
+            try:
+                with progress_scope(beat, lambda posts: run.save(platform, posts)):
+                    if platform == "twitter":
+                        posts = await crawl_twitter(keywords, count, cookies, proxy, sort_by,
+                                                    include_replies, block_resources, seen_ids or set(), beat)
+                    else:
+                        posts = await crawl_reddit(keywords, count, cookies, proxy, sort_by,
+                                                  include_replies, seen_ids or set(), beat)
+                if run.cancelled.is_set():
+                    # 底层可能吞掉 CancelledError 后返回局部结果；不要覆盖更完整的快照。
+                    break
+                run.finish_platform(platform, posts)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                run.finish_platform(platform, error=friendly_error(exc))
+                logger.exception("[定时运行 %s] %s 失败", run.run_id, platform)
+
+    task = loop.create_task(crawl())
+    run.bind(loop, task)
+    try:
+        loop.run_until_complete(task)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        run.unbind()
+        _close_crawl_loop(loop)
+    return run.result([p for p, _, _ in targets], stopped=run.cancelled.is_set())
 
 
 # ── 定时任务完成通知（供前端轮询后弹窗提示）──
@@ -842,11 +897,33 @@ def _push_scheduled_notification(task_id: str, name: str, status: str, total_pos
         del _scheduled_notifications[: len(_scheduled_notifications) - _SCHED_NOTIF_MAX]
 
 
-async def _execute_scheduled_task(task_config: dict):
+async def _execute_scheduled_task(task_config: dict, *, _claimed=None):
+    task_id = task_config.get("id", "unknown")
+    run = _claimed or _claim_scheduled_run(task_id)
+    if run is None:
+        logger.warning("[定时任务 %s] 上次执行尚未退出，跳过重复触发", task_id)
+        return
+    try:
+        await _execute_scheduled_task_body(task_config, run)
+    finally:
+        if run.future is not None and not run.future.done():
+            run.cancel()
+            def finished(future):
+                if not future.cancelled():
+                    error = future.exception()
+                    if error:
+                        logger.error("[定时运行 %s] 后台退出异常: %s", run.run_id, error)
+                _release_scheduled_run(task_id, run)
+            run.future.add_done_callback(finished)
+        else:
+            _release_scheduled_run(task_id, run)
+
+
+async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
     """执行单个定时任务：抓取 → 保存 → 分析"""
     task_id = task_config.get("id", "unknown")
     task_name = task_config.get("name", "") or task_id
-    logger.info(f"[定时任务 {task_id}] 开始执行，任务名: {task_name}")
+    logger.info(f"[定时任务 {task_id} / 运行 {run.run_id}] 开始执行，任务名: {task_name}")
     try:
         from src.common.database import get_db
         db = await get_db()
@@ -927,44 +1004,36 @@ async def _execute_scheduled_task(task_config: dict):
         )
         logger.info(f"[定时任务 {task_id}] 开始真实抓取，平台: {[p for (p, _, _) in targets]}, 关键词: {query.keywords}")
 
-        # 真实抓取放到后台线程 + 新事件循环执行（Playwright 与主事件循环隔离）；
-        # 专用单线程 executor 提升 Windows 稳定性；外层"无进展看门狗"防卡死。
         import concurrent.futures as _cf
-        import time as _time
-        _loop = asyncio.get_event_loop()
-        _hb = {"ts": _time.time()}
-        def _beat():
-            _hb["ts"] = _time.time()
-        # 无进展超时：连续 N 秒抓取无任何推进才判定卡死（默认 40 分钟）。
-        # 只要任务仍在推进（哪怕总耗时数小时）心跳就会刷新，不会被误中断。
-        _STALL_LIMIT = int(os.environ.get("VOCAB_SCHED_STALL_LIMIT", "2400"))
-        _ex = _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="sched-crawl")
-        _stalled = False
+        loop = asyncio.get_running_loop()
+        stall_limit = max(1, int(os.environ.get("VOCAB_SCHED_STALL_LIMIT", "2400")))
+        executor = _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"sched-{run.run_id}")
+        stopped = False
         try:
-            _future = _loop.run_in_executor(
-                _ex, _scheduled_real_crawl, targets, (keywords or []), count,
-                sort_by, include_replies, block_resources, _seen_ids, _beat,
+            run.future = loop.run_in_executor(
+                executor, _scheduled_real_crawl, targets, (keywords or []), count,
+                sort_by, include_replies, block_resources, _seen_ids, run,
             )
-            while True:
-                _done, _ = await asyncio.wait({_future}, timeout=30)
-                if _future in _done:
-                    _crawl_result = _future.result()
+            while not run.future.done():
+                await asyncio.wait({run.future}, timeout=_SCHED_POLL_SECONDS)
+                if run.future.done():
                     break
-                if _time.time() - _hb["ts"] > _STALL_LIMIT:
-                    _stalled = True
-                    logger.error(f"[定时任务 {task_id}] 抓取连续 {_STALL_LIMIT}s 无进展，判定卡死，中止并清理浏览器")
-                    # 放弃卡死的浏览器池：重置单例，下次执行全新启动
-                    try:
-                        from src.crawlers.browser_manager import BrowserPool, BrowserManager
-                        BrowserPool._instance = None
-                        BrowserManager._instance = None
-                    except Exception:
-                        pass
+                if run.idle_seconds() > stall_limit:
+                    stopped = True
+                    run.cancel()
+                    logger.warning("[定时运行 %s] %s 秒无有效进展，请求停止", run.run_id, stall_limit)
+                    await asyncio.wait({run.future}, timeout=_SCHED_STOP_GRACE_SECONDS)
                     break
+            if run.future.done():
+                _crawl_result = run.future.result()
+            else:
+                _crawl_result = run.result([p for p, _, _ in targets], stopped=True)
+            if stopped:
+                message = ("抓取已停止，已保留已采集数据" if run.future.done()
+                           else "停止尚未确认，已保存当前快照；后台退出前禁止再次执行此任务")
+                _crawl_result.setdefault("errors", {})["任务"] = message
         finally:
-            _ex.shutdown(wait=False)  # 不阻塞：卡死线程随浏览器被弃置后自行结束
-        if _stalled:
-            _crawl_result = {"posts": {}, "errors": {p: "抓取长时间无进展（疑似卡死），已自动中止" for (p, _, _) in targets}}
+            executor.shutdown(wait=False)
         posts_by_platform = _crawl_result.get("posts", {})
         crawl_errors = _crawl_result.get("errors", {})  # {platform: 友好原因}
 
@@ -1043,8 +1112,8 @@ async def _execute_scheduled_task(task_config: dict):
             _final_status = "failed"
             _last_error = "；".join(_reasons)
         elif _reasons:
-            # 部分平台失败但仍有数据：保留成功状态，但记录部分失败原因
-            _last_error = "（部分平台）" + "；".join(_reasons)
+            _final_status = "partial"
+            _last_error = "（部分结果）" + "；".join(_reasons)
 
         await db.execute("UPDATE scheduled_tasks SET last_run_status=?, last_error=? WHERE id=?",
                          (_final_status, _last_error, task_id))
@@ -1131,8 +1200,10 @@ async def trigger_crawl(req: CrawlRequest):
                 _tb.print_exc()
                 _set_task_status(task_id, {"status": "error", "error": str(e)})
 
-        _loop.run_until_complete(_run())
-        _loop.close()
+        try:
+            _loop.run_until_complete(_run())
+        finally:
+            _close_crawl_loop(_loop)
 
     threading.Thread(target=_thread_target, daemon=True).start()
     return {"status": "started", "task_id": task_id}
@@ -1517,8 +1588,10 @@ async def twitter_fetch(req: TwitterUrlFetchRequest):
                 from src.crawlers.real_crawler import friendly_error
                 _set_task_status(task_id, {"status": "error", "error": friendly_error(e)})
 
-        loop.run_until_complete(_run())
-        loop.close()
+        try:
+            loop.run_until_complete(_run())
+        finally:
+            _close_crawl_loop(loop)
 
     threading.Thread(target=_thread_target, daemon=True).start()
     return {"status": "started", "task_id": task_id}
@@ -1764,8 +1837,10 @@ async def multi_platform_search(req: MultiPlatformSearchRequest):
             finally:
                 _remove_cancelled(task_id)
 
-        loop.run_until_complete(_run())
-        loop.close()
+        try:
+            loop.run_until_complete(_run())
+        finally:
+            _close_crawl_loop(loop)
 
     threading.Thread(target=_thread_target, daemon=True).start()
     return {"status": "started", "task_id": task_id}
@@ -2033,8 +2108,10 @@ async def batch_search(req: BatchSearchRequest):
             finally:
                 _remove_cancelled(task_id)
 
-        loop.run_until_complete(_run())
-        loop.close()
+        try:
+            loop.run_until_complete(_run())
+        finally:
+            _close_crawl_loop(loop)
 
     threading.Thread(target=_thread_target, daemon=True).start()
     return {"status": "started", "task_id": task_id}

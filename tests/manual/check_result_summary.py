@@ -35,6 +35,9 @@ async def main():
                 '/api/search': dict(task_id='test'), '/api/batch-search': dict(task_id='test'),
                 '/api/twitter-fetch': dict(task_id='test'),
                 '/api/task-status': current,
+                '/api/scheduled-tasks': {'tasks': [{'id': 'busy', 'name': '部分保存测试', 'params': {},
+                    'last_run_status': 'partial', 'last_error': '已保存部分数据', 'cron_expression': '* * * * *'}]},
+                '/api/scheduled-tasks/busy/run': {'status': 'error', 'error': '该任务正在运行，请勿重复执行'},
             }.get(path, {})
             await r.fulfill(content_type='application/json', body=json.dumps(data))
         await page.route('**/*', route)
@@ -86,8 +89,18 @@ async def main():
                 if status == 'error':
                     button = '#twitter-fetch-btn' if mode == 'profile' else '#multi-search-btn'
                     assert await page.locator(button).is_enabled()
+        await page.evaluate("showTaskDonePopup({name:'部分保存测试',status:'partial',total_posts:12,error:'已保存部分数据'})")
+        popup = page.locator('.task-notif-card')
+        assert '定时任务部分完成' in await popup.inner_text()
+        assert '12' in await popup.inner_text()
+        assert '已保存部分数据' in await popup.inner_text()
+        await page.locator('#notif-ok-btn').click()
+        await page.evaluate("loadScheduleTasks()")
+        assert '部分完成' in await page.locator('#schedule-table').inner_text()
+        await page.evaluate("window.confirm=()=>true; window.notices=[]; window.toast=(msg)=>notices.push(msg); runTaskNow('busy')")
+        assert await page.evaluate('notices') == ['该任务正在运行，请勿重复执行']
         assert not errors, errors
         await browser.close()
-        print('PASS: 3 collection flows x 5 statuses; summaries only, 500 diagnostics hidden, correct totals, downloads work after elapsed badge, no JS errors')
+        print('PASS: 3 collection flows x 5 statuses; summaries only, 500 diagnostics hidden, correct totals, downloads work after elapsed badge, scheduled partial result and duplicate rejection verified, no JS errors')
 
 asyncio.run(main())

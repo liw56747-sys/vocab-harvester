@@ -91,7 +91,7 @@ def test_preflight_proxy_bad_target(client):
     assert body["status"] == "error"
 
 
-def test_browser_pool_singleton_backward_compat():
+async def test_browser_pool_singleton_backward_compat():
     """确认旧的 BrowserManager 单例接口仍然可用"""
     from src.crawlers.browser_manager import BrowserManager, BrowserPool, apply_request_interceptors
     mgr = BrowserManager.get()

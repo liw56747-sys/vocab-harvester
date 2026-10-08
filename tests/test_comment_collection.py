@@ -250,3 +250,43 @@ async def test_reddit_limit_reported_without_overfetch(no_wait):
     assert len(comments) == 3
     assert progress['comments_status'] == 'partial'
     assert '上限' in progress['comments_warning']
+
+
+async def test_twitter_comment_pages_report_parent_snapshots_before_completion(no_wait):
+    import copy
+    from unittest.mock import Mock
+    from src.crawlers.progress import progress_scope, observe_rows
+    page = ReplyPage([[1], [2], [3]])
+    tweets = [{'tweet_id': '999999', 'url': page.url}]
+    snapshots, beat = [], Mock()
+    with progress_scope(beat, None), observe_rows(lambda rows: snapshots.append(copy.deepcopy(rows))):
+        await TwitterCookieFetcher()._parallel_scrape_replies(
+            SimpleNamespace(new_page=AsyncMock(return_value=page)), tweets)
+    assert [s[0]['replies_count'] for s in snapshots[:3]] == [1, 2, 3]
+    assert all(s[0]['tweet_id'] == '999999' for s in snapshots)
+    assert beat.call_count >= 3
+
+
+async def test_reddit_comment_cancellation_preserves_first_page_snapshot(no_wait, monkeypatch):
+    import copy
+    from src.crawlers.progress import observe_rows
+    fetcher = RedditCookieFetcher()
+    blocked = asyncio.Event()
+    async def get_json(client, url, params):
+        if 'morechildren' in url:
+            blocked.set()
+            await asyncio.Future()
+        return [{}, listing([comment('first'), more(['next'])])]
+    monkeypatch.setattr(fetcher, '_get_comment_json', get_json)
+    snapshots = []
+    async def run():
+        with observe_rows(lambda rows: snapshots.append(copy.deepcopy(rows))):
+            await fetcher._fetch_all_comments_parallel(
+                [{'post_id': 'root', 'subreddit': 'test', 'num_comments': 2}], {}, {}, None)
+    task = asyncio.create_task(run())
+    await blocked.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert snapshots[-1][0]['post_id'] == 'root'
+    assert snapshots[-1][1]['comment_id'] == 'first'

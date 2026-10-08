@@ -60,7 +60,7 @@ class _BrowserSlot:
         """轻量健康检查：连接存活 + 使用次数未超限"""
         if self.browser is None:
             return False
-        if self.use_count >= _MAX_CONTEXTS_PER_BROWSER:
+        if self.use_count >= _MAX_CONTEXTS_PER_BROWSER and not self.browser.contexts:
             return False
         try:
             if not self.browser.is_connected():
@@ -104,7 +104,7 @@ class _BrowserSlot:
             self.browser = None
         if self.pw is not None:
             try:
-                await self.pw.stop()
+                await asyncio.wait_for(self.pw.stop(), timeout=10.0)
             except Exception:
                 pass
             self.pw = None
@@ -117,12 +117,11 @@ class _BrowserSlot:
 
 class BrowserPool:
     """
-    Playwright 浏览器进程池（跨事件循环安全）。
+    Playwright 浏览器进程池（仅归属创建它的事件循环）。
 
     对外通过 `new_context()` 提供隔离上下文；内部按 round-robin 派发到池成员。
     """
 
-    _instance: Optional["BrowserPool"] = None
 
     def __init__(self, size: int | None = None):
         self.size = size or _default_pool_size()
@@ -133,14 +132,17 @@ class BrowserPool:
 
     @classmethod
     def get(cls) -> "BrowserPool":
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
+        loop = asyncio.get_running_loop()
+        pool = getattr(loop, "_vocab_browser_pool", None)
+        if pool is None:
+            pool = cls()
+            loop._vocab_browser_pool = pool
+        return pool
 
     @classmethod
     def reset_for_test(cls, size: int = 2):
         """仅测试用：重置单例，允许注入不同池大小"""
-        cls._instance = cls(size=size)
+        asyncio.get_running_loop()._vocab_browser_pool = cls(size=size)
 
     def _get_rr_lock(self) -> asyncio.Lock:
         loop = asyncio.get_running_loop()
@@ -245,16 +247,18 @@ class BrowserManager:
     业务代码 `BrowserManager.get().new_context(...)` 继续可用。
     """
 
-    _instance: Optional["BrowserManager"] = None
 
     def __init__(self):
         self._pool = BrowserPool.get()
 
     @classmethod
     def get(cls) -> "BrowserManager":
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
+        loop = asyncio.get_running_loop()
+        manager = getattr(loop, "_vocab_browser_manager", None)
+        if manager is None:
+            manager = cls()
+            loop._vocab_browser_manager = manager
+        return manager
 
     async def ensure_browser(self, proxy: str | None = None):
         """保持旧签名。返回池中第一个健康的 browser（仅供极少数直接使用者）。"""

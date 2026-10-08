@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | 桌面白屏与日志 | `app.py`；`src/common/desktop_runtime.py`；`static/index.html` 的 Windows 样式和导航 | `tests/test_desktop_runtime.py`；`tests/manual/check_desktop_navigation.py` |
 | 定时执行失败 | `src/api/main.py` 的 `_execute_scheduled_task`、`_load_scheduled_jobs`、`run_scheduled_task_now`；`src/orchestrator/pipeline.py` | `tests/test_scheduled_execution.py`；`SCHEDULE_FAILURE_FIX.md` |
+| 定时运行隔离、进度和取消 | `src/api/main.py`；`src/crawlers/scheduled_run.py`、`progress.py`、`browser_manager.py`；两平台抓取器及 `real_crawler.py` | `tests/test_scheduled_lifecycle.py`；`tests/test_comment_collection.py`；`tests/test_x_session_browser.py`；`tests/manual/check_result_summary.py` |
 | 定时保存及去重 | `src/api/main.py` 的 `save_task_results_to_file`；`src/vocabulary/storage.py`；`src/common/database.py` | `tests/test_schedule_save.py`；`tests/test_schedule_dedup.py` |
 | X 会话与搜索失败 | `src/crawlers/browser_manager.py`；`src/crawlers/twitter_url.py`；`src/crawlers/real_crawler.py` | `tests/test_x_session.py`；`tests/test_x_session_browser.py`（本地服务+真实 Chromium，支持 `VOCAB_TEST_BROWSER_EXECUTABLE`） |
 | 搜索评论与数量 | `src/crawlers/comment_results.py`；`src/api/main.py` 搜索接口；`src/crawlers/twitter_url.py`、`src/crawlers/reddit_crawler.py` | `tests/test_comment_exports.py`；`tests/test_search_quantity.py` |
@@ -26,3 +27,5 @@
 ## 后续排查
 
 - X 搜索 0 条且页面转圈：见 `work/x-loading-diagnosis-2026-10-08.md`，包含实际网络故障、空结果误判及待确认项；结论以对应日期证据为准。
+
+- 定时任务 40 分钟无进展弹窗：见 `work/scheduled-stall-diagnosis-2026-10-08.md`，涉及重入、跨循环浏览器复用、心跳粒度与取消/部分结果缺陷。

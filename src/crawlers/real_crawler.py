@@ -17,6 +17,7 @@ import logging
 from datetime import datetime
 
 from src.common.models import ParsedPost
+from src.crawlers.progress import checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -152,83 +153,95 @@ def _reddit_comment_to_post(c: dict, keyword: str) -> ParsedPost:
         metrics={"score": c.get("score", 0) or 0},
         tags=[keyword] if keyword else [],
         raw_data={"source": "reddit", "type": "comment",
-                  "parent_id": str(c.get("post_id", "")), "url": c.get("url", "")},
+                  "parent_id": str(c.get("post_id", "")), "comment_id": c.get("comment_id", ""), "url": c.get("url", "")},
     )
 
 
 # ── 单关键词：去重 + 严格迭代补足到 count ──────────────────
 
-async def _collect_new_twitter(fetcher, kw, count, cookies, sort_by, include_replies, seen_ids, heartbeat=None):
-    """抓取单个关键词的 Twitter 新帖（去重 + 迭代补足），返回 [帖子, 其评论...] 交错列表。"""
-    collected: list[ParsedPost] = []
-    collected_ids: set[str] = set()
-    target = count
-    prev_fetched = -1
-    for _round in range(_BACKFILL_MAX_ROUNDS):
+def _twitter_snapshot(rows, kw, count, seen_ids, collected, include_replies):
+    result = list(collected)
+    ids = {p.post_id for p in result if p.raw_data.get("type") == "post"}
+    for row in rows:
+        pid = str(row.get("tweet_id") or row.get("id") or "")
+        if not pid or pid in seen_ids or pid in ids or len(ids) >= count:
+            continue
+        ids.add(pid)
+        result.append(_tweet_to_post(row, kw))
+        if include_replies:
+            result.extend(_tweet_reply_to_post(r, pid, kw) for r in _parse_replies(row.get("replies_data")))
+    return result
+
+
+def _reddit_snapshot(rows, kw, count, seen_ids, collected):
+    result = list(collected)
+    ids = {p.post_id for p in result if p.raw_data.get("type") == "post"}
+    comments = {}
+    for row in rows:
+        if row.get("type") == "comment":
+            comments.setdefault(str(row.get("post_id", "")), []).append(row)
+    for row in rows:
+        if row.get("type") == "comment":
+            continue
+        pid = str(row.get("post_id") or row.get("id") or "")
+        if not pid or pid in seen_ids or pid in ids or len(ids) >= count:
+            continue
+        ids.add(pid)
+        result.append(_reddit_to_post(row, kw))
+        result.extend(_reddit_comment_to_post(r, kw) for r in comments.get(pid, []))
+    return result
+
+
+async def _collect_new_twitter(fetcher, kw, count, cookies, sort_by, include_replies, seen_ids, heartbeat=None, save=None):
+    from src.crawlers.progress import observe_rows
+    collected = []
+    target, previous = count, -1
+    for _ in range(_BACKFILL_MAX_ROUNDS):
         if heartbeat:
-            heartbeat()  # 每轮开始上报心跳，供上层"无进展看门狗"判活
-        fetch_n = min(target, _BACKFILL_ABS_CAP)
-        tweets, _ = await fetcher.search_tweets(
-            kw, count=fetch_n, include_replies=include_replies,
-            cookies=cookies, sort_by=sort_by,
-        )
-        added = 0
-        for t in tweets:
-            pid = str(t.get("tweet_id") or t.get("id") or "")
-            if not pid or pid in seen_ids or pid in collected_ids:
-                continue
-            collected_ids.add(pid)
-            collected.append(_tweet_to_post(t, kw))
-            if include_replies:
-                for r in _parse_replies(t.get("replies_data")):
-                    collected.append(_tweet_reply_to_post(r, pid, kw))
-            added += 1
-            if len(collected_ids) >= count:
-                break
-        # 已达标 / 本轮无新增（平台无更多新结果）/ 返回条数不再增长（触底）→ 直接输出
-        if len(collected_ids) >= count or added == 0 or len(tweets) <= prev_fetched:
+            heartbeat()
+        def snapshot(rows):
+            if save:
+                save(_twitter_snapshot(rows, kw, count, seen_ids, collected, include_replies))
+        with observe_rows(snapshot):
+            rows, _ = await fetcher.search_tweets(kw, count=min(target, _BACKFILL_ABS_CAP),
+                include_replies=include_replies, cookies=cookies, sort_by=sort_by)
+        old_count = sum(p.raw_data.get("type") == "post" for p in collected)
+        collected = _twitter_snapshot(rows, kw, count, seen_ids, collected, include_replies)
+        if save:
+            save(collected)
+        actual = sum(p.raw_data.get("type") == "post" for p in collected)
+        if actual >= count or actual == old_count or len(rows) <= previous:
             break
-        prev_fetched = len(tweets)
+        previous = len(rows)
         target = min(target * 2, _BACKFILL_ABS_CAP)
-    logger.info(f"[真实抓取] Twitter「{kw}」新帖 {len(collected_ids)} 条（目标 {count}）")
+    logger.info("[真实抓取] Twitter 新帖 %s 条（目标 %s）", actual, count)
     return collected
 
 
-async def _collect_new_reddit(fetcher, kw, count, cookies, sort, include_replies, seen_ids, heartbeat=None):
-    """抓取单个关键词的 Reddit 新帖（去重 + 迭代补足），返回 [帖子, 其评论...] 交错列表。"""
-    collected: list[ParsedPost] = []
-    collected_ids: set[str] = set()
-    target = count
-    prev_posts = -1
-    for _round in range(_BACKFILL_MAX_ROUNDS):
+async def _collect_new_reddit(fetcher, kw, count, cookies, sort, include_replies, seen_ids, heartbeat=None, save=None):
+    from src.crawlers.progress import observe_rows
+    collected = []
+    target, previous = count, -1
+    for _ in range(_BACKFILL_MAX_ROUNDS):
         if heartbeat:
-            heartbeat()  # 每轮开始上报心跳，供上层"无进展看门狗"判活
-        fetch_n = min(target, _BACKFILL_ABS_CAP)
-        rows, _ = await fetcher.search_posts(
-            kw, count=fetch_n, cookies=cookies, sort=sort, include_replies=include_replies,
-        )
-        posts = [r for r in rows if r.get("type") != "comment"]
-        comments_by_parent: dict[str, list[dict]] = {}
-        for r in rows:
-            if r.get("type") == "comment":
-                comments_by_parent.setdefault(str(r.get("post_id", "")), []).append(r)
-        added = 0
-        for d in posts:
-            pid = str(d.get("post_id") or d.get("id") or "")
-            if not pid or pid in seen_ids or pid in collected_ids:
-                continue
-            collected_ids.add(pid)
-            collected.append(_reddit_to_post(d, kw))
-            for c in comments_by_parent.get(pid, []):
-                collected.append(_reddit_comment_to_post(c, kw))
-            added += 1
-            if len(collected_ids) >= count:
-                break
-        if len(collected_ids) >= count or added == 0 or len(posts) <= prev_posts:
+            heartbeat()
+        def snapshot(rows):
+            if save:
+                save(_reddit_snapshot(rows, kw, count, seen_ids, collected))
+        with observe_rows(snapshot):
+            rows, _ = await fetcher.search_posts(kw, count=min(target, _BACKFILL_ABS_CAP),
+                cookies=cookies, sort=sort, include_replies=include_replies)
+        old_count = sum(p.raw_data.get("type") == "post" for p in collected)
+        collected = _reddit_snapshot(rows, kw, count, seen_ids, collected)
+        if save:
+            save(collected)
+        actual = sum(p.raw_data.get("type") == "post" for p in collected)
+        fetched = sum(r.get("type") != "comment" for r in rows)
+        if actual >= count or actual == old_count or fetched <= previous:
             break
-        prev_posts = len(posts)
+        previous = fetched
         target = min(target * 2, _BACKFILL_ABS_CAP)
-    logger.info(f"[真实抓取] Reddit「{kw}」新帖 {len(collected_ids)} 条（目标 {count}）")
+    logger.info("[真实抓取] Reddit 新帖 %s 条（目标 %s）", actual, count)
     return collected
 
 
@@ -254,7 +267,8 @@ async def crawl_twitter(
             heartbeat()  # 每个关键词开始上报心跳
         try:
             posts.extend(await _collect_new_twitter(
-                fetcher, kw, count, cookies, sort_by, include_replies, seen_ids, heartbeat
+                fetcher, kw, count, cookies, sort_by, include_replies, seen_ids, heartbeat,
+                save=lambda partial: checkpoint(posts + partial),
             ))
         except Exception as e:
             last_error = e
@@ -285,7 +299,8 @@ async def crawl_reddit(
             heartbeat()  # 每个关键词开始上报心跳
         try:
             posts.extend(await _collect_new_reddit(
-                fetcher, kw, count, cookies, sort, include_replies, seen_ids, heartbeat
+                fetcher, kw, count, cookies, sort, include_replies, seen_ids, heartbeat,
+                save=lambda partial: checkpoint(posts + partial),
             ))
         except Exception as e:
             last_error = e

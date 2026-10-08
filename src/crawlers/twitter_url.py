@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from src.crawlers.platform_config import twitter_config as _TC
+from src.crawlers.progress import report_rows, observe_rows, row_observer
 
 logger = logging.getLogger(__name__)
 
@@ -613,6 +614,10 @@ class TwitterCookieFetcher:
         from src.crawlers.browser_manager import apply_request_interceptors
 
         sem = asyncio.Semaphore(3)
+        parent_observer = row_observer()
+        def comment_snapshot(_rows):
+            if parent_observer:
+                parent_observer(tweets)
         for tweet in tweets:
             tweet["comments_status"] = "pending"
             tweet["comments_warning"] = "评论任务尚未完成"
@@ -633,7 +638,9 @@ class TwitterCookieFetcher:
                         await apply_request_interceptors(
                             page, block_resources=self.block_resources,
                         )
-                        await self._scrape_replies_page(page, tweet["url"], progress=tweet)
+                        with observe_rows(comment_snapshot):
+                            await self._scrape_replies_page(page, tweet["url"], progress=tweet)
+                        report_rows(tweets)
                         if not tweet["replies_count"] and tweet.get("replies", 0):
                             raise RuntimeError("页面显示有回复，但未加载出评论，请稍后重试")
                         return
@@ -949,6 +956,8 @@ class TwitterCookieFetcher:
                         all_tweets[tid] = t
 
 
+                if len(all_tweets) > prev_count:
+                    report_rows(list(all_tweets.values()))
                 if len(all_tweets) >= count:
                     break
                 # 逐屏加载，避免跳过虚拟列表中的中间结果
@@ -1201,6 +1210,8 @@ class TwitterCookieFetcher:
                     }
             progress["replies_count"] = len(collected)
             progress["replies_data"] = json.dumps(list(collected.values()), ensure_ascii=False)
+            if len(collected) > prev_count:
+                report_rows(list(collected.values()))
             if len(collected) >= max_replies:
                 warning = f"达到单帖评论上限 {max_replies} 条，可能仍有未采集评论"
                 break

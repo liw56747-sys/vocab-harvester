@@ -7,6 +7,8 @@ Reddit 的 .json 端点直接返回结构化数据，无需 Playwright DOM 解�
 
 from __future__ import annotations
 
+from src.crawlers.progress import report_rows, report_progress, observe_rows, row_observer
+
 import asyncio
 import csv
 import io
@@ -265,12 +267,15 @@ class RedditCookieFetcher:
                         })
                         page_new += 1
 
+                    if page_new:
+                        report_rows(all_posts)
                     # 检查下一页
                     after = data.get("data", {}).get("after")
                     logger.info(f"Reddit 第{page_num+1}页: +{page_new} 帖, 累计 {len(all_posts)}, after={after}")
                     if not after or after in visited_cursors or len(all_posts) >= count:
                         break
                     visited_cursors.add(after)
+                    report_progress()  # 服务端给出了未访问的新游标。
                     await asyncio.sleep(_RC.scroll_wait("search"))
 
             logger.info(f"Reddit 搜索「{keyword}」: 共 {len(all_posts)} 帖")
@@ -305,6 +310,12 @@ class RedditCookieFetcher:
 
         all_rows: list[dict] = list(posts)  # 帖子本身先加入
         sem = asyncio.Semaphore(2)  # 避免大量帖子评论请求瞬间触发限流
+        parent_observer = row_observer()
+        partial_comments = {}
+        def comment_snapshot(post_id, comments):
+            partial_comments[post_id] = list(comments)
+            if parent_observer:
+                parent_observer(list(posts) + [r for group in partial_comments.values() for r in group])
 
         try:
             async with httpx.AsyncClient(
@@ -329,7 +340,10 @@ class RedditCookieFetcher:
                             return []
 
                         try:
-                            comments = await self._fetch_post_comments(client, subreddit, post_id, progress=post)
+                            with observe_rows(lambda rows: comment_snapshot(post_id, rows)):
+                                comments = await self._fetch_post_comments(client, subreddit, post_id, progress=post)
+                            comment_snapshot(post_id, comments)
+                            report_progress()
                             post["comments_fetched"] = len(comments)
                             # 将评论加入结果（线程安全：gather 后统一处理）
                             return comments
@@ -419,6 +433,7 @@ class RedditCookieFetcher:
         warning = ""
         self._parse_comment_tree(data[1].get("data", {}).get("children", []),
                                  post_id, comments, max_comments, seen, pending, continuations)
+        report_rows(comments)
         try:
             for _ in range(_RC.comment_max_rounds):
                 pending = list(dict.fromkeys(cid for cid in pending if cid not in seen and cid not in requested))
@@ -449,6 +464,7 @@ class RedditCookieFetcher:
                     children = thread[1].get("data", {}).get("children", [])
                 self._parse_comment_tree(children, post_id, comments, max_comments,
                                          seen, pending, continuations)
+                report_rows(comments)
             else:
                 warning = "达到评论翻页上限，可能仍有未采集评论"
             if not warning and requested - seen:

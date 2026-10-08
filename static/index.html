@@ -2618,6 +2618,8 @@ const I18N = {
     save_path_hint_none: '未设置保存路径：本任务抓取的数据将不会导出到文件夹。如需保存请选择上方文件夹。',
     status_running: '正在执行',
     status_success: '成功',
+    status_partial: '部分完成',
+    notif_task_partial_title: '定时任务部分完成',
     status_failed: '失败',
     notif_task_done_title: '定时任务已完成',
     notif_task_failed_title: '定时任务执行失败',
@@ -2872,6 +2874,8 @@ const I18N = {
     save_path_hint_none: 'No save path set: harvested data will NOT be exported to a folder. Choose a folder above to save.',
     status_running: 'Running',
     status_success: 'success',
+    status_partial: 'Partial',
+    notif_task_partial_title: 'Scheduled task partially completed',
     status_failed: 'failed',
     notif_task_done_title: 'Scheduled task completed',
     notif_task_failed_title: 'Scheduled task failed',
@@ -3851,11 +3855,13 @@ function _drainNotifQueue() {
 
 function showTaskDonePopup(n) {
   const ok = (n.status === 'success' || n.status === 'empty');
-  const title = ok ? t('notif_task_done_title') : t('notif_task_failed_title');
+  const partial = n.status === 'partial';
+  const title = partial ? t('notif_task_partial_title') : (ok ? t('notif_task_done_title') : t('notif_task_failed_title'));
   let desc = '「' + esc(n.name || '-') + '」';
   if (ok) {
     desc += (n.status === 'empty') ? t('notif_empty') : t('notif_posts', { n: n.total_posts || 0 });
   } else {
+    if (partial) desc += t('notif_posts', { n: n.total_posts || 0 }) + '<br>';
     desc += (n.error ? esc(n.error) : t('notif_failed_generic'));
   }
   const iconSvg = ok
@@ -4482,15 +4488,16 @@ async function loadScheduleTasks() {
         : `<span class="badge badge-observe" style="margin-left:6px">${t('badge_crawl_only')}</span>`;
       const statusBadge = task.last_run_status === 'success' ? 'badge-approved' :
                           task.last_run_status === 'failed' ? 'badge-rejected' :
-                          task.last_run_status === 'running' ? 'badge-observe' : '';
+                          ['running', 'partial'].includes(task.last_run_status) ? 'badge-observe' : '';
       const statusText = task.last_run_status === 'running' ? t('status_running') :
                          task.last_run_status === 'success' ? t('status_success') :
                          task.last_run_status === 'failed' ? t('status_failed') :
+                         task.last_run_status === 'partial' ? t('status_partial') :
                          (task.last_run_status || '-');
       let errHtml = '';
       if (task.last_run_status === 'failed' && task.last_error) {
         errHtml = `<div style="font-size:11px;color:var(--danger);margin-top:4px;max-width:240px;line-height:1.4;white-space:normal" title="${esc(task.last_error)}">${esc(task.last_error)}</div>`;
-      } else if (task.last_error && task.last_error.indexOf('部分平台') >= 0) {
+      } else if (task.last_error && (task.last_run_status === 'partial' || task.last_error.indexOf('部分平台') >= 0)) {
         errHtml = `<div style="font-size:11px;color:var(--warning);margin-top:4px;max-width:240px;line-height:1.4;white-space:normal" title="${esc(task.last_error)}">${esc(task.last_error)}</div>`;
       }
       tbody.innerHTML += `<tr>
@@ -4750,7 +4757,8 @@ async function deleteScheduleTask(taskId) {
 async function runTaskNow(taskId) {
   if (!confirm(t('confirm_run_now'))) return;
   try {
-    await api(`/api/scheduled-tasks/${taskId}/run`, { method: 'POST' });
+    const result = await api(`/api/scheduled-tasks/${taskId}/run`, { method: 'POST' });
+    if (result.status !== 'ok') { toast(result.error || result.message, 'error'); return; }
     toast(t('task_running'), 'info');
     // 立即刷新一次（展示“正在执行/running”），然后轮询直到状态变为 success/failed
     await loadScheduleTasks();
