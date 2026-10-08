@@ -129,7 +129,7 @@ async def test_speed_mode_keeps_layout_and_comment_requests(resource_type, block
     await handler(route)
     assert route.abort.await_count == int(blocked)
     if not blocked:
-        route.continue_.assert_awaited_once_with(headers={'x-csrf-token': 'test-csrf'})
+        route.continue_.assert_awaited_once_with()
 
 
 def comment(cid, replies='', body=None):

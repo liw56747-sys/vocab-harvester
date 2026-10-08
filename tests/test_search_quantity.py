@@ -1,6 +1,6 @@
 """主帖数量与分页回归：检验真实抓取循环，不以 API 参数传递代替数量验证。"""
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -14,6 +14,8 @@ class SearchPage:
     def __init__(self, batches):
         self.batches = list(batches)
         self.url = 'https://x.com/search?q=test'
+        self.on = Mock()
+        self.remove_listener = Mock()
         self.goto = AsyncMock()
         self.wait_for_selector = AsyncMock()
         self.query_selector = AsyncMock(return_value=None)

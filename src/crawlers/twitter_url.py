@@ -465,7 +465,6 @@ class TwitterCookieFetcher:
                     page.set_default_timeout(30000)  # 30 秒兜底：防止 CDP 命令无限挂起
                     await apply_request_interceptors(
                         page, block_resources=self.block_resources,
-                        ct0_token=cookies.get("ct0", ""),
                     )
                     try:
                         tweets = await self._scrape_user(page, username, count)
@@ -503,7 +502,6 @@ class TwitterCookieFetcher:
                     await asyncio.wait_for(
                         self._parallel_scrape_replies(
                             context, all_tweets,
-                            ct0_token=cookies.get("ct0", ""),
                         ),
                         timeout=_TC.single_keyword_timeout
                     )
@@ -557,7 +555,6 @@ class TwitterCookieFetcher:
             page.set_default_timeout(30000)  # 30 秒兜底：防止 CDP 命令无限挂起
             await apply_request_interceptors(
                 page, block_resources=self.block_resources,
-                ct0_token=cookies.get("ct0", ""),
             )
             try:
                 tweets = await asyncio.wait_for(
@@ -566,7 +563,7 @@ class TwitterCookieFetcher:
                 )
                 logger.info(f"搜索「{keyword}」: 获取 {len(tweets)} 条推文")
             except asyncio.TimeoutError:
-                logger.warning(f"搜索「{keyword}」超时（{_TC.single_keyword_timeout}秒），已获取 {len(tweets)} 条")
+                raise RuntimeError("X 搜索超时，请稍后重试") from None
             except asyncio.CancelledError:
                 logger.info(f"搜索「{keyword}」被取消，已获取 {len(tweets)} 条")
             except Exception as e:
@@ -581,7 +578,6 @@ class TwitterCookieFetcher:
                     await asyncio.wait_for(
                         self._parallel_scrape_replies(
                             context, tweets,
-                            ct0_token=cookies.get("ct0", ""),
                         ),
                         timeout=_TC.single_keyword_timeout
                     )
@@ -611,7 +607,7 @@ class TwitterCookieFetcher:
     # ── 并发评论抓取 ──────────────────────────────────────
 
     async def _parallel_scrape_replies(
-        self, context, tweets: list[dict], ct0_token: str = "",
+        self, context, tweets: list[dict],
     ):
         """并发抓取多条推文的评论（Semaphore 限制 3 个并发标签页，降低内存/崩溃风险）"""
         from src.crawlers.browser_manager import apply_request_interceptors
@@ -635,7 +631,7 @@ class TwitterCookieFetcher:
                         page = await context.new_page()
                         page.set_default_timeout(_TC.comment_request_timeout * 1000)
                         await apply_request_interceptors(
-                            page, block_resources=self.block_resources, ct0_token=ct0_token,
+                            page, block_resources=self.block_resources,
                         )
                         await self._scrape_replies_page(page, tweet["url"], progress=tweet)
                         if not tweet["replies_count"] and tweet.get("replies", 0):
@@ -775,8 +771,65 @@ class TwitterCookieFetcher:
         return tweets
 
     async def _scrape_search(self, page, keyword: str, count: int, sort_by: str = "top", task_id: str | None = None) -> list[dict]:
+        """搜索并记录有限诊断元数据；不记录 Cookie、请求头或响应正文。"""
+        from urllib.parse import urlparse
+
+        state = {"status": None}
+
+        def on_response(response):
+            parsed = urlparse(response.url)
+            if (parsed.hostname in {"x.com", "api.x.com", "twitter.com", "api.twitter.com"}
+                    and parsed.path.endswith("/SearchTimeline")):
+                state["status"] = response.status
+                logger.info("X SearchTimeline HTTP %s", response.status)
+
+        def on_failed(request):
+            if self.block_resources and request.resource_type in {"image", "font", "media"}:
+                return
+            parsed = urlparse(request.url)
+            if parsed.hostname in {"x.com", "api.x.com", "abs.twimg.com"}:
+                logger.warning("X 页面资源加载失败: host=%s type=%s", parsed.hostname, request.resource_type)
+
+        page.on("response", on_response)
+        page.on("requestfailed", on_failed)
+        try:
+            return await self._scrape_search_page(page, keyword, count, sort_by, task_id, state)
+        finally:
+            page.remove_listener("response", on_response)
+            page.remove_listener("requestfailed", on_failed)
+
+    async def _search_failure(self, page, state) -> str | None:
+        """None 仅表示明确空结果；其他未加载状态必须向上层报告失败。"""
+        from urllib.parse import urlparse
+
+        path = urlparse(page.url).path
+        if any(part in path for part in ("/login", "/flow", "/logout")) or state["status"] == 401:
+            return "X 登录会话已失效，请更新 Cookie 后重试"
+        if state["status"] == 403:
+            return "X 搜索请求被拒绝，请检查账号会话后重试"
+        if state["status"] == 429:
+            return "X 搜索受到平台限流，请稍后重试"
+        if state["status"] is not None and state["status"] >= 400:
+            return "X 搜索服务暂时不可用，请稍后重试"
+        try:
+            if await page.query_selector('[data-testid="login-drawer"], form[action="https://x.com/account/login"]'):
+                return "X 登录会话已失效，请更新 Cookie 后重试"
+            body = await page.inner_text("body", timeout=5000)
+            if "something went wrong" in body.lower() or "出了点问题" in body:
+                return "X 搜索页面报错，请稍后重试"
+            empty = await page.query_selector('[data-testid="emptyState"]')
+            if empty:
+                text = (await empty.inner_text(timeout=5000)).lower()
+                if any(term in text for term in ("no results", "没有结果", "未找到", "找不到", "無結果", "沒有結果", "找不到結果")):
+                    return None
+        except Exception:
+            pass
+        return "X 搜索页面未完成加载，请检查网络或代理后重试"
+
+    async def _scrape_search_page(self, page, keyword, count, sort_by, task_id, state):
         """用 Playwright 抓取 Twitter 搜索结果（逐轮滚动+提取+去重）"""
-        from urllib.parse import quote_plus
+        from urllib.parse import quote_plus, urlparse
+        from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
         f_param = "live" if sort_by == "live" else "top"
         url = f"https://x.com/search?q={quote_plus(keyword)}&src=typed_query&f={f_param}"
@@ -786,7 +839,7 @@ class TwitterCookieFetcher:
 
         # 检查是否被重定向到登录页
         current_url = page.url
-        if "login" in current_url or "flow" in current_url or "logout" in current_url:
+        if any(part in urlparse(current_url).path for part in ("/login", "/flow", "/logout")):
             logger.error(f"搜索「{keyword}」: 被重定向到登录页: {current_url}")
             raise RuntimeError("Cookie 已过期，请重新从浏览器导出")
 
@@ -819,32 +872,25 @@ class TwitterCookieFetcher:
             raise RuntimeError("Twitter 搜索页报错，请稍后重试")
 
         # 等待推文加载（给 Twitter SPA 足够时间渲染）
-        tweets_loaded = False
         for _attempt in range(2):
             try:
                 await page.wait_for_selector(
-                    'article[data-testid="tweet"]', timeout=_TC.search_load_timeout
+                    'article[data-testid="tweet"]', timeout=max(_TC.search_load_timeout, 45000)
                 )
-                tweets_loaded = True
                 break
-            except Exception:
-                if _attempt == 0:
-                    logger.info(f"搜索「{keyword}」: 首次等待超时，刷新重试...")
+            except PlaywrightTimeoutError:
+                failure = await self._search_failure(page, state)
+                if failure is None:
+                    logger.info("X 搜索无匹配结果")
+                    return []
+                if _attempt == 0 and state["status"] not in {401, 403, 429}:
+                    logger.info("X 搜索等待超时，刷新重试")
+                    state["status"] = None
                     await page.reload(wait_until="domcontentloaded", timeout=60000)
                     await asyncio.sleep(_TC.search_initial_wait * 2)
                     continue
-                # 诊断：检查页面状态
-                diag = ""
-                try:
-                    diag = await page.inner_text("body")
-                    diag = diag[:300]
-                except Exception:
-                    pass
-                if "no results" in diag.lower() or "没有结果" in diag:
-                    logger.info(f"搜索「{keyword}」: Twitter 无匹配结果")
-                else:
-                    logger.warning(f"搜索「{keyword}」: 等待推文超时（页面可能加载异常），页面内容前300字: {diag[:150]}")
-                # 调试截图：当 0 条结果时保存页面截图
+                logger.warning("%s (SearchTimeline HTTP=%s)", failure, state["status"])
+                # 截图只作诊断，不允许截图超时掩盖原始失败。
                 try:
                     import os
                     from datetime import datetime as _dt
@@ -852,13 +898,10 @@ class TwitterCookieFetcher:
                     os.makedirs(debug_dir, exist_ok=True)
                     ts = _dt.now().strftime("%Y%m%d_%H%M%S")
                     screenshot_path = os.path.join(debug_dir, f"twitter_search_empty_{ts}.png")
-                    await page.screenshot(path=screenshot_path, full_page=False)
-                    logger.info(f"调试截图已保存: {screenshot_path}")
-                    # 同时记录页面 URL
-                    logger.info(f"调试信息: 当前页面 URL={page.url}, 页面内容前200字={diag[:200]}")
-                except Exception as ss_err:
-                    logger.warning(f"保存调试截图失败: {ss_err}")
-                return []
+                    await page.screenshot(path=screenshot_path, full_page=False, timeout=5000)
+                except Exception:
+                    logger.debug("X 搜索诊断截图不可用")
+                raise RuntimeError(failure)
 
         # 逐轮滚动 + 提取 + 去重（虚拟滚动：DOM 同时仅保留 ~15-25 条）
         SEARCH_MAX_ROUNDS = max(_TC.search_max_rounds, count * 2 + _TC.search_max_stalls)

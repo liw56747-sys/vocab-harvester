@@ -209,7 +209,7 @@ class BrowserPool:
                         cookie_list.append(
                             {"name": "ct0", "value": ct0_value,
                              "domain": domain, "path": "/",
-                             "secure": True, "httpOnly": True, "sameSite": "None"}
+                             "secure": True, "httpOnly": False, "sameSite": "None"}
                         )
                         cookie_list.append(
                             {"name": "auth_token", "value": cookies.get("auth_token", ""),
@@ -286,7 +286,7 @@ async def apply_request_interceptors(
     ct0_token: str = "",
 ):
     """
-    统一注册请求拦截器：header 注入 + 可选的资源屏蔽。
+    仅屏蔽可选资源，保留网页根据当前会话生成的请求头。
 
     必须在 page 级别只调用一次，不能和 context.route() 混用，
     否则同 pattern 的 handler 会互相覆盖。
@@ -294,7 +294,7 @@ async def apply_request_interceptors(
     Args:
         page: Playwright Page 对象
         block_resources: 是否屏蔽图片/字体/媒体请求（加速模式）
-        ct0_token: Twitter ct0 cookie 值，用于注入 x-csrf-token 请求头
+        ct0_token: 兼容旧调用的参数，忽略其值；不可覆盖网页的实时 CSRF 校验值
     """
     async def _handler(route):
         request = route.request
@@ -307,22 +307,12 @@ async def apply_request_interceptors(
                 pass
             return
 
-        # 2. 注入 x-csrf-token 请求头（Twitter GraphQL API 必需）
-        if ct0_token:
-            headers = {**request.headers, "x-csrf-token": ct0_token}
-            try:
-                await route.continue_(headers=headers)
-            except Exception:
-                try:
-                    await route.continue_()
-                except Exception:
-                    pass
-        else:
-            try:
-                await route.continue_()
-            except Exception:
-                pass
+        # X 会轮换 ct0。网页读取当前 Cookie 生成校验头，不能用导入值覆盖。
+        # 不向静态资源或第三方站点注入账号凭据。
+        try:
+            await route.continue_()
+        except Exception:
+            pass
 
-    # 只在有实际拦截需求时才注册 route
-    if block_resources or ct0_token:
+    if block_resources:
         await page.route("**/*", _handler)
