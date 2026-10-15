@@ -103,7 +103,7 @@ def _tweet_to_post(t: dict, keyword: str) -> ParsedPost:
             "replies": t.get("replies", 0) or 0,
         },
         tags=[keyword] if keyword else [],
-        raw_data={"source": "twitter", "type": "post", "parent_id": "", "url": t.get("url", "")},
+        raw_data={"source": "twitter", "type": "post", "parent_id": "", "url": t.get("url", ""), **{k:t[k] for k in ("comments_status","comments_warning","media_urls","collection_kind") if k in t}},
     )
 
 
@@ -138,7 +138,7 @@ def _reddit_to_post(d: dict, keyword: str) -> ParsedPost:
         },
         tags=[keyword] if keyword else [],
         raw_data={"source": "reddit", "type": "post", "parent_id": "",
-                  "subreddit": d.get("subreddit", ""), "url": d.get("url", "")},
+                  "subreddit": d.get("subreddit", ""), "url": d.get("url", ""), **{k:d[k] for k in ("comments_status","comments_warning","media_urls","collection_kind") if k in d}},
     )
 
 
@@ -146,7 +146,7 @@ def _reddit_comment_to_post(c: dict, keyword: str) -> ParsedPost:
     """Reddit 评论 dict → 评论 ParsedPost（parent_id 指向所属帖子）。"""
     return ParsedPost(
         platform="reddit",
-        post_id="",  # Reddit 评论行无独立 post_id，以 parent_id 关联所属帖子
+        post_id=str(c.get("comment_id") or ""),  # 保留评论独立 ID，所属根帖仍由 parent_id 关联
         content=c.get("content", "") or "",
         author=c.get("commenter") or c.get("author", "") or "",
         published_at=_parse_dt(c.get("created_at")),

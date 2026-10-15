@@ -115,9 +115,9 @@ async def test_watchdog_cancels_real_worker_and_saves_partial_results(scheduled,
             cancelled.set()
             raise
     monkeypatch.setattr(TwitterCookieFetcher, 'search_tweets', search)
-    reddit = AsyncMock(return_value=[ParsedPost(platform='reddit', post_id='rd', author='test', content='另一平台数据',
-        published_at=datetime.now(), raw_data={'type': 'post'})])
-    monkeypatch.setattr(real, 'crawl_reddit', reddit)
+    from src.crawlers.reddit_crawler import RedditCookieFetcher
+    reddit = AsyncMock(return_value=([{'post_id':'rd','author':'test','content':'另一平台数据','comments_status':'finished'}],''))
+    monkeypatch.setattr(RedditCookieFetcher, 'search_posts', reddit)
     await asyncio.wait_for(api._execute_scheduled_task(scheduled), timeout=5)
     assert cancelled.is_set()
     assert reddit.await_count == int(reddit_first)
@@ -178,11 +178,17 @@ async def test_continuing_progress_can_run_beyond_total_stall_duration(scheduled
             await asyncio.sleep(0.025)
         return [{'tweet_id': 'post1', 'content': '主帖'}], ''
     monkeypatch.setattr(TwitterCookieFetcher, 'search_tweets', search)
-    monkeypatch.setattr(real, 'crawl_reddit', AsyncMock(return_value=[]))
+    from src.crawlers.reddit_crawler import RedditCookieFetcher
+    monkeypatch.setattr(RedditCookieFetcher, 'search_posts', AsyncMock(return_value=([],'')))
+    async def comments(fetcher, platform, posts, cookies):
+        posts[0]['comments_status']='finished'
+        return posts
+    monkeypatch.setattr('src.collection.engine.fetch_comments', comments)
     await api._execute_scheduled_task(scheduled)
     db = await get_db()
     row = await (await db.execute('SELECT last_run_status,last_error FROM scheduled_tasks WHERE id=?', (scheduled['id'],))).fetchone()
-    assert tuple(row) == ('success', '')
+    assert row[0] == 'partial'  # 只有 1 条主帖，仍应如实报告未达数量目标。
+    assert '无有效进展' not in row[1] and '停止' not in row[1]
 
 
 async def test_scheduler_reload_keeps_existing_running_job(scheduled, monkeypatch):
@@ -227,3 +233,11 @@ def test_snapshots_update_known_posts_without_erasing_saved_comments():
     run.cancel()
     run.save('twitter', [])
     assert len(run.result()['posts']['twitter']) == 2
+
+@pytest.fixture(autouse=True)
+def isolate_collection_store(tmp_path, monkeypatch):
+    from src.collection.engine import Traffic
+    monkeypatch.setenv('VOCAB_DATA_DIR',str(tmp_path / 'state'))
+    Traffic.active.clear(); Traffic.delay.clear(); Traffic.until.clear()
+    yield
+    Traffic.active.clear(); Traffic.delay.clear(); Traffic.until.clear()

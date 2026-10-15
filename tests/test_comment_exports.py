@@ -27,11 +27,28 @@ def test_export_list_and_json_replies_preserve_parent_and_keyword():
 @pytest.mark.parametrize('endpoint', ['/api/search', '/api/batch-search'])
 @pytest.mark.parametrize('include_replies', [True, False])
 @pytest.mark.parametrize('available_count', [100, 37])
-def test_dual_platform_100_posts_speed_mode_exports_all_comments(monkeypatch, endpoint, include_replies, available_count):
+def test_dual_platform_100_posts_speed_mode_exports_all_comments(monkeypatch, endpoint, include_replies, available_count, tmp_path):
     from src.api.main import app
     from src.crawlers.twitter_url import TwitterCookieFetcher
     from src.crawlers.reddit_crawler import RedditCookieFetcher
 
+    monkeypatch.setenv('VOCAB_DATA_DIR',str(tmp_path))
+    from src.collection.engine import Traffic
+    Traffic.active.clear();Traffic.until.clear();Traffic.delay.clear()
+    real_leave=Traffic.leave
+    def leave(*args,**kwargs):
+        real_leave(*args,**kwargs);Traffic.until.clear()
+    monkeypatch.setattr(Traffic,'leave',leave)
+    async def comments(fetcher,platform,posts,cookies):
+        p=posts[0]
+        p['comments_status']='finished'
+        if platform=='twitter':
+            p['replies_data']=[{'tweet_id':p['tweet_id']+'c','content':'X 评论','display_name':'甲'}]
+            if p['tweet_id']=='t0':
+                p['comments_status']='partial';p['comments_warning']='部分评论加载失败（测试）'
+            return posts
+        return posts+[{'post_id':p['post_id'],'type':'comment','content':'Reddit 评论','commenter':'u/乙','parent_id':p['post_id']}]
+    monkeypatch.setattr('src.collection.engine.fetch_comments',comments)
     calls = []
     async def twitter(self, keyword, count, include_replies, **kwargs):
         calls.append(('twitter', count, include_replies, self.block_resources))
@@ -71,7 +88,7 @@ def test_dual_platform_100_posts_speed_mode_exports_all_comments(monkeypatch, en
         time.sleep(0.01)
     assert state['status'] == 'success', state
     result = state['result']
-    assert sorted(calls) == [('reddit', 100, include_replies, True), ('twitter', 100, include_replies, True)]
+    assert sorted(calls) == [('reddit', 100, False, True), ('twitter', 100, False, True)]
     assert result['total_posts'] == available_count * 2
     assert len(result['count_results']) == 2
     for outcome in result['count_results']:
@@ -93,6 +110,7 @@ def test_dual_platform_100_posts_speed_mode_exports_all_comments(monkeypatch, en
             assert all(r['parent_id'] and r['commenter'] for r in comments)
     assert bool(result['errors']) == (include_replies or available_count < 100)
     if available_count < 100:
-        assert any('目标 100 条主帖，实际 37 条，缺少 63 条' in e for e in result['errors'])
+        assert result['missing_posts'] == 126
+        assert any('目标 200 条去重主帖' in e for e in result['errors'])
     if 'batch' in endpoint:
         assert result['keyword_results'][0]['total_rows'] == result['total_rows']

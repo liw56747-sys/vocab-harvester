@@ -10,7 +10,7 @@ import pytest
 from src.common.database import init_db, close_db
 from src.common.models import CrawlQuery, Platform
 from src.crawlers.mock import MockCrawler
-from src.adapter.mock import MockAdapter
+from tests.audit_fake import FakeAuditAdapter
 from src.orchestrator.pipeline import Pipeline
 
 
@@ -53,9 +53,9 @@ def crawl_query():
 
 @pytest.fixture
 async def mock_pipeline(init_test_db):
-    """MockCrawler + MockAdapter 构造的完整 Pipeline（数据库已初始化）"""
+    """MockCrawler + FakeAuditAdapter 构造的完整 Pipeline（数据库已初始化）"""
     crawlers = {
         "twitter": MockCrawler(Platform.TWITTER),
         "reddit": MockCrawler(Platform.REDDIT),
     }
-    return Pipeline(crawlers=crawlers, adapter=MockAdapter())
+    return Pipeline(crawlers=crawlers, adapter=FakeAuditAdapter())

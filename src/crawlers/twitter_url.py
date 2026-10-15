@@ -332,31 +332,8 @@ class TwitterCookieFetcher:
             logger.warning(f"{label}.close() 异常: {e}")
 
     def _strip_media_urls(self, tweets: list[dict]) -> None:
-        """加速模式时清除媒体 URL（图片/视频链接），因为页面已屏蔽加载这些资源"""
-        if not self.block_resources:
-            return
-        for t in tweets:
-            t["has_media"] = False
-            t["media_type"] = "none"
-            t["media_urls"] = ""
-            # 也清除评论中的媒体
-            replies_data = t.get("replies_data", "[]")
-            if isinstance(replies_data, str):
-                try:
-                    import json as _json
-                    replies = _json.loads(replies_data)
-                    for r in replies:
-                        r["has_media"] = False
-                        r["media_type"] = "none"
-                        r["media_urls"] = ""
-                    t["replies_data"] = _json.dumps(replies, ensure_ascii=False)
-                except Exception:
-                    pass
-            elif isinstance(replies_data, list):
-                for r in replies_data:
-                    r["has_media"] = False
-                    r["media_type"] = "none"
-                    r["media_urls"] = ""
+        """保留已解析的媒体来源。阻止图片加载不意味着帖子没有图片。"""
+        return
 
     # ── 配置持久化 ──────────────────────────────────────────
 

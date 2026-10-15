@@ -52,10 +52,30 @@ jobs:
         run: pip install pyinstaller
 
       - name: Run unit tests
-        run: python -m pytest tests/ -x -q -m "not integration"
+        run: python -m pytest tests/ -x -q -m "not integration and not interactive"
+
+      - name: Verify browser interfaces
+        run: |
+          python tests/manual/check_collection_controls.py
+          python tests/manual/check_result_summary.py
+          python tests/manual/check_desktop_navigation.py --iterations 350
+          python tests/manual/check_update_ui.py
 
       - name: Build executable with PyInstaller
         run: pyinstaller build.spec --noconfirm
+
+      - name: Smoke test packaged Windows application
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD "windows-self-test.json"
+          $process = Start-Process -FilePath "dist/vocab-harvester/vocab-harvester.exe" -ArgumentList "--self-test", $report -PassThru
+          if (-not $process.WaitForExit(120000)) { $process.Kill(); throw "Packaged self-test timed out" }
+          if ($process.ExitCode -ne 0) { throw "Packaged self-test failed" }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if ($result.status -ne "passed") { throw "Packaged self-test did not pass" }
+          if ($result.version -ne (Get-Content VERSION -Raw).Trim()) { throw "Packaged version mismatch" }
+          Get-Content $report
 
       # ���� Inno Setup installer ����������������������������������������������������������������������������
       - name: Install Inno Setup
@@ -201,10 +221,24 @@ jobs:
         run: pip install pyinstaller
 
       - name: Run unit tests
-        run: python -m pytest tests/ -x -q -m "not integration"
+        run: python -m pytest tests/ -x -q -m "not integration and not interactive"
+
+      - name: Verify browser interfaces
+        run: |
+          python tests/manual/check_collection_controls.py
+          python tests/manual/check_result_summary.py
+          python tests/manual/check_desktop_navigation.py --iterations 350
+          python tests/manual/check_update_ui.py
 
       - name: Build .app with PyInstaller
         run: pyinstaller build_mac.spec --noconfirm
+
+      - name: Smoke test packaged macOS application
+        timeout-minutes: 3
+        run: |
+          dist/vocab-harvester.app/Contents/MacOS/vocab-harvester --self-test "$PWD/macos-self-test.json"
+          python -c "import json; r=json.load(open('macos-self-test.json')); assert r['status'] == 'passed' and r['version'] == open('VERSION').read().strip()"
+          cat macos-self-test.json
 
       # ���� Icon conversion (.png �� .icns) ��������������������������������������������������������
       # If icon_macos.png exists, regenerate icon.icns via iconutil.
@@ -351,31 +385,31 @@ jobs:
           # 提取当前 tag 对应的 commit message 第一行作为更新摘要
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${{ steps.version.outputs.version }}"
-          
+
           # 获取 tag 对应的 commit message
           COMMIT_MSG=$(git log -1 --pretty=format:%s "$TAG" 2>/dev/null || echo "")
-          
+
           # 如果为空，尝试获取最新的 commit
           if [ -z "$COMMIT_MSG" ]; then
             COMMIT_MSG=$(git log -1 --pretty=format:%s 2>/dev/null || echo "")
           fi
-          
+
           # 移除可能的版本号前缀（如 "v1.5.0: " 或 "feat: "）
           # 保留核心摘要文本
           SUMMARY=$(echo "$COMMIT_MSG" | sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+[:：]?\s*)//' | sed -E 's/^(feat|fix|refactor|chore|docs|style|perf|test)[:：]?\s*/\1: /')
-          
+
           # 检测无意义的摘要（如 "update version", "bump version to X.Y.Z", "版本更新"）
           # 这些通常是自动生成的 commit message，不适合作为 Release 名称
           GENERIC_PATTERNS="update version|bump version|版本更新|release version|new release|chore: bump"
           if echo "$SUMMARY" | grep -iqE "$GENERIC_PATTERNS"; then
             SUMMARY=""
           fi
-          
+
           # 如果摘要为空或太短，使用版本号生成有意义的默认值
           if [ -z "$SUMMARY" ] || [ ${#SUMMARY} -lt 3 ]; then
             SUMMARY="版本发布"
           fi
-          
+
           echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
           echo "Release summary: $SUMMARY"
 

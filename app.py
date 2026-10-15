@@ -21,7 +21,11 @@ _EXE_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Pat
 # ── 用户数据目录（持久化，不受版本更新影响） ──
 # 打包后：数据存到用户主目录 ~/.vocab-harvester/，与安装目录分离
 # 开发时：数据存到项目根目录 ./data/
-if getattr(sys, "frozen", False):
+if "--self-test" in sys.argv:
+    import tempfile
+    _SELF_TEST_DATA = tempfile.TemporaryDirectory(prefix="vocab-release-test-", ignore_cleanup_errors=True)
+    _DATA_DIR = Path(_SELF_TEST_DATA.name)
+elif getattr(sys, "frozen", False):
     _DATA_DIR = Path.home() / ".vocab-harvester"
 else:
     _DATA_DIR = _EXE_DIR / "data"
@@ -459,4 +463,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--self-test" in sys.argv:
+        from src.common.self_test import run
+        run(sys.argv[sys.argv.index("--self-test") + 1])
+    else:
+        main()

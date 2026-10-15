@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
 parser.add_argument('--executable')
 parser.add_argument('--screenshot')
+parser.add_argument('--iterations', type=int, default=140)
 options = parser.parse_args()
 
 async def main():
@@ -41,7 +42,7 @@ async def main():
         await page.goto('http://127.0.0.1:9876/?desktop=windows')
         await page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
         names = ['dashboard', 'twitter', 'import', 'vocabulary', 'schedule', 'export', 'settings']
-        for i in range(140):
+        for i in range(options.iterations):
             name = names[i % len(names)]
             await page.locator(f'.nav-item[onclick*="showPage(\'{name}\'"]').click()
             assert await page.locator('.page.active').count() == 1
@@ -65,6 +66,6 @@ async def main():
         assert await page.evaluate("getComputedStyle(document.querySelector('.page.active')).animationName") == 'fadeIn'
         assert not errors, errors
         await browser.close()
-        print('PASS: 140 navigation clicks, invalid target, sync/async failures, private diagnostics, Windows-only CSS; no JS/console errors')
+        print(f'PASS: {options.iterations} navigation clicks, invalid target, sync/async failures, private diagnostics, Windows-only CSS; no JS/console errors')
 
 asyncio.run(main())

@@ -1608,7 +1608,7 @@ kbd {
       </div>
       <div class="nav-item" onclick="showPage('import', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        <span data-i18n="nav_import">数据导入</span>
+        <span data-i18n="nav_import">审核接口</span>
       </div>
       <div class="nav-item" onclick="showPage('vocabulary', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
@@ -1901,7 +1901,7 @@ kbd {
         <div class="flex items-center gap-16 mb-16 form-action-bar">
           <div class="form-group">
             <label data-i18n="per_platform_count">每平台条数</label>
-            <input type="number" id="search-count" value="50" min="1" max="200" style="width:90px">
+            <input type="number" id="search-count" value="50" min="1" max="10000" style="width:90px">
           </div>
           <div class="form-group">
             <label data-i18n="sort_label">排序方式</label>
@@ -1933,190 +1933,13 @@ kbd {
 
     <div id="page-import" class="page">
       <div class="page-header">
-        <div class="page-title" data-i18n="import_title">数据导入</div>
-        <div class="page-desc" data-i18n="import_desc">上传数据文件，系统自动调用工作流提取关键词并写入词库</div>
+        <div class="page-title" data-i18n="import_title">审核接口</div>
+        <div class="page-desc" data-i18n="import_desc">预留外部审核服务接入，采集和定时任务独立运行。</div>
       </div>
-
-      <div class="card collapsible-card" id="model-config-card">
-        <div class="card-header-toggle" onclick="toggleCard('model-config-card')">
-          <div>
-            <div class="card-title" style="display:inline" data-i18n="model_config">模型 API 配置</div>
-            <span id="model-config-summary" class="text-muted" style="margin-left:12px;font-size:12px" data-i18n="model_not_configured">未配置</span>
-          </div>
-          <svg class="chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-        <div class="card-body" style="margin-top:16px">
-          <div class="card-desc" style="margin-bottom:12px" data-i18n="model_desc">配置大模型 API 用于导入数据时的智能分析（黑词提取）。支持所有 OpenAI 兼容接口。未配置时仅导入存储，不进行分析。</div>
-
-          <div style="margin-bottom:16px">
-            <div style="font-weight:600;font-size:13px;margin-bottom:8px" data-i18n="main_model">主模型</div>
-            <div class="form-group">
-              <label data-i18n="api_url">API 地址</label>
-              <input type="text" id="model-base-url" placeholder="例如 https://open.bigmodel.cn/api/paas/v4" style="width:100%">
-            </div>
-            <div class="form-group">
-              <label data-i18n="api_key">API 密钥</label>
-              <div style="display:flex;gap:8px;align-items:center">
-                <input type="password" id="model-api-key" placeholder="输入 API Key" style="flex:1">
-                <button class="btn btn-secondary btn-sm" onclick="toggleSecret('model-api-key', this)" style="padding:4px 8px;flex-shrink:0">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label data-i18n="model_name">模型名称</label>
-              <input type="text" id="model-name" placeholder="例如 glm-4-plus">
-            </div>
-          </div>
-
-          <div style="margin-bottom:16px;padding-top:12px;border-top:1px solid var(--border)">
-            <div style="font-weight:600;font-size:13px;margin-bottom:8px" data-i18n="backup_model">备用模型</div>
-            <div class="form-group">
-              <label data-i18n="api_url">API 地址</label>
-              <input type="text" id="model-backup-base-url" placeholder="例如 https://open.bigmodel.cn/api/paas/v4" style="width:100%">
-            </div>
-            <div class="form-group">
-              <label data-i18n="api_key">API 密钥</label>
-              <div style="display:flex;gap:8px;align-items:center">
-                <input type="password" id="model-backup-api-key" placeholder="输入 API Key" style="flex:1">
-                <button class="btn btn-secondary btn-sm" onclick="toggleSecret('model-backup-api-key', this)" style="padding:4px 8px;flex-shrink:0">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label data-i18n="model_name">模型名称</label>
-              <input type="text" id="model-backup-name" placeholder="例如 glm-4-flash">
-            </div>
-          </div>
-
-          <div style="display:flex;gap:8px;margin-top:12px">
-            <button class="btn btn-primary btn-sm" id="model-save-btn" onclick="saveModelSettings()" data-i18n="btn_save_config">保存配置</button>
-            <button class="btn btn-secondary btn-sm" id="model-clear-btn" onclick="clearModelSettings()" data-i18n="btn_clear">清除</button>
-          </div>
-          <div id="model-config-status" style="margin-top:8px;font-size:12px"></div>
-        </div>
-      </div>
-
       <div class="card">
-        <div class="card-title" data-i18n="upload_file_title">上传文件</div>
-        <div class="card-desc" data-i18n="upload_file_desc">支持 JSON 和 CSV 格式，文件应包含帖子内容。</div>
-
-        <div class="form-group">
-          <label data-i18n="mode_selection">模式选择</label>
-          <div class="settings-options" style="margin-top:4px">
-            <label class="settings-radio">
-              <input type="radio" name="import-mode" value="manual" onchange="toggleImportMode()" checked>
-              <span data-i18n="mode_manual">手动</span>
-            </label>
-            <label class="settings-radio">
-              <input type="radio" name="import-mode" value="auto" onchange="toggleImportMode()">
-              <span data-i18n="mode_auto">自动</span>
-            </label>
-          </div>
-          <div class="settings-hint" id="import-mode-hint" data-i18n="mode_manual_hint">手动模式：上传文件后进行分析</div>
-        </div>
-
-        <!-- 手动模式：文件上传区域 -->
-        <div id="manual-mode-area" class="form-row" style="margin-top:12px">
-          <div class="form-group">
-            <label data-i18n="select_file">选择文件</label>
-            <input type="file" id="import-file" accept=".json,.csv" style="padding:6px">
-          </div>
-          <button class="btn btn-primary" id="import-btn" onclick="startImport()" data-i18n="btn_import">导入并分析</button>
-        </div>
-
-        <!-- 自动模式：状态提示区域 -->
-        <div id="auto-mode-area" style="margin-top:12px;display:none">
-          <div id="auto-mode-status" class="settings-hint" style="padding:12px;background:var(--bg-secondary);border-radius:8px">
-            <span id="auto-status-text">正在检查抓取任务状态...</span>
-          </div>
-          <button class="btn btn-primary" id="auto-analyze-btn" onclick="startAutoAnalyze()" style="margin-top:8px;display:none" data-i18n="btn_analyze">开始分析</button>
-        </div>
-
-        <!-- 工作流选择区域 -->
-        <div class="form-group" style="margin-top:16px">
-          <label>分析工作流</label>
-          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
-            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="舆情分析工作流">
-              <input type="checkbox" id="wf-opinion" value="public_opinion" checked onchange="toggleImportOpinionFields()"> <span>舆情</span>
-            </label>
-            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="涉政分析工作流">
-              <input type="checkbox" id="wf-politics" value="politics"> <span>涉政</span>
-            </label>
-            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="违法分析工作流">
-              <input type="checkbox" id="wf-illegal" value="illegal"> <span>违法</span>
-            </label>
-            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer" title="色情低俗分析工作流">
-              <input type="checkbox" id="wf-porn" value="porn"> <span>色情低俗</span>
-            </label>
-          </div>
-          <div class="settings-hint" style="margin-top:4px">选择需要执行的分析工作流，可多选。未导入的工作流将显示为灰色不可用。</div>
-        </div>
-
-        <!-- 舆情工作流专属字段（勾选舆情时显示） -->
-        <div id="import-opinion-fields" style="margin-top:12px;padding:16px;background:var(--bg-secondary);border-radius:8px">
-          <div style="font-weight:600;font-size:13px;margin-bottom:12px">舆情工作流配置</div>
-          <div class="form-row">
-            <div class="form-group" style="flex:1">
-              <label>舆情事件详情</label>
-              <textarea id="import-opinion-detail" rows="3" style="width:100%" placeholder="描述当前舆情事件的背景、关键人物、核心事件等..."></textarea>
-            </div>
-            <div class="form-group" style="flex:1">
-              <label>舆情事件管控规则</label>
-              <textarea id="import-opinion-rules" rows="3" style="width:100%" placeholder="描述管控要求，例如：不得出现XX关键词、重点关注XX变体词..."></textarea>
-            </div>
-          </div>
-        </div>
-
-        <!-- 数据筛选 -->
-        <div class="form-group" style="margin-top:8px">
-          <label data-i18n="data_filter">数据筛选</label>
-          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">
-            <span style="font-size:13px;color:var(--text-secondary)" data-i18n="filter_type">类型 (type):</span>
-            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
-              <input type="checkbox" id="import-type-post" checked> <span>post</span>
-            </label>
-            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
-              <input type="checkbox" id="import-type-comment" checked> <span>comment</span>
-            </label>
-            <span style="font-size:13px;color:var(--text-secondary);margin-left:8px">author:</span>
-            <label style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
-              <input type="checkbox" id="import-author"> <span data-i18n="include_author">包含</span>
-            </label>
-            <span style="font-size:12px;color:var(--text-secondary);margin-left:4px" data-i18n="content_required">(content 必选)</span>
-          </div>
-        </div>
-
-        <!-- 进度条 -->
-        <div id="import-progress-area" style="margin-top:12px;display:none">
-          <div style="display:flex;align-items:center;gap:12px">
-            <div class="progress-bar" style="flex:1;height:8px;background:var(--bg-secondary);border-radius:4px;overflow:hidden">
-              <div id="import-progress-bar" style="width:0%;height:100%;background:var(--primary);transition:width 0.3s ease"></div>
-            </div>
-            <span id="import-progress-text" style="font-size:12px;color:var(--text-secondary);min-width:60px">0%</span>
-          </div>
-          <div id="import-progress-status" class="settings-hint" style="margin-top:4px"></div>
-        </div>
-
-        <div id="import-result" style="margin-top:12px"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-title" data-i18n="format_title">数据格式说明</div>
-        <div class="card-desc" style="margin-bottom:0">
-          <p><strong>JSON 格式：</strong></p>
-          <pre>[
-  {"content": "帖子内容...", "author": "用户名", "platform": "weibo"},
-  {"content": "另一条帖子...", "author": "用户2"}
-]</pre>
-          <p class="mt-8"><strong>CSV 格式：</strong></p>
-          <pre>content,author,platform
-"帖子内容...","用户名","weibo"
-"另一条帖子...","用户2","xiaohongshu"</pre>
-          <p class="mt-8">必填字段：<code>content</code>（或 <code>text</code>、<code>body</code>）<br>
-          可选字段：<code>author</code>、<code>platform</code>、<code>published_at</code>、<code>id</code></p>
-        </div>
+        <div class="card-title" data-i18n="audit_interface">外部审核服务</div>
+        <div id="audit-status" data-i18n="audit_disconnected">尚未接入</div>
+        <p class="card-desc" data-i18n="audit_hint">旧版内置审核已移除。当前采集结果可保存、导出，暂不自动提取候选词或写入词库。</p>
       </div>
     </div>
 
@@ -2164,16 +1987,7 @@ kbd {
               <option value="reject">建议拒绝</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>工作流</label>
-            <select id="filter-workflow" onchange="onWorkflowChange()" style="width:140px">
-              <option value="">全部</option>
-              <option value="舆情">舆情</option>
-              <option value="涉政">涉政</option>
-              <option value="违法">违法</option>
-              <option value="色情低俗">色情低俗</option>
-            </select>
-          </div>
+
           <div class="form-group">
             <label>分类</label>
             <select id="filter-category" onchange="loadVocab()" style="width:130px">
@@ -2279,19 +2093,18 @@ kbd {
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group" style="flex:1">
-            <label data-i18n="exec_target">执行目标</label>
-            <select id="schedule-exec-mode" style="width:280px" onchange="onScheduleExecModeChange()">
-              <option value="analyze" data-i18n="exec_analyze">抓取数据 + 分析黑词并提取</option>
-              <option value="crawl_only" data-i18n="exec_crawl_only">仅抓取数据</option>
-            </select>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px" id="schedule-exec-hint" data-i18n="exec_hint_analyze">抓取后自动进行黑词分析并写入词库（需配置模型 API）</div>
-          </div>
+
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label data-i18n="label_cron">Cron表达式</label>
-            <input type="text" id="schedule-cron" placeholder="0 8 * * *" style="width:180px">
+            <label>执行时间</label>
+            <div><select id="schedule-weekday" onchange="applySchedulePreset()"><option value="*">每天</option><option value="mon">周一</option><option value="tue">周二</option><option value="wed">周三</option><option value="thu">周四</option><option value="fri">周五</option><option value="sat">周六</option><option value="sun">周日</option></select>
+            <input type="time" id="schedule-time" value="08:00" onchange="applySchedulePreset()"></div>
+            <label>时区 <input id="schedule-timezone" value="Asia/Shanghai" onchange="previewSchedule()"></label>
+            <label>漏跑处理 <select id="schedule-missed"><option value="skip">记录漏跑，等待下次</option><option value="once">恢复后合并补跑一次</option></select></label>
+            <label>表达式规则 <select id="schedule-dialect" onchange="previewSchedule()"><option value="unix">标准 Cron（0/7=周日，3=周三）</option><option value="apscheduler">保留旧规则（0=周一，3=周四）</option></select></label>
+            <div id="schedule-preview" style="font-size:12px;margin:8px 0"></div>
+            <input type="text" id="schedule-cron" onchange="previewSchedule()" placeholder="0 8 * * *" style="width:180px">
             <div style="font-size:12px;color:#666;margin-top:4px" data-i18n="cron_hint">分 时 日 月 周（例：0 8 * * * = 每天8点）</div>
           </div>
           <div class="form-group">
@@ -2335,15 +2148,7 @@ kbd {
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group" id="schedule-analyze-section">
-            <label data-i18n="label_workflows">分析工作流</label>
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <label><input type="checkbox" class="schedule-workflow" value="yq" onchange="toggleScheduleOpinionFields()"> <span data-i18n="wf_yq">舆情</span></label>
-              <label><input type="checkbox" class="schedule-workflow" value="sz"> <span data-i18n="wf_sz">涉政</span></label>
-              <label><input type="checkbox" class="schedule-workflow" value="wf"> <span data-i18n="wf_wf">违法</span></label>
-              <label><input type="checkbox" class="schedule-workflow" value="pqds"> <span data-i18n="wf_pqds">色情低俗</span></label>
-            </div>
-          </div>
+
           <div class="form-group">
             <label data-i18n="label_enabled">启用状态</label>
             <label style="display:flex;align-items:center;gap:8px">
@@ -2352,20 +2157,7 @@ kbd {
             </label>
           </div>
         </div>
-        <!-- 舆情工作流专属字段（勾选舆情时显示） -->
-        <div id="schedule-opinion-fields" style="display:none;margin-top:12px;padding:16px;background:var(--bg-secondary);border-radius:8px">
-          <div style="font-weight:600;font-size:13px;margin-bottom:12px">舆情工作流配置</div>
-          <div class="form-row">
-            <div class="form-group" style="flex:1">
-              <label>舆情事件详情</label>
-              <textarea id="schedule-opinion-detail" rows="3" style="width:100%" placeholder="描述当前舆情事件的背景、关键人物、核心事件等..."></textarea>
-            </div>
-            <div class="form-group" style="flex:1">
-              <label>舆情事件管控规则</label>
-              <textarea id="schedule-opinion-rules" rows="3" style="width:100%" placeholder="描述管控要求，例如：不得出现XX关键词、重点关注XX变体词..."></textarea>
-            </div>
-          </div>
-        </div>
+
         <div style="display:flex;gap:8px;margin-top:16px">
           <button class="btn btn-primary btn-sm" onclick="saveScheduleTask()" data-i18n="btn_save_task">保存任务</button>
           <button class="btn btn-secondary btn-sm" onclick="hideScheduleForm()" data-i18n="btn_cancel">取消</button>
@@ -2500,7 +2292,7 @@ kbd {
 const I18N = {
   zh: {
     // Nav
-    nav_dashboard: '仪表盘', nav_scrape: '数据抓取', nav_import: '数据导入',
+    nav_dashboard: '仪表盘', nav_scrape: '数据抓取', nav_import: '审核接口',
     nav_vocabulary: '词库管理', nav_schedule: '定时任务', nav_export: '导出', nav_settings: '设置',
     subtitle: '词库构建系统',
     // Dashboard
@@ -2556,30 +2348,10 @@ const I18N = {
     btn_search: '开始搜索',
     btn_cancel_search: '取消搜索',
     // Import
-    import_title: '数据导入',
-    import_desc: '上传数据文件，系统自动调用工作流提取关键词并写入词库',
-    model_config: '模型 API 配置', model_not_configured: '未配置',
-    model_desc: '配置大模型 API 用于导入数据时的智能分析（黑词提取）。支持所有 OpenAI 兼容接口。未配置时仅导入存储，不进行分析。',
-    api_url: 'API 地址', api_url_placeholder: '例如 https://open.bigmodel.cn/api/paas/v4',
-    api_key: 'API 密钥', api_key_placeholder: '输入 API Key',
-    model_name: '模型名称', model_name_placeholder: '例如 glm-4-plus',
-    model_backup: '备用模型', model_backup_placeholder: '例如 glm-4-flash',
-    main_model: '主模型', backup_model: '备用模型',
-    btn_save_config: '保存配置', btn_clear: '清除',
-    upload_file_title: '上传文件',
-    upload_file_desc: '支持 JSON 和 CSV 格式，文件应包含帖子内容。',
-    data_source: '数据来源',
-    mode_selection: '模式选择', mode_auto: '自动', mode_manual: '手动',
-    mode_auto_hint: '自动模式：无需上传文件，自动分析上次抓取的数据',
-    mode_manual_hint: '手动模式：上传文件后进行分析',
-    data_filter: '数据筛选', filter_type: '类型 (type):',
-    include_author: '包含', content_required: '(content 必选)',
-    platform_weibo: '微博', platform_xhs: '小红书', platform_twitter: 'Twitter',
-    platform_douyin: '抖音', platform_other: '其他',
-    select_file: '选择文件', btn_import: '导入并分析', btn_analyze: '开始分析',
-    format_title: '数据格式说明',
-    format_json: 'JSON 格式：', format_csv: 'CSV 格式：',
-    format_required: '必填字段：', format_optional: '可选字段：',
+    import_title: '审核接口',
+    import_desc: '预留外部审核服务接入，采集和定时任务独立运行。',
+    audit_interface: '外部审核服务', audit_disconnected: '尚未接入', audit_connected: '已接入（仅手动接口调用）', audit_status_failed: '暂时无法获取接入状态',
+    audit_hint: '旧版内置审核已移除。当前采集结果可保存、导出，暂不自动提取候选词或写入词库。',
     // Vocabulary
     vocab_title: '词库管理', vocab_desc: '审核、管理和维护词库词条',
     search_label: '搜索', search_placeholder: '搜索词条...',
@@ -2599,20 +2371,17 @@ const I18N = {
     page_info_tpl: '第 {x} / {y} 页（共 {z} 条）',
     no_data: '暂无数据',
     empty_vocab_title: '词库还是空的',
-    empty_vocab_desc: '还没有符合条件的词条。去「数据抓取」采集第一批数据，或调整上方筛选条件。',
+    empty_vocab_desc: '还没有符合条件的词条。可调整筛选条件；外部审核服务接入前，采集数据不会自动生成词条。',
     empty_recent_title: '还没有词条',
-    empty_recent_desc: '词库为空。前往「数据抓取」开始采集你的第一批数据。',
+    empty_recent_desc: '词库为空。外部审核服务接入前，采集数据不会自动生成词条。',
     empty_tasks_title: '还没有定时任务',
-    empty_tasks_desc: '创建一个定时任务，让系统按计划自动抓取与分析。',
+    empty_tasks_desc: '创建一个定时任务，让系统按计划自动抓取。',
     empty_goto_fetch: '去数据抓取',
     filter_more: '更多筛选',
     filter_reset: '重置',
     exec_target: '执行目标',
-    exec_analyze: '抓取数据 + 分析黑词并提取',
     exec_crawl_only: '仅抓取数据',
-    exec_hint_analyze: '抓取后自动进行黑词分析并写入词库（需配置模型 API）',
     exec_hint_crawl: '仅抓取并保存数据，不进行黑词分析',
-    badge_analyze: '含分析',
     badge_crawl_only: '仅抓取',
     label_save_format: '保存格式',
     save_path_hint_none: '未设置保存路径：本任务抓取的数据将不会导出到文件夹。如需保存请选择上方文件夹。',
@@ -2637,7 +2406,6 @@ const I18N = {
     label_task_type: '任务类型', type_search: '关键词搜索', type_url: 'URL抓取',
     label_cron: 'Cron表达式', cron_hint: '分 时 日 月 周（例：0 8 * * * = 每天8点）',
     label_save_path: '保存路径', label_keywords: '关键词（每行一个）',
-    label_workflows: '分析工作流', wf_yq: '舆情', wf_sz: '涉政', wf_wf: '违法', wf_pqds: '色情低俗',
     label_enabled: '启用状态', enabled_yes: '启用',
     btn_save_task: '保存任务', btn_cancel: '取消', btn_edit: '编辑', btn_run_now: '立即执行',
     no_tasks: '暂无定时任务', task_name_required: '请输入任务名称',
@@ -2754,14 +2522,12 @@ const I18N = {
     stat_total_posts: '总帖子数', stat_total_rows: '总行数（含评论）', stat_keyword_count: '关键词数',
     all_cookie_not_configured: '所有平台 Cookie 均未配置',
     fill_api_url: '请填写 API 地址', fill_api_key: '请填写 API 密钥',
-    model_saved: '模型配置已保存', model_cleared: '模型配置已清除',
-    model_configured: '已配置：{model}', default_model: '默认模型',
     fill_ct0_auth: '请填写 ct0 和 auth_token',
     fill_rd_cookie: '请填写 Reddit Cookie',
     toggle_visibility: '显示/隐藏',
   },
   en: {
-    nav_dashboard: 'Dashboard', nav_scrape: 'Data Scraping', nav_import: 'Data Import',
+    nav_dashboard: 'Dashboard', nav_scrape: 'Data Scraping', nav_import: 'Audit Interface',
     nav_vocabulary: 'Vocabulary', nav_schedule: 'Scheduled Tasks', nav_export: 'Export', nav_settings: 'Settings',
     subtitle: 'Vocabulary Builder',
     dashboard_title: 'Dashboard', dashboard_desc: 'Vocabulary overview and recent entries',
@@ -2813,8 +2579,10 @@ const I18N = {
     block_resources: 'Speed mode (block images/media for faster loading)',
     btn_search: 'Start Search',
     btn_cancel_search: 'Cancel Search',
-    import_title: 'Data Import',
-    import_desc: 'Upload data files. The system uses AI workflow to extract keywords and write to vocabulary.',
+    import_title: 'Audit Interface',
+    import_desc: 'External audit integration. Collection and scheduled tasks run independently.',
+    audit_interface: 'External audit service', audit_disconnected: 'Not connected', audit_connected: 'Connected (explicit API calls only)', audit_status_failed: 'Unable to load connection status',
+    audit_hint: 'The legacy audit workflow has been removed. Collected data can be saved and exported; no candidates are generated or added to vocabulary automatically.',
     model_config: 'Model API Config', model_not_configured: 'Not configured',
     model_desc: 'Configure LLM API for intelligent analysis during import. Supports all OpenAI-compatible APIs. Without config, data is stored but not analyzed.',
     api_url: 'API URL', api_url_placeholder: 'e.g. https://open.bigmodel.cn/api/paas/v4',
@@ -2859,16 +2627,13 @@ const I18N = {
     empty_recent_title: 'No entries yet',
     empty_recent_desc: 'The vocabulary is empty. Go to Data Harvesting to collect your first batch.',
     empty_tasks_title: 'No scheduled tasks',
-    empty_tasks_desc: 'Create a scheduled task to let the system harvest and analyze automatically.',
+    empty_tasks_desc: 'Create a scheduled task to collect data automatically.',
     empty_goto_fetch: 'Go to Harvesting',
     filter_more: 'More filters',
     filter_reset: 'Reset',
     exec_target: 'Execution target',
-    exec_analyze: 'Harvest + extract blackwords',
     exec_crawl_only: 'Harvest only',
-    exec_hint_analyze: 'After harvesting, auto-analyze blackwords and write to vocabulary (requires model API)',
     exec_hint_crawl: 'Only harvest and save data, no blackword analysis',
-    badge_analyze: 'w/ analysis',
     badge_crawl_only: 'harvest only',
     label_save_format: 'Save format',
     save_path_hint_none: 'No save path set: harvested data will NOT be exported to a folder. Choose a folder above to save.',
@@ -2884,7 +2649,7 @@ const I18N = {
     notif_failed_generic: ', execution failed',
     notif_ok: 'OK',
     // Schedule
-    schedule_title: 'Scheduled Tasks', schedule_desc: 'Configure automated scraping and analysis tasks',
+    schedule_title: 'Scheduled Tasks', schedule_desc: 'Configure automated collection tasks',
     schedule_list: 'Task List', btn_add_task: '+ New Task',
     th_task_name: 'Task Name', th_task_type: 'Type', th_cron: 'Schedule',
     th_keywords: 'Keywords/URL', th_save_path: 'Save Path', th_last_run: 'Last Run',
@@ -2893,7 +2658,6 @@ const I18N = {
     label_task_type: 'Task Type', type_search: 'Keyword Search', type_url: 'URL Fetch',
     label_cron: 'Cron Expression', cron_hint: 'Min Hour Day Month Week (e.g. 0 8 * * * = daily 8am)',
     label_save_path: 'Save Path', label_keywords: 'Keywords (one per line)',
-    label_workflows: 'Analysis Workflows', wf_yq: 'Public Opinion', wf_sz: 'Political', wf_wf: 'Illegal', wf_pqds: 'NSFW',
     label_enabled: 'Enabled', enabled_yes: 'Enabled',
     btn_save_task: 'Save Task', btn_cancel: 'Cancel', btn_edit: 'Edit', btn_run_now: 'Run Now',
     no_tasks: 'No scheduled tasks', task_name_required: 'Please enter task name',
@@ -3008,8 +2772,6 @@ const I18N = {
     stat_total_posts: 'Total Posts', stat_total_rows: 'Total Rows (incl. replies)', stat_keyword_count: 'Keywords',
     all_cookie_not_configured: 'No platform cookies configured',
     fill_api_url: 'Please enter API URL', fill_api_key: 'Please enter API Key',
-    model_saved: 'Model config saved', model_cleared: 'Model config cleared',
-    model_configured: 'Configured: {model}', default_model: 'Default model',
     fill_ct0_auth: 'Please fill in ct0 and auth_token',
     fill_rd_cookie: 'Please fill in Reddit Cookie',
     toggle_visibility: 'Show/Hide',
@@ -3186,79 +2948,17 @@ function handleKeywordFileUpload(input) {
   input.value = '';
 }
 
-function saveModelSettings() {
-  const data = {
-    model_base_url: document.getElementById('model-base-url').value.trim(),
-    model_api_key: document.getElementById('model-api-key').value.trim(),
-    model_name: document.getElementById('model-name').value.trim(),
-    model_backup_base_url: document.getElementById('model-backup-base-url').value.trim(),
-    model_backup_api_key: document.getElementById('model-backup-api-key').value.trim(),
-    model_backup_name: document.getElementById('model-backup-name').value.trim(),
-  };
-  // 同时保存到 localStorage（快速读取）和数据库（持久化）
-  Object.entries(data).forEach(([k, v]) => localStorage.setItem(k, v));
-  // 异步保存到数据库
-  api('/api/model-config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  }).then(res => {
-    if (res.status === 'ok') toast(t('model_saved'), 'success');
-  }).catch(e => console.warn('DB save failed:', e));
-  loadModelSettings();
-}
-
-function clearModelSettings() {
-  ['model_base_url', 'model_api_key', 'model_name', 'model_backup_base_url', 'model_backup_api_key', 'model_backup_name'].forEach(k => localStorage.removeItem(k));
-  document.querySelectorAll('#model-config-card input').forEach(input => input.value = '');
-  // 同时清除数据库
-  api('/api/model-config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_base_url: '', model_api_key: '', model_name: '', model_backup_base_url: '', model_backup_api_key: '', model_backup_name: '' }),
-  }).catch(e => console.warn('DB clear failed:', e));
-  loadModelSettings();
-  toast(t('model_cleared'), 'info');
-}
-
-function loadModelSettings() {
-  document.getElementById('model-base-url').value = localStorage.getItem('model_base_url') || '';
-  document.getElementById('model-api-key').value = localStorage.getItem('model_api_key') || '';
-  document.getElementById('model-name').value = localStorage.getItem('model_name') || '';
-  document.getElementById('model-backup-base-url').value = localStorage.getItem('model_backup_base_url') || '';
-  document.getElementById('model-backup-api-key').value = localStorage.getItem('model_backup_api_key') || '';
-  document.getElementById('model-backup-name').value = localStorage.getItem('model_backup_name') || '';
-
-  const summary = document.getElementById('model-config-summary');
-  const name = localStorage.getItem('model_name');
-  if (localStorage.getItem('model_api_key')) {
-    summary.innerHTML = `<span style="color:var(--success)">${t('model_configured', {model: name || t('default_model')})}</span>`;
-  } else {
-    summary.textContent = t('model_not_configured');
-  }
-}
-
-// 从数据库加载模型配置（供自动模式等使用）
-async function loadModelConfigFromDB() {
+async function loadAuditStatus() {
+  const el = document.getElementById('audit-status');
   try {
-    const res = await api('/api/model-config');
-    if (res.status === 'ok' && res.config) {
-      // 同步到 localStorage
-      Object.entries(res.config).forEach(([k, v]) => {
-        if (v) localStorage.setItem(k, v);
-      });
-      return res.config;
-    }
-  } catch (e) { /* ignore */ }
-  // 回退到 localStorage
-  return {
-    model_base_url: localStorage.getItem('model_base_url') || '',
-    model_api_key: localStorage.getItem('model_api_key') || '',
-    model_name: localStorage.getItem('model_name') || '',
-    model_backup_base_url: localStorage.getItem('model_backup_base_url') || '',
-    model_backup_api_key: localStorage.getItem('model_backup_api_key') || '',
-    model_backup_name: localStorage.getItem('model_backup_name') || '',
-  };
+    const status = await api('/api/audit/status');
+    const key = status.configured ? 'audit_connected' : 'audit_disconnected';
+    el.setAttribute('data-i18n', key);
+    el.textContent = t(key);
+  } catch (e) {
+    el.setAttribute('data-i18n', 'audit_status_failed');
+    el.textContent = t('audit_status_failed');
+  }
 }
 
 async function doExport(format) {
@@ -3762,21 +3462,7 @@ function showPage(name, el) {
   if (name === 'vocabulary') { run(loadVocab); run(loadVocabFilterOptions); }
   if (name === 'schedule') run(loadScheduleTasks);
   if (name === 'twitter') run(loadAllCookies);
-  if (name === 'import') {
-    run(loadModelSettings);
-    run(async () => {
-      const cfg = await loadModelConfigFromDB();
-      if (cfg && cfg.model_api_key) {
-        document.getElementById('model-base-url').value = cfg.model_base_url || '';
-        document.getElementById('model-api-key').value = cfg.model_api_key || '';
-        document.getElementById('model-name').value = cfg.model_name || '';
-        document.getElementById('model-backup-base-url').value = cfg.model_backup_base_url || '';
-        document.getElementById('model-backup-api-key').value = cfg.model_backup_api_key || '';
-        document.getElementById('model-backup-name').value = cfg.model_backup_name || '';
-        loadModelSettings();
-      }
-    });
-  }
+  if (name === 'import') run(loadAuditStatus);
   if (name === 'settings') run(loadSettings);
 }
 
@@ -3798,7 +3484,7 @@ function toggleVocabFilters() {
 
 // 统计高级筛选中已选的数量，更新徒章
 function updateVocabFilterCount() {
-  const ids = ['filter-action','filter-workflow','filter-category','filter-candidate-type','filter-score','filter-task-name'];
+  const ids = ['filter-action','filter-category','filter-candidate-type','filter-score','filter-task-name'];
   let n = 0;
   ids.forEach(id => { const el = document.getElementById(id); if (el && el.value) n++; });
   const badge = document.getElementById('vocab-filter-count');
@@ -3927,41 +3613,6 @@ async function loadStats() {
   } catch (e) { console.error(e); }
 }
 
-// ── Import ──
-let _autoModePolling = null;
-
-function toggleImportMode() {
-  const mode = document.querySelector('input[name="import-mode"]:checked').value;
-  const hint = document.getElementById('import-mode-hint');
-  const manualArea = document.getElementById('manual-mode-area');
-  const autoArea = document.getElementById('auto-mode-area');
-
-  if (mode === 'auto') {
-    hint.textContent = t('mode_auto_hint');
-    hint.setAttribute('data-i18n', 'mode_auto_hint');
-    manualArea.style.display = 'none';
-    autoArea.style.display = 'block';
-    checkAutoModeStatus();
-  } else {
-    hint.textContent = t('mode_manual_hint');
-    hint.setAttribute('data-i18n', 'mode_manual_hint');
-    manualArea.style.display = 'flex';
-    autoArea.style.display = 'none';
-    if (_autoModePolling) { clearInterval(_autoModePolling); _autoModePolling = null; }
-  }
-}
-
-// ── 舆情工作流字段显隐切换 ──
-function toggleScheduleOpinionFields() {
-  const checked = [...document.querySelectorAll('.schedule-workflow:checked')].some(cb => cb.value === 'yq');
-  document.getElementById('schedule-opinion-fields').style.display = checked ? 'block' : 'none';
-}
-function toggleImportOpinionFields() {
-  const checked = document.getElementById('wf-opinion') && document.getElementById('wf-opinion').checked;
-  const el = document.getElementById('import-opinion-fields');
-  if (el) el.style.display = checked ? 'block' : 'none';
-}
-
 // ── 定时任务文件夹选择 ──
 function pickScheduleFolder() {
   if (window.pywebview && window.pywebview.api && window.pywebview.api.choose_folder) {
@@ -3977,209 +3628,6 @@ function pickScheduleFolder() {
   }
 }
 
-async function checkAutoModeStatus() {
-  const statusText = document.getElementById('auto-status-text');
-  const analyzeBtn = document.getElementById('auto-analyze-btn');
-  try {
-    const res = await api('/api/search-running');
-    if (res.running) {
-      statusText.innerHTML = '<span style="color:var(--primary)"><span class="loading"></span> 抓取任务进行中，完成后将自动触发分析...</span>';
-      analyzeBtn.style.display = 'none';
-      // 启动轮询等待抓取完成
-      if (_autoModePolling) clearInterval(_autoModePolling);
-      _autoModePolling = setInterval(async () => {
-        try {
-          const r = await api('/api/search-running');
-          if (!r.running) {
-            clearInterval(_autoModePolling);
-            _autoModePolling = null;
-            statusText.innerHTML = '<span style="color:var(--success)">✓ 抓取任务已完成，可以开始分析</span>';
-            analyzeBtn.style.display = 'inline-flex';
-          }
-        } catch (e) { /* ignore */ }
-      }, 2000);
-    } else {
-      statusText.innerHTML = '<span style="color:var(--success)">✓ 无正在进行的抓取任务，可直接分析上次抓取的数据</span>';
-      analyzeBtn.style.display = 'inline-flex';
-    }
-  } catch (e) {
-    statusText.innerHTML = '<span style="color:var(--danger)">状态检查失败: ' + esc(e.message) + '</span>';
-  }
-}
-
-async function startAutoAnalyze() {
-  const btn = document.getElementById('auto-analyze-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="loading"></span> 分析中...';
-  showImportProgress('正在分析上次抓取的数据...', 10);
-
-  try {
-    // 收集工作流参数
-    const workflows = getSelectedWorkflows();
-    const formData = new FormData();
-    formData.append('workflows', JSON.stringify(workflows));
-
-    // 附加舆情工作流参数
-    const opinionDetail = document.getElementById('import-opinion-detail');
-    const opinionRules = document.getElementById('import-opinion-rules');
-    if (opinionDetail) formData.append('opinion_detail', opinionDetail.value.trim());
-    if (opinionRules) formData.append('opinion_rules', opinionRules.value.trim());
-
-    // 附加模型配置
-    const modelCfg = await loadModelConfigFromDB();
-    if (modelCfg && modelCfg.model_api_key && modelCfg.model_base_url) {
-      formData.append('model_api_key', modelCfg.model_api_key);
-      formData.append('model_base_url', modelCfg.model_base_url);
-      formData.append('model_name', modelCfg.model_name || '');
-      formData.append('model_backup_base_url', modelCfg.model_backup_base_url || '');
-      formData.append('model_backup_api_key', modelCfg.model_backup_api_key || '');
-      formData.append('model_backup_name', modelCfg.model_backup_name || '');
-    }
-
-    updateImportProgress(50, '正在调用分析工作流...');
-    const stats = await api('/api/analyze-last', { method: 'POST', body: formData });
-    updateImportProgress(100, '分析完成');
-    renderImportResult(stats);
-    toast('分析完成', 'success');
-  } catch (e) {
-    const errMsg = e.message || '未知错误';
-    document.getElementById('import-result').innerHTML = `<div class="crawl-result error"><strong>分析失败</strong>: ${esc(errMsg)}</div>`;
-    toast('分析失败: ' + errMsg, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = t('btn_analyze') || '开始分析';
-    hideImportProgress();
-  }
-}
-
-function getSelectedWorkflows() {
-  const wfs = [];
-  document.querySelectorAll('#page-import input[id^="wf-"]:checked').forEach(cb => wfs.push(cb.value));
-  return wfs;
-}
-
-function showImportProgress(text, pct) {
-  document.getElementById('import-progress-area').style.display = 'block';
-  document.getElementById('import-progress-bar').style.width = pct + '%';
-  document.getElementById('import-progress-text').textContent = pct + '%';
-  document.getElementById('import-progress-status').textContent = text;
-}
-function updateImportProgress(pct, text) {
-  document.getElementById('import-progress-bar').style.width = pct + '%';
-  document.getElementById('import-progress-text').textContent = pct + '%';
-  if (text) document.getElementById('import-progress-status').textContent = text;
-}
-function hideImportProgress() {
-  setTimeout(() => { document.getElementById('import-progress-area').style.display = 'none'; }, 1500);
-}
-
-function renderImportResult(stats) {
-  const div = document.getElementById('import-result');
-  if (stats.status === 'success') {
-    let postsHtml = '';
-    if (stats.sampled_posts && stats.sampled_posts.length > 0) {
-      postsHtml = `<div class="sampled-posts">
-        <h4>${t('import_posts', {n: stats.sampled_posts.length})}</h4>
-        ${stats.sampled_posts.map(post => `
-          <div class="post-card">
-            <div class="post-header">
-              <span class="post-platform">${esc(post.platform)}</span>
-              <span class="post-author">@${esc(post.author)}</span>
-            </div>
-            <div class="post-content">${esc(post.content)}</div>
-          </div>
-        `).join('')}
-      </div>`;
-    }
-    div.innerHTML = `<div class="crawl-result">
-      <strong>${t('import_success')}</strong>
-      <div class="result-stats">
-        <div class="result-stat"><div class="num">${stats.total_posts}</div><div class="lbl">${t('import_stat_posts')}</div></div>
-        <div class="result-stat"><div class="num">${stats.total_keywords}</div><div class="lbl">${t('import_stat_keywords')}</div></div>
-        <div class="result-stat"><div class="num">${stats.ingested_count || 0}</div><div class="lbl">${t('import_stat_vocab')}</div></div>
-      </div>
-      ${postsHtml}
-    </div>`;
-    loadStats();
-  } else {
-    div.innerHTML = `<div class="crawl-result error"><strong>${t('import_failed')}</strong>: ${esc(stats.error || t('unknown_error'))}</div>`;
-  }
-}
-
-async function startImport() {
-  const fileInput = document.getElementById('import-file');
-  const mode = document.querySelector('input[name="import-mode"]:checked').value;
-  const file = fileInput.files[0];
-
-  if (!file) return toast(t('select_file_toast'), 'error');
-
-  // Collect type/author filter
-  const typePost = document.getElementById('import-type-post').checked;
-  const typeComment = document.getElementById('import-type-comment').checked;
-  const includeAuthor = document.getElementById('import-author').checked;
-
-  const btn = document.getElementById('import-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="loading"></span> ' + t('importing');
-  document.getElementById('import-result').innerHTML = '';
-  showImportProgress('正在上传文件...', 10);
-
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('import_mode', mode);
-    formData.append('type_post', typePost ? 'true' : 'false');
-    formData.append('type_comment', typeComment ? 'true' : 'false');
-    formData.append('include_author', includeAuthor ? 'true' : 'false');
-
-    // 附加工作流参数
-    const workflows = getSelectedWorkflows();
-    formData.append('workflows', JSON.stringify(workflows));
-
-    // 附加舆情工作流参数
-    const opinionDetail = document.getElementById('import-opinion-detail');
-    const opinionRules = document.getElementById('import-opinion-rules');
-    if (opinionDetail) formData.append('opinion_detail', opinionDetail.value.trim());
-    if (opinionRules) formData.append('opinion_rules', opinionRules.value.trim());
-
-    // 附加模型 API 配置（如有）
-    const _mKey = localStorage.getItem('model_api_key') || '';
-    const _mUrl = localStorage.getItem('model_base_url') || '';
-    if (_mKey && _mUrl) {
-      formData.append('model_api_key', _mKey);
-      formData.append('model_base_url', _mUrl);
-      formData.append('model_name', localStorage.getItem('model_name') || '');
-      formData.append('model_backup_base_url', localStorage.getItem('model_backup_base_url') || '');
-      formData.append('model_backup_api_key', localStorage.getItem('model_backup_api_key') || '');
-      formData.append('model_backup_name', localStorage.getItem('model_backup_name') || '');
-    }
-
-    updateImportProgress(40, '正在分析数据...');
-    const res = await fetch('/api/import', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || t('import_failed'));
-    }
-
-    const stats = await res.json();
-    updateImportProgress(100, '分析完成');
-    renderImportResult(stats);
-    toast(t('import_success'), 'success');
-    loadStats();
-  } catch (e) {
-    document.getElementById('import-result').innerHTML = `<div class="crawl-result error"><strong>${t('import_failed')}</strong>: ${esc(e.message)}</div>`;
-    toast(e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = t('btn_import');
-    hideImportProgress();
-  }
-}
-
 // ── Vocabulary ──
 function debounceLoad() {
   clearTimeout(debounceTimer);
@@ -4191,7 +3639,6 @@ async function loadVocab() {
   const search = document.getElementById('filter-search').value.trim();
   const status = document.getElementById('filter-status').value;
   const action = document.getElementById('filter-action').value;
-  const workflow = document.getElementById('filter-workflow').value;
   const category = document.getElementById('filter-category').value;
   const candidateType = document.getElementById('filter-candidate-type').value;
   const scoreRange = document.getElementById('filter-score').value;
@@ -4202,7 +3649,6 @@ async function loadVocab() {
   if (search) url += `&search=${encodeURIComponent(search)}`;
   if (status) url += `&status=${status}`;
   if (action) url += `&action=${action}`;
-  if (workflow) url += `&workflow=${encodeURIComponent(workflow)}`;
   if (category) url += `&category=${encodeURIComponent(category)}`;
   if (candidateType) url += `&candidate_type=${encodeURIComponent(candidateType)}`;
   if (scoreRange) {
@@ -4252,28 +3698,15 @@ async function loadVocab() {
   } catch (e) { console.error(e); }
 }
 
-// 工作流到分类的映射（从后端动态获取）
-let WORKFLOW_CATEGORY_MAP = {};
-
-// 当前已激活的工作流列表（从后端获取）
-let activeWorkflows = [];
-
 async function loadVocabFilterOptions() {
   try {
     const opts = await api('/api/vocabulary/filter-options');
     
-    // 保存激活的工作流列表
-    activeWorkflows = opts.active_workflows || [];
-    
-    // 保存工作流到分类的映射（从后端动态获取）
-    WORKFLOW_CATEGORY_MAP = opts.workflow_category_map || {};
-    
-    // 更新工作流下拉框的禁用状态
-    updateWorkflowFilterState();
-    
-    // 根据当前选中的工作流更新分类选项
-    updateCategoryFilterByWorkflow();
-    
+    const catSel = document.getElementById('filter-category');
+    const selectedCategory = catSel.value;
+    catSel.innerHTML = '<option value="">' + t('all') + '</option>';
+    (opts.categories || []).forEach(category => catSel.add(new Option(category, category)));
+    catSel.value = selectedCategory;
     const ctSel = document.getElementById('filter-candidate-type');
     const tnSel = document.getElementById('filter-task-name');
     
@@ -4303,82 +3736,6 @@ async function loadVocabFilterOptions() {
   } catch (e) { 
     console.error('load filter options failed:', e); 
   }
-}
-
-// 更新工作流下拉框的禁用状态
-function updateWorkflowFilterState() {
-  const workflowSel = document.getElementById('filter-workflow');
-  if (!workflowSel) return;
-  
-  const options = workflowSel.querySelectorAll('option[value]:not([value=""])');
-  options.forEach(opt => {
-    const workflowName = opt.value;
-    if (activeWorkflows.length > 0 && !activeWorkflows.includes(workflowName)) {
-      opt.disabled = true;
-      opt.title = '该工作流尚未导入';
-    } else {
-      opt.disabled = false;
-      opt.title = '';
-    }
-  });
-}
-
-// 根据工作流更新分类选项（级联联动）
-function updateCategoryFilterByWorkflow() {
-  const workflowSel = document.getElementById('filter-workflow');
-  const categorySel = document.getElementById('filter-category');
-  if (!workflowSel || !categorySel) return;
-  
-  const selectedWorkflow = workflowSel.value;
-  
-  // 清空分类选项
-  categorySel.innerHTML = '<option value="">全部</option>';
-  
-  if (selectedWorkflow && WORKFLOW_CATEGORY_MAP[selectedWorkflow]) {
-    // 根据选中的工作流填充分类
-    const categories = WORKFLOW_CATEGORY_MAP[selectedWorkflow];
-    categories.forEach(cat => {
-      const o = document.createElement('option');
-      o.value = cat;
-      o.textContent = cat;
-      categorySel.appendChild(o);
-    });
-  } else {
-    // 如果未选择工作流或工作流无映射，从后端获取所有分类（去重）
-    loadAllCategories();
-  }
-}
-
-// 从后端加载所有分类（去重）
-async function loadAllCategories() {
-  try {
-    const opts = await api('/api/vocabulary/filter-options');
-    const categorySel = document.getElementById('filter-category');
-    if (categorySel && opts.categories) {
-      const uniqueCategories = Array.from(new Set(opts.categories));
-      uniqueCategories.forEach(c => {
-        const o = document.createElement('option');
-        o.value = c;
-        o.textContent = c;
-        categorySel.appendChild(o);
-      });
-    }
-  } catch (e) {
-    console.error('load categories failed:', e);
-  }
-}
-
-// 工作流改变时的处理
-function onWorkflowChange() {
-  // 重置分类筛选
-  const categorySel = document.getElementById('filter-category');
-  if (categorySel) {
-    categorySel.value = '';
-  }
-  // 更新分类选项
-  updateCategoryFilterByWorkflow();
-  // 重新加载词库
-  loadVocab();
 }
 
 function prevPage() { if (currentPage > 0) { currentPage--; loadVocab(); } }
@@ -4482,10 +3839,7 @@ async function loadScheduleTasks() {
     data.tasks.forEach(task => {
       const params = task.params || {};
       const keywords = (params.keywords || []).join(', ');
-      const isAnalyze = params.analyze !== false;
-      const modeBadge = isAnalyze
-        ? `<span class="badge badge-approved" style="margin-left:6px">${t('badge_analyze')}</span>`
-        : `<span class="badge badge-observe" style="margin-left:6px">${t('badge_crawl_only')}</span>`;
+      const modeBadge = `<span class="badge badge-observe" style="margin-left:6px">${t('badge_crawl_only')}</span>`;
       const statusBadge = task.last_run_status === 'success' ? 'badge-approved' :
                           task.last_run_status === 'failed' ? 'badge-rejected' :
                           ['running', 'partial'].includes(task.last_run_status) ? 'badge-observe' : '';
@@ -4503,7 +3857,7 @@ async function loadScheduleTasks() {
       tbody.innerHTML += `<tr>
         <td><strong>${esc(task.name || '-')}</strong></td>
         <td>${task.task_type === 'search' ? t('type_search') : t('type_url')}${modeBadge}</td>
-        <td><code>${esc(task.cron_expression)}</code></td>
+        <td>${esc(task.description || task.cron_expression)}<br><small>${esc(task.timezone||'')}<br>下次：${esc(task.next_run_at||'未启用/无后续时间')}${task.legacy_weekdays?'<br>旧星期规则：0=周一':''}${task.missed_count?`<br>漏跑 ${Number(task.missed_count)} 次；最近 ${esc(task.last_missed)}`:''}${task.schedule_error?`<br>${esc(task.schedule_error)}`:''}</small></td>
         <td title="${esc(keywords)}">${esc(keywords.slice(0, 30))}${keywords.length > 30 ? '...' : ''}</td>
         <td><code>${esc(task.save_path || '-')}</code></td>
         <td>${task.last_run_at ? new Date(task.last_run_at).toLocaleString() : '-'}</td>
@@ -4524,17 +3878,16 @@ function showScheduleForm() {
   document.getElementById('schedule-task-id').value = '';
   document.getElementById('schedule-name').value = '';
   document.getElementById('schedule-type').value = 'search';
-  document.getElementById('schedule-exec-mode').value = 'analyze';
   document.getElementById('schedule-cron').value = '0 8 * * *';
+  document.getElementById('schedule-timezone').value='Asia/Shanghai';
+  document.getElementById('schedule-dialect').value='unix';
+  document.getElementById('schedule-missed').value='skip';
+  setCollectionOptions('schedule-collect');
+  previewSchedule();
   document.getElementById('schedule-save-path').value = '';
   document.getElementById('schedule-save-format').value = 'csv';
   document.getElementById('schedule-keywords').value = '';
   document.getElementById('schedule-enabled').checked = true;
-  document.getElementById('schedule-opinion-detail').value = '';
-  document.getElementById('schedule-opinion-rules').value = '';
-  document.getElementById('schedule-opinion-fields').style.display = 'none';
-  document.querySelectorAll('.schedule-workflow').forEach(cb => cb.checked = false);
-  onScheduleExecModeChange();
   updateSavePathHint();
   // 重置抓取配置
   _fetchConfig = null;
@@ -4544,24 +3897,6 @@ function showScheduleForm() {
 
 function hideScheduleForm() {
   document.getElementById('schedule-form-card').style.display = 'none';
-}
-
-// 执行目标切换：仅抓取时隐藏分析工作流与舆情字段，并更新提示
-function onScheduleExecModeChange() {
-  const mode = document.getElementById('schedule-exec-mode').value;
-  const isAnalyze = mode !== 'crawl_only';
-  const section = document.getElementById('schedule-analyze-section');
-  if (section) section.style.display = isAnalyze ? '' : 'none';
-  if (!isAnalyze) {
-    // 仅抓取：清空工作流选择并隐藏舆情面板
-    document.querySelectorAll('.schedule-workflow').forEach(cb => cb.checked = false);
-    const opinion = document.getElementById('schedule-opinion-fields');
-    if (opinion) opinion.style.display = 'none';
-  } else {
-    toggleScheduleOpinionFields();
-  }
-  const hint = document.getElementById('schedule-exec-hint');
-  if (hint) hint.textContent = t(isAnalyze ? 'exec_hint_analyze' : 'exec_hint_crawl');
 }
 
 // 未设置保存路径时显示提示
@@ -4580,19 +3915,16 @@ async function editScheduleTask(taskId) {
     document.getElementById('schedule-task-id').value = task.id;
     document.getElementById('schedule-name').value = task.name || '';
     document.getElementById('schedule-type').value = task.task_type || 'search';
-    document.getElementById('schedule-exec-mode').value = (task.params?.analyze === false) ? 'crawl_only' : 'analyze';
     document.getElementById('schedule-cron').value = task.cron_expression || '0 8 * * *';
+    document.getElementById('schedule-timezone').value=task.timezone||'Asia/Shanghai';
+    document.getElementById('schedule-dialect').value=task.params?.cron_dialect||'apscheduler';
+    document.getElementById('schedule-missed').value=task.params?.missed_policy||'skip';
+    setCollectionOptions('schedule-collect',{...task.params,count_scope:task.params?.count_scope||'per_keyword'});
+    previewSchedule();
     document.getElementById('schedule-save-path').value = task.save_path || '';
     document.getElementById('schedule-save-format').value = task.params?.save_format || 'csv';
     document.getElementById('schedule-keywords').value = (task.params?.keywords || []).join('\n');
     document.getElementById('schedule-enabled').checked = task.enabled;
-    document.getElementById('schedule-opinion-detail').value = task.params?.opinion_detail || '';
-    document.getElementById('schedule-opinion-rules').value = task.params?.opinion_rules || '';
-    document.querySelectorAll('.schedule-workflow').forEach(cb => {
-      cb.checked = (task.workflows || []).includes(cb.value);
-    });
-    toggleScheduleOpinionFields();
-    onScheduleExecModeChange();
     updateSavePathHint();
     
     // 回填抓取配置参数
@@ -4708,7 +4040,6 @@ async function saveScheduleTask() {
   const savePath = document.getElementById('schedule-save-path').value.trim();
   const keywords = document.getElementById('schedule-keywords').value.split('\n').filter(k => k.trim());
   const enabled = document.getElementById('schedule-enabled').checked;
-  const workflows = [...document.querySelectorAll('.schedule-workflow:checked')].map(cb => cb.value);
   
   // 使用 Modal 弹窗中配置的抓取参数
   if (!_fetchConfig) {
@@ -4721,24 +4052,21 @@ async function saveScheduleTask() {
   const includeReplies = _fetchConfig.include_replies || false;
   const blockResources = _fetchConfig.block_resources || false;
   
-  const params = { keywords, platforms, count, sort, include_replies: includeReplies, block_resources: blockResources };
-  // 执行目标：analyze=true 抓取+分析；false 仅抓取
-  const execMode = document.getElementById('schedule-exec-mode').value;
-  params.analyze = (execMode !== 'crawl_only');
+  const params = { keywords, platforms, count, sort, include_replies: includeReplies, block_resources: blockResources,
+    ...getCollectionOptions('schedule-collect'), timezone:document.getElementById('schedule-timezone').value,
+    cron_dialect:document.getElementById('schedule-dialect').value, missed_policy:document.getElementById('schedule-missed').value };
+  params.analyze = false;
   // 保存格式（csv / xlsx）
   params.save_format = document.getElementById('schedule-save-format').value || 'csv';
-  const opinionDetail = document.getElementById('schedule-opinion-detail').value.trim();
-  const opinionRules = document.getElementById('schedule-opinion-rules').value.trim();
-  if (params.analyze && opinionDetail) params.opinion_detail = opinionDetail;
-  if (params.analyze && opinionRules) params.opinion_rules = opinionRules;
   const body = {
     name, task_type: taskType, cron_expression: cron,
-    enabled, params, save_path: savePath, workflows,
+    enabled, params, save_path: savePath,
   };
   try {
     const url = taskId ? `/api/scheduled-tasks/${taskId}` : '/api/scheduled-tasks';
     const method = taskId ? 'PUT' : 'POST';
-    await api(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const saved=await api(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if(saved.status!=='ok'){toast(saved.error||'保存失败','error');return;}
     toast(t('task_saved'), 'success');
     hideScheduleForm();
     loadScheduleTasks();
@@ -4967,13 +4295,13 @@ function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skipped
   const div = document.getElementById(containerId);
   const number = value => Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : 0;
   const counts = Array.isArray(stats.count_results) ? stats.count_results : [];
-  const requested = counts.reduce((sum, item) => sum + number(item.requested_count), 0);
-  const missing = counts.reduce((sum, item) => sum + number(item.missing_count), 0);
+  const requested = stats.requested_posts ?? counts.reduce((sum, item) => sum + number(item.requested_count), 0);
+  const missing = stats.missing_posts ?? counts.reduce((sum, item) => sum + number(item.missing_count), 0);
   const posts = number(stats.total_posts);
   const hasRows = stats.total_rows != null;
   const comments = stats.total_comments != null ? number(stats.total_comments)
     : (hasRows ? Math.max(0, number(stats.total_rows) - posts) : null);
-  const failed = !['success', 'empty', 'cancelled'].includes(stats.status);
+  const failed = !['success', 'partial', 'empty', 'cancelled'].includes(stats.status);
   const empty = stats.status === 'empty';
   const cancelled = stats.status === 'cancelled';
   const partial = missing > 0 || Boolean(stats.error) || Boolean(stats.errors?.length);
@@ -4983,11 +4311,11 @@ function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skipped
   const metrics = [];
   const metric = (value, key) => metrics.push(`<div class="result-stat"><div class="num">${number(value)}</div><div class="lbl">${t(key)}</div></div>`);
   if (!failed || stats.total_posts != null) {
-    if (counts.length) metric(requested, 'summary_target');
+    if (counts.length || stats.requested_posts != null) metric(requested, 'summary_target');
     metric(posts, 'stat_total_posts');
     if (comments !== null) metric(comments, 'summary_comments');
     if (hasRows) metric(stats.total_rows, 'stat_total_rows');
-    if (counts.length) metric(missing, 'summary_missing');
+    if (counts.length || stats.requested_posts != null) metric(missing, 'summary_missing');
     if (keywordCount) metric(keywordCount, 'stat_keyword_count');
   }
   const platforms = {...(stats.platform_counts || {})};
@@ -5003,6 +4331,10 @@ function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skipped
       ${note ? `<p style="margin-top:8px;font-size:13px">${note}</p>` : ''}
       ${skippedPlatforms.length ? `<p style="margin-top:8px;font-size:13px">${t('summary_skipped', {n: skippedPlatforms.length})}</p>` : ''}
       ${metrics.length ? `<div class="result-stats">${metrics.join('')}</div>` : ''}
+      ${stats.preflight ? '<p>本次仅检查搜索可用性，不代表正式采集数量或评论完整性。</p>':''}
+      ${stats.comments_pending != null ? `<p>评论已处理主帖：${number(stats.comments_finished)}；待补抓：${number(stats.comments_pending)}</p>`:''}
+      ${stats.refreshed_posts ? `<p>本轮新增主帖：${number(stats.new_posts)}；回查旧帖：${number(stats.refreshed_posts)}（与新增目标分开计数）</p>`:''}
+      ${stats.run_id && stats.errors?.length ? `<p>${esc(stats.errors.join('；'))}</p>`:''}
       ${platformHtml ? `<div style="margin-top:8px;font-size:13px">${platformHtml}</div>` : ''}
       ${stats.csv_data || stats.xlsx_data ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
         ${stats.csv_data ? `<button class="btn btn-download" data-download="csv">${t('btn_download_csv')}</button>` : ''}
@@ -5148,7 +4480,7 @@ async function startMultiSearch() {
   try {
     const initRes = await api('/api/search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('user-block-resources').checked })
+      body: JSON.stringify({ ...getCollectionOptions('collect'), keyword, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('user-block-resources').checked })
     });
     
     const taskId = initRes.task_id;
@@ -5278,7 +4610,7 @@ async function startBatchSearch(keywords) {
   try {
     const initRes = await api('/api/batch-search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('user-block-resources').checked, stagger_platforms: true, worker_concurrency: 3, max_retries: 2, batch_size: 0, batch_cooldown: 30, twitter_count_cap_with_replies: 0 })
+      body: JSON.stringify({ ...getCollectionOptions('collect'), keywords, count, platforms, sort_by: currentSortBy, include_replies: includeReplies, cookies, block_resources: document.getElementById('user-block-resources').checked, stagger_platforms: true, worker_concurrency: 3, max_retries: 2, batch_size: 0, batch_cooldown: 30, twitter_count_cap_with_replies: 0 })
     });
     
     const taskId = initRes.task_id;
@@ -5380,6 +4712,106 @@ function downloadXlsx(b64Data, filename) {
   }).catch(e => toast(t('download_failed'), 'error'));
 }
 
+function collectionOptionsHtml(prefix, schedule=false) {
+  return `<details style="margin:12px 0"><summary>采集范围与恢复设置</summary>
+  <p style="font-size:12px">目标按去重主帖计算，评论另计。达到目标不等于覆盖平台全部内容。</p>
+  <div class="form-row">
+    <label>数量口径 <select id="${prefix}-scope"><option value="per_platform">每个平台合计</option><option value="per_keyword">每关键词、每平台分别计算</option><option value="total">整个任务合计（按平台顺序）</option></select></label>
+    <label>开始日期（UTC） <input type="date" id="${prefix}-since"></label>
+    <label>结束日期（不含当天） <input type="date" id="${prefix}-until"></label>
+    <label>分段天数 <input type="number" id="${prefix}-window" value="7" min="1" max="366" style="width:70px"></label>
+    <label>X 语言 <input id="${prefix}-languages" placeholder="zh,en" style="width:100px"></label>
+  </div>
+  <label><input type="checkbox" id="${prefix}-alternate"> 结果不足时切换热门/最新补抓</label>
+  <label style="display:block">额外关键词组合（每行一组，组内用逗号分隔）<textarea id="${prefix}-groups" rows="2" placeholder="关键词A,关键词B"></textarea></label>
+  ${schedule ? `<label><input type="checkbox" id="${prefix}-incremental"> 增量抓取，并回查最近 <input type="number" id="${prefix}-lookback" value="3" min="1" max="90" style="width:60px"> 天旧帖评论</label>`:''}
+  <p style="font-size:12px">每页自动保存；重启后可在采集记录中续抓或只补评论。Reddit 按可访问结果筛选日期，语言条件仅作用于 X。加速模式仍受自动限速保护。</p></details>`;
+}
+function getCollectionOptions(prefix) {
+  return {count_scope:document.getElementById(prefix+'-scope').value,
+    since:document.getElementById(prefix+'-since').value||null, until:document.getElementById(prefix+'-until').value||null,
+    window_days:Number(document.getElementById(prefix+'-window').value),
+    languages:document.getElementById(prefix+'-languages').value.split(',').map(v=>v.trim()).filter(Boolean),
+    alternate_sort:document.getElementById(prefix+'-alternate').checked,
+    keyword_groups:document.getElementById(prefix+'-groups').value.split('\n').filter(v=>v.trim()).map(v=>v.split(',').map(x=>x.trim()).filter(Boolean)),
+    incremental:document.getElementById(prefix+'-incremental')?.checked||false,
+    lookback_days:Number(document.getElementById(prefix+'-lookback')?.value||3)};
+}
+function setCollectionOptions(prefix, p={}) {
+  document.getElementById(prefix+'-scope').value=p.count_scope||'per_platform';
+  document.getElementById(prefix+'-since').value=p.since||'';
+  document.getElementById(prefix+'-until').value=p.until||'';
+  document.getElementById(prefix+'-window').value=p.window_days||7;
+  document.getElementById(prefix+'-languages').value=(p.languages||[]).join(',');
+  document.getElementById(prefix+'-alternate').checked=!!p.alternate_sort;
+  document.getElementById(prefix+'-groups').value=(p.keyword_groups||[]).map(g=>g.join(',')).join('\n');
+  if(document.getElementById(prefix+'-incremental')) {
+    document.getElementById(prefix+'-incremental').checked=!!p.incremental;
+    document.getElementById(prefix+'-lookback').value=p.lookback_days||3;
+  }
+}
+function applySchedulePreset() {
+  const day=document.getElementById('schedule-weekday').value;
+  const time=document.getElementById('schedule-time').value||'08:00';
+  const [hour,minute]=time.split(':').map(Number);
+  document.getElementById('schedule-cron').value=`${minute} ${hour} * * ${day}`;
+  document.getElementById('schedule-dialect').value='unix';
+  previewSchedule();
+}
+async function previewSchedule() {
+  const el=document.getElementById('schedule-preview');
+  try {
+    const r=await api('/api/schedule-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      expression:document.getElementById('schedule-cron').value,timezone:document.getElementById('schedule-timezone').value,
+      dialect:document.getElementById('schedule-dialect').value})});
+    el.textContent=`${r.description} · ${r.timezone} · 下次：${r.next_run_at||'无'}${r.legacy_weekdays?' · 旧规则：0=周一，建议使用上方星期选择器重新确认':''}`;
+  } catch(e) {el.textContent='请检查定时表达式或时区';}
+}
+async function loadCollectionHistory(offset=0) {
+  const el=document.getElementById('collection-history');
+  if(!el)return;
+  try {
+    const data=await api('/api/collections?offset='+offset);
+    const labels={running:'运行中',pending:'待执行',partial:'部分完成',success:'完成',failed:'失败',interrupted:'已中断'};
+    el.innerHTML=(data.runs||[]).map(r=>`<div style="margin:8px 0;padding:8px;border:1px solid var(--border)">
+      ${esc(r.created)} · ${esc(labels[r.status]||r.status)} · 已保存 ${Number(r.saved_posts)||0} 条主帖
+      ${r.error?`<div style="font-size:12px">${esc(r.error)}</div>`:''}
+      <button class="btn btn-secondary" data-result="${esc(r.id)}">汇总与下载</button>
+      ${!r.active?`<button class="btn btn-secondary" data-resume="${esc(r.id)}">继续补抓</button><button class="btn btn-secondary" data-comments="${esc(r.id)}">只补评论</button>`:''}</div>`).join('')||'暂无采集记录';
+    el.insertAdjacentHTML('beforeend',`${offset?`<button class="btn btn-secondary" onclick="loadCollectionHistory(${Math.max(0,offset-30)})">上一页</button>`:''}${data.has_more?`<button class="btn btn-secondary" onclick="loadCollectionHistory(${offset+30})">下一页</button>`:''}`);
+    el.querySelectorAll('[data-result]').forEach(b=>b.onclick=async()=>{
+      const r=await api('/api/collections/'+encodeURIComponent(b.dataset.result)+'/result');
+      renderCrawlResult('collection-history-result',r,{title:'已保存结果'});
+    });
+    const restart=async(rid,comments)=>{
+      const r=await api('/api/collections/'+encodeURIComponent(rid)+'/resume?comments_only='+comments,{method:'POST'});
+      if(!['started','ok'].includes(r.status)){toast(r.error||'启动失败','error');return;}
+      toast(comments?'评论补抓已启动':'续抓已启动','success');loadCollectionHistory();
+    };
+    el.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>restart(b.dataset.resume,false));
+    el.querySelectorAll('[data-comments]').forEach(b=>b.onclick=()=>restart(b.dataset.comments,true));
+  }catch(e){el.textContent='采集记录暂时不可用，请稍后刷新';}
+}
+document.getElementById('multi-search-result').insertAdjacentHTML('beforebegin',collectionOptionsHtml('collect'));
+document.getElementById('schedule-cron').closest('.form-row').insertAdjacentHTML('afterend',collectionOptionsHtml('schedule-collect',true));
+document.getElementById('multi-search-result').insertAdjacentHTML('afterend',`<details style="margin:16px 0" ontoggle="if(this.open)loadCollectionHistory()"><summary>采集记录、断点续抓与评论补抓</summary><button class="btn btn-secondary" onclick="loadCollectionHistory()">刷新记录</button><div id="collection-history"></div><div id="collection-history-result"></div></details>`);
+
+document.getElementById('multi-search-result').insertAdjacentHTML('beforebegin','<button class="btn btn-secondary" id="collection-preflight" onclick="checkCollectionAccess()">检查账号配置与搜索可用性</button>');
+async function checkCollectionAccess() {
+  const button=document.getElementById('collection-preflight');button.disabled=true;
+  try {
+    const platforms=getSelectedPlatforms();
+    const r=await api('/api/collection-preflight',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      platforms,cookies:platforms.map(getPlatformCookies),keywords:[document.getElementById('search-keyword').value.trim()||'test']})});
+    toast('检查已启动，可在采集记录查看结果','success');
+    const poll=async()=>{
+      const state=await api('/api/task-status?task_id='+encodeURIComponent(r.task_id));
+      if(state.status==='running'){setTimeout(poll,1000);return;}
+      button.disabled=false;
+      if(state.result)renderCrawlResult('multi-search-result',state.result,{title:'搜索可用性检查'});
+    };poll().catch(()=>button.disabled=false);
+  }catch(e){button.disabled=false;}
+}
 </script>
 
 <div id="update-banner" class="update-banner">
@@ -5464,7 +4896,7 @@ function downloadXlsx(b64Data, filename) {
       <div class="form-row">
         <div class="form-group">
           <label>每平台条数</label>
-          <input type="number" id="modal-search-count" value="50" min="1" max="200" style="width:120px">
+          <input type="number" id="modal-search-count" value="50" min="1" max="10000" style="width:120px">
         </div>
         <div class="form-group">
           <label>排序方式</label>

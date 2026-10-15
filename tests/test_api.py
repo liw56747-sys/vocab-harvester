@@ -47,7 +47,7 @@ async def test_crawl_api(client):
 
 
 async def test_import_api(client):
-    """POST /api/import 文件导入并处理"""
+    """旧版文件导入审核接口明确返回已移除"""
     fixture = Path(__file__).parent / "fixtures" / "test_data.json"
     if not fixture.exists():
         pytest.skip("test_data.json 不存在")
@@ -58,7 +58,5 @@ async def test_import_api(client):
             files={"file": ("test_data.json", f, "application/json")},
         )
 
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data.get("status") in ("completed", "success")
-    assert data.get("total_posts", 0) > 0
+    assert resp.status_code == 410
+    assert resp.json()["detail"]["code"] == "legacy_audit_removed"

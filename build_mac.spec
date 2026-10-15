@@ -4,6 +4,7 @@
 import os
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
@@ -54,8 +55,9 @@ a = Analysis(
         (os.path.join(project_dir, 'icon.icns'), '.'),
         # Version
         (os.path.join(project_dir, 'VERSION'), '.'),
-    ] + pw_datas,
+    ] + pw_datas + collect_data_files('tzdata'),
     hiddenimports=[
+        'tzdata',
         # uvicorn submodules (PyInstaller often misses these)
         'uvicorn.logging',
         'uvicorn.loops',
@@ -99,8 +101,6 @@ a = Analysis(
         # playwright
         'playwright',
         'playwright.async_api',
-        # openai
-        'openai',
         # yaml
         'yaml',
         'yaml.cyaml',
@@ -133,8 +133,6 @@ a = Analysis(
         'src.common.version',
         'src.adapter',
         'src.adapter.base',
-        'src.adapter.mock',
-        'src.adapter.xingpan',
         'src.crawlers',
         'src.crawlers.base',
         'src.crawlers.browser_manager',

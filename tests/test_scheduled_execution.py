@@ -71,3 +71,11 @@ async def test_scheduled_crawl_runs_and_saves_results(init_test_db, tmp_path, mo
     seen = await (await db.execute('SELECT post_id FROM scheduled_seen_posts')).fetchall()
     assert {row[0] for row in seen} == {'twitter-post', 'reddit-post'}
     assert notify.call_args.args[2] == 'success'
+
+@pytest.fixture(autouse=True)
+def isolate_collection_store(tmp_path, monkeypatch):
+    from src.collection.engine import Traffic
+    monkeypatch.setenv('VOCAB_DATA_DIR',str(tmp_path / 'state'))
+    Traffic.active.clear(); Traffic.delay.clear(); Traffic.until.clear()
+    yield
+    Traffic.active.clear(); Traffic.delay.clear(); Traffic.until.clear()

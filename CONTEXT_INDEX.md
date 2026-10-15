@@ -14,6 +14,10 @@
 | 搜索评论与数量 | `src/crawlers/comment_results.py`；`src/api/main.py` 搜索接口；`src/crawlers/twitter_url.py`、`src/crawlers/reddit_crawler.py` | `tests/test_comment_exports.py`；`tests/test_search_quantity.py` |
 | 结果汇总界面 | `static/index.html` 的 `renderCrawlResult` | `tests/manual/check_result_summary.py` |
 | 更新检查 | `src/common/version.py`；`static/index.html` 的 `manualCheckUpdate` | `tests/test_update_check.py`；`tests/manual/check_update_ui.py` |
+| 采集持久化与恢复 | `src/collection/engine.py`、`store.py`、`api.py`；`src/api/main.py` 各采集入口 | `tests/test_collection_recovery.py`；`tests/test_collection_api.py`；`tests/manual/check_collection_controls.py` |
+| 定时规则与漏跑 | `src/collection/schedule.py`、`scheduler.py`；`static/index.html` 定时选择器与预览 | `tests/test_schedule_calendar.py`；Windows 显式依赖 tzdata |
+| 审核解耦与预留接口 | `src/adapter/base.py`；`src/api/main.py` 的 `/api/audit/*`；`work/audit-interface-2026-10-15.md` | `tests/test_audit_interface.py`；旧任务兼容与页面回归 |
+| 发布压测与安装包自检 | `tests/stress/test_release_pressure.py`；`src/common/self_test.py`；`app.py --self-test REPORT.json` | 压测结果与边界见 `work/release-pressure-2026-10-15.md` |
 | 版本发布 | `VERSION`、`release_notes.md`、`CHANGELOG.md`；`.github/workflows/release.yml`；`build_update_manifest.py` | 标签触发 Windows/macOS 测试及构建，两个安装包与 update.json 上传后公开 |
 
 ## 验证与限制
@@ -29,3 +33,5 @@
 - X 搜索 0 条且页面转圈：见 `work/x-loading-diagnosis-2026-10-08.md`，包含实际网络故障、空结果误判及待确认项；结论以对应日期证据为准。
 
 - 定时任务 40 分钟无进展弹窗：见 `work/scheduled-stall-diagnosis-2026-10-08.md`，涉及重入、跨循环浏览器复用、心跳粒度与取消/部分结果缺陷。
+
+- P0/P1 实现、使用边界与下一阶段图文审核设计：`work/p0-p1-collection-and-multimodal-2026-10-15.md`。图文联合审核部分为方案，尚未实现。

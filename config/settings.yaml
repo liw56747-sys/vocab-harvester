@@ -37,22 +37,6 @@ crawlers:
     rate_limit: 5
     search_queries: []
 
-# 工作流适配器配置
-workflow:
-  adapter: "mock"            # mock | xingpan（模型配置优先从前端 UI 传入）
-  api:
-    base_url: ""
-    api_key: ""
-    workflow_id: ""
-    model: ""
-    backup_model: ""
-    timeout: 300
-    poll_interval: 5
-    batch_size: 10
-  queue:
-    type: ""
-    url: ""
-
 # 词库配置
 vocabulary:
   auto_approve_threshold: 10   # 词频达到此值自动通过审核

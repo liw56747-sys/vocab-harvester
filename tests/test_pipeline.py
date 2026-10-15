@@ -15,7 +15,7 @@ async def test_pipeline_from_config_loads_crawlers():
 
 
 async def test_mock_pipeline_run(mock_pipeline, crawl_query):
-    """MockCrawler + MockAdapter 端到端运行"""
+    """MockCrawler + FakeAuditAdapter 端到端运行"""
     stats = await mock_pipeline.run(crawl_query)
 
     assert stats["status"] == "success"
@@ -26,10 +26,10 @@ async def test_mock_pipeline_run(mock_pipeline, crawl_query):
 
 async def test_mock_pipeline_keywords_extracted(mock_pipeline, crawl_query):
     """Pipeline 运行后提取到关键词"""
-    stats = await mock_pipeline.run(crawl_query)
+    stats = await mock_pipeline.run(crawl_query, analyze=True)
 
-    assert stats["total_keywords"] >= 0
-    # MockAdapter 会产生一些关键词
+    assert stats["total_keywords"] == 1
+    # FakeAuditAdapter 会产生一些关键词
     if stats["total_keywords"] > 0:
         assert stats["ingested_count"] >= 0
 
@@ -66,10 +66,10 @@ async def test_mock_pipeline_crawl_only_skips_analysis(mock_pipeline, crawl_quer
     assert "ingested_count" not in stats   # 未写入词库
 
 
-async def test_mock_pipeline_analyze_default_true(mock_pipeline, crawl_query):
-    """默认 analyze=True，保持原有“抓取+分析”行为"""
+async def test_pipeline_defaults_to_collection_only(mock_pipeline, crawl_query):
+    """即使注入了审核实现，默认运行也只采集"""
     stats = await mock_pipeline.run(crawl_query)
 
     assert stats["status"] == "success"
-    # 完整流程会进行词库写入
-    assert "ingested_count" in stats
+    assert "ingested_count" not in stats
+    assert stats["analyze"] is False

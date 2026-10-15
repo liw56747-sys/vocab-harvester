@@ -1,4 +1,4 @@
-"""调度器：串联采集→工作流→词库的完整流水线"""
+"""采集流水线；外部审核仅支持显式依赖注入调用"""
 
 from __future__ import annotations
 
@@ -6,10 +6,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from src.adapter.base import WorkflowAdapter
-from src.adapter.mock import MockAdapter
-from src.adapter.xingpan import XingpanAdapter
-from src.common.config import get_settings
+from src.adapter.base import AuditNotConfiguredError, WorkflowAdapter
 from src.common.database import get_db
 from src.common.models import CrawlQuery, ParsedPost, Platform
 from src.crawlers.base import BaseCrawler
@@ -29,13 +26,12 @@ class Pipeline:
         vocab_manager: VocabManager | None = None,
     ):
         self.crawlers = crawlers or {}
-        self.adapter = adapter or MockAdapter()
+        self.adapter = adapter
         self.vocab_manager = vocab_manager or VocabManager()
 
     @classmethod
     def from_config(cls) -> Pipeline:
         """根据配置创建流水线"""
-        settings = get_settings()
 
         # 创建爬虫实例 —— 仅加载已实现的平台（Twitter 和 Reddit）
         crawlers: dict[str, BaseCrawler] = {}
@@ -44,49 +40,14 @@ class Pipeline:
             crawlers[platform.value] = MockCrawler(platform)
             logger.info(f"已加载爬虫: {platform.value} (mock)")
 
-        # 创建适配器
-        adapter: WorkflowAdapter
-        if settings.workflow.adapter == "mock":
-            adapter = MockAdapter()
-        elif settings.workflow.adapter == "xingpan":
-            adapter = XingpanAdapter()
-        else:
-            logger.warning(f"适配器 '{settings.workflow.adapter}' 尚未实现，使用 Mock")
-            adapter = MockAdapter()
-
-        return cls(crawlers=crawlers, adapter=adapter)
-
-    @classmethod
-    def from_config_with_model(
-        cls,
-        base_url: str,
-        api_key: str,
-        model: str,
-        backup_model: str = "",
-        backup_base_url: str = "",
-        backup_api_key: str = "",
-    ) -> Pipeline:
-        """根据前端传入的模型配置创建流水线（用于导入时的 LLM 分析）"""
-        from src.adapter.xingpan import XingpanAdapter, XingpanConfig
-
-        config = XingpanConfig(
-            base_url=base_url,
-            api_key=api_key,
-            model=model or "glm-4-plus",
-            backup_model=backup_model,
-            backup_base_url=backup_base_url or base_url,
-            backup_api_key=backup_api_key or api_key,
-        )
-        adapter = XingpanAdapter(config=config)
-        return cls(adapter=adapter)
+        return cls(crawlers=crawlers)
 
     async def run(
         self,
         query: CrawlQuery,
         task_name: str = "",
-        opinion_detail: str = "",
-        opinion_rules: str = "",
-        analyze: bool = True,
+        context: dict[str, Any] | None = None,
+        analyze: bool = False,
         dedup_ctx: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
@@ -98,8 +59,8 @@ class Pipeline:
             query: 采集查询参数
             task_name: 关联的定时任务名称
             analyze: 是否进行黑词分析并写入词库。
-                     True（默认）= 抓取 + 分析黑词并提取；
-                     False = 仅抓取数据（跳过工作流分析与词库写入）
+                     True（需显式注入审核适配器）= 抓取 + 分析黑词并提取；
+                     False（默认）= 仅抓取数据（跳过工作流分析与词库写入）
             dedup_ctx: 历史去重上下文（仅定时任务传入）。为 None 时不做跨次去重。
                      形如 {"dimension": str, "since_iso": str, "task_id": str}；
                      命中历史的帖子会被标记为重复（不参与黑词分析）。
@@ -231,10 +192,11 @@ class Pipeline:
 
             # ── 阶段二：投递给工作流 ──
             logger.info(f"投递 {len(posts_for_analysis)} 条数据到工作流...")
+            if self.adapter is None:
+                raise AuditNotConfiguredError()
             result = await self.adapter.submit_and_wait(
                 posts_for_analysis,
-                opinion_detail=opinion_detail,
-                opinion_rules=opinion_rules,
+                context=context,
             )
             stats["total_keywords"] = len(result.keywords)
             stats["workflow_metadata"] = result.metadata
@@ -279,8 +241,7 @@ class Pipeline:
         posts: list[ParsedPost],
         source: str = "import",
         task_name: str = "",
-        opinion_detail: str = "",
-        opinion_rules: str = "",
+        context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         直接处理已有的帖子数据（跳过采集阶段）。
@@ -321,10 +282,11 @@ class Pipeline:
                 return stats
 
             logger.info(f"导入 {len(posts)} 条数据到工作流...")
+            if self.adapter is None:
+                raise AuditNotConfiguredError()
             result = await self.adapter.submit_and_wait(
                 posts,
-                opinion_detail=opinion_detail,
-                opinion_rules=opinion_rules,
+                context=context,
             )
             stats["total_keywords"] = len(result.keywords)
             stats["workflow_metadata"] = result.metadata

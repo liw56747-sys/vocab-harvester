@@ -23,7 +23,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.crawlers.comment_results import (
     search_export_rows, comment_warnings, search_count_result, search_count_warning,
@@ -201,7 +201,7 @@ async def save_task_results_to_file(
         file_path = os.path.join(save_path, filename)
 
         if fmt == "xlsx":
-            xlsx_bytes = _generate_xlsx_bytes(rows, fields, sheet_title=task_name or "抓取结果")
+            xlsx_bytes = await asyncio.to_thread(_generate_xlsx_bytes, rows, fields, sheet_title=task_name or "抓取结果")
             with open(file_path, "wb") as f:
                 f.write(xlsx_bytes)
         else:
@@ -341,7 +341,18 @@ class PlatformCookieConfig(BaseModel):
     extra_cookies: dict[str, str] | None = None  
     proxy: str | None = None       
 
-class MultiPlatformSearchRequest(BaseModel):
+class CollectionOptions(BaseModel):
+    count_scope: str = "per_platform"
+    since: str | None = None
+    until: str | None = None
+    window_days: int = 7
+    languages: list[str] = []
+    alternate_sort: bool = False
+    keyword_groups: list[list[str]] = []
+    incremental: bool = False
+    lookback_days: int = 3
+
+class MultiPlatformSearchRequest(CollectionOptions):
     keyword: str
     count: int = 50
     platforms: list[str] = ["twitter"]   
@@ -350,7 +361,7 @@ class MultiPlatformSearchRequest(BaseModel):
     block_resources: bool = False        
     cookies: list[PlatformCookieConfig] = []  
 
-class BatchSearchRequest(BaseModel):
+class BatchSearchRequest(CollectionOptions):
     keywords: list[str]
     count: int = 50
     platforms: list[str] = ["twitter"]
@@ -374,6 +385,8 @@ class BatchSearchRequest(BaseModel):
 _BACKGROUND_TASKS: OrderedDict[str, dict] = OrderedDict()
 _BG_TASKS_LOCK = threading.Lock()
 _BG_TASKS_MAX = 500       # 最多保留 500 个已完成任务
+_BG_EXPORT_CACHE_BYTES = 64 * 1024 * 1024
+_BG_EXPORT_CACHE_COUNT = 3
 _BG_TASKS_TTL = 3600      # 已完成任务最多保留 1 小时
 
 # 已取消的任务 ID 集合（用于中断搜索任务）
@@ -414,6 +427,21 @@ def _set_task_status(task_id: str, data: dict) -> None:
         ]
         for tid in expired:
             del _BACKGROUND_TASKS[tid]
+        # Durable runs can rebuild downloads from disk. Do not retain 500 full workbooks.
+        used_bytes = kept = 0
+        for tid, entry in reversed(list(_BACKGROUND_TASKS.items())):
+            output = entry.get("result") or {}
+            if not output.get("run_id"):
+                continue
+            size = len(output.get("csv_data", "")) + len(output.get("xlsx_data", ""))
+            if not size:
+                continue
+            if kept >= _BG_EXPORT_CACHE_COUNT or used_bytes + size > _BG_EXPORT_CACHE_BYTES:
+                summary = {k:v for k,v in output.items() if k not in ("csv_data", "xlsx_data")}
+                _BACKGROUND_TASKS[tid] = {**entry, "result": summary, "_export_on_demand": True}
+            else:
+                kept += 1
+                used_bytes += size
     # 结果页只显示汇总；逐帖提示与底层错误写入诊断日志，便于后续排查。
     if data.get("status") != "running":
         result = data.get("result") or {}
@@ -434,6 +462,9 @@ async def get_task_status(task_id: str):
     data = _get_task_status(task_id)
     if data is None:
         return {"status": "error", "error": "任务不存在或已失效"}
+    if data.get("_export_on_demand"):
+        from src.collection.api import saved_result
+        return {**data, "result": await saved_result(data["result"]["run_id"])}
     return data
 
 
@@ -463,138 +494,45 @@ async def search_running():
     return {"running": False}
 
 
-# ── 模型配置持久化 ──────────────────────────────────────────
+# ── 外部审核接口（默认未接入，不与采集自动关联） ───────────────
 
-class ModelConfigData(BaseModel):
-    model_config = {"extra": "forbid"}
-    model_base_url: str = ""
-    model_api_key: str = ""
-    model_name: str = ""
-    model_backup_base_url: str = ""
-    model_backup_api_key: str = ""
-    model_backup_name: str = ""
+class AuditSubmission(BaseModel):
+    posts: list[ParsedPost] = Field(min_length=1)
+    context: dict = Field(default_factory=dict)
 
 
-@app.get("/api/model-config")
-async def get_model_config():
-    """从数据库读取模型配置"""
-    try:
-        from src.common.database import get_db
-        db = await get_db()
-        cursor = await db.execute("SELECT config_key, config_value FROM model_config")
-        rows = await cursor.fetchall()
-        config = {row[0]: row[1] for row in rows}
-        return {"status": "ok", "config": config}
-    except Exception as e:
-        logger.error(f"读取模型配置失败: {e}")
-        return {"status": "error", "error": str(e)}
+def _audit_adapter():
+    adapter = getattr(app.state, "audit_adapter", None)
+    if adapter is None:
+        raise HTTPException(503, {"code": "audit_not_configured", "message": "审核服务尚未接入"})
+    return adapter
 
 
-@app.post("/api/model-config")
-async def save_model_config(req: ModelConfigData):
-    """保存模型配置到数据库"""
-    try:
-        from src.common.database import get_db
-        db = await get_db()
-        now = datetime.now().isoformat()
-        fields = {
-            "model_base_url": req.model_base_url,
-            "model_api_key": req.model_api_key,
-            "model_name": req.model_name,
-            "model_backup_base_url": req.model_backup_base_url,
-            "model_backup_api_key": req.model_backup_api_key,
-            "model_backup_name": req.model_backup_name,
-        }
-        for key, value in fields.items():
-            await db.execute(
-                "INSERT INTO model_config (config_key, config_value, updated_at) VALUES (?, ?, ?) "
-                "ON CONFLICT(config_key) DO UPDATE SET config_value=excluded.config_value, updated_at=excluded.updated_at",
-                (key, value, now)
-            )
-        await db.commit()
-        return {"status": "ok", "message": "配置已保存"}
-    except Exception as e:
-        logger.error(f"保存模型配置失败: {e}")
-        return {"status": "error", "error": str(e)}
+@app.get("/api/audit/status")
+async def audit_status():
+    connected = getattr(app.state, "audit_adapter", None) is not None
+    return {"status": "configured" if connected else "not_configured", "configured": connected,
+            "contract_version": "1", "automatic_audit": False}
 
 
-# ── 分析上次抓取数据（自动模式） ──────────────────────────────
+@app.post("/api/audit/submit", status_code=202)
+async def submit_audit(req: AuditSubmission):
+    task_id = await _audit_adapter().submit(req.posts, context=req.context)
+    return {"status": "submitted", "task_id": task_id}
 
-# 缓存最近一次搜索的结果数据（task_id -> csv_data）
-_LAST_SEARCH_DATA: dict[str, str] = {}
-_LAST_SEARCH_LOCK = threading.Lock()
+
+@app.get("/api/audit/tasks/{task_id}")
+async def audit_result(task_id: str):
+    result = await _audit_adapter().poll_result(task_id)
+    return {"status": "pending" if result is None else "completed", "result": result}
 
 
-@app.post("/api/analyze-last")
-async def analyze_last_data(
-    workflows: str = Form(default="[]"),
-    model_api_key: str = Form(default=""),
-    model_base_url: str = Form(default=""),
-    model_name: str = Form(default=""),
-    model_backup_base_url: str = Form(default=""),
-    model_backup_api_key: str = Form(default=""),
-    model_backup_name: str = Form(default=""),
-    opinion_detail: str = Form(default=""),
-    opinion_rules: str = Form(default=""),
-):
-    """分析最近一次搜索抓取的数据（无需上传文件）"""
-    import csv as _csv
-    import traceback as _tb
-    try:
-        with _LAST_SEARCH_LOCK:
-            if not _LAST_SEARCH_DATA:
-                raise HTTPException(400, "没有可分析的抓取数据，请先完成一次搜索")
-            # 取最新的一份
-            latest_key = list(_LAST_SEARCH_DATA.keys())[-1]
-            csv_data = _LAST_SEARCH_DATA[latest_key]
-
-        # 解析 CSV 为帖子列表
-        reader = _csv.DictReader(io.StringIO(csv_data))
-        posts: list[ParsedPost] = []
-        for row in reader:
-            content = row.get("content", "") or ""
-            if not content.strip():
-                continue
-            posts.append(ParsedPost(
-                platform=row.get("platform", "unknown"),
-                post_id=row.get("post_id", str(uuid.uuid4())[:12]),
-                content=content,
-                author=row.get("author", ""),
-                published_at=_parse_date(row.get("created_at", "")),
-                metrics={},
-                tags=[],
-                raw_data={"type": row.get("type", "post")},
-            ))
-
-        if not posts:
-            raise HTTPException(400, "抓取数据中没有有效内容")
-
-        # 解析工作流参数
-        try:
-            workflow_list = json.loads(workflows)
-        except Exception:
-            workflow_list = []
-
-        if not (model_api_key and model_base_url):
-            pipeline = Pipeline.from_config()
-        else:
-            pipeline = Pipeline.from_config_with_model(
-                base_url=model_base_url, api_key=model_api_key, model=model_name,
-                backup_model=model_backup_name,
-                backup_base_url=model_backup_base_url or model_base_url,
-                backup_api_key=model_backup_api_key or model_api_key,
-            )
-
-        stats = await pipeline.process_posts(
-            posts, source="auto-analyze", task_name="自动分析",
-            opinion_detail=opinion_detail, opinion_rules=opinion_rules,
-        )
-        return stats
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"自动分析异常: {e}\n{_tb.format_exc()}")
-        raise HTTPException(500, f"分析过程出错: {str(e)}")
+@app.get("/api/model-config", include_in_schema=False)
+@app.post("/api/model-config", include_in_schema=False)
+@app.post("/api/analyze-last", include_in_schema=False)
+@app.post("/api/import", include_in_schema=False)
+async def retired_audit_endpoint():
+    raise HTTPException(410, {"code": "legacy_audit_removed", "message": "旧版内置审核已移除，请接入 /api/audit 接口"})
 
 
 # ── 定时任务 CRUD ──────────────────────────────────────────
@@ -627,6 +565,9 @@ async def list_scheduled_tasks():
                 "last_run_at": row[8], "last_run_status": row[9], "last_error": row[10],
                 "created_at": row[11], "updated_at": row[12],
             })
+        from src.collection.scheduler import metadata
+        for task in tasks:
+            task.update(await metadata(db, task))
         return {"status": "ok", "tasks": tasks}
     except Exception as e:
         logger.error(f"获取定时任务失败: {e}")
@@ -637,6 +578,19 @@ async def list_scheduled_tasks():
 async def create_scheduled_task(req: ScheduledTaskRequest):
     """创建或更新定时任务"""
     try:
+        from src.collection.schedule import trigger
+        req.params["analyze"] = False
+        req.params.pop("opinion_detail", None)
+        req.params.pop("opinion_rules", None)
+        req.workflows = []
+        req.params.setdefault("cron_dialect", "unix")
+        req.params.setdefault("timezone", "Asia/Shanghai")
+        if req.params.get("missed_policy", "skip") not in ("skip", "once"):
+            raise ValueError("漏跑策略必须为 skip 或 once")
+        trigger(req.cron_expression, req.params["timezone"], req.params["cron_dialect"])
+        from src.collection.engine import CollectionSpec
+        CollectionSpec(**{**req.params, 'keywords':(req.params.get('urls') or req.params.get('keywords',[])) if req.task_type=='url_fetch' else req.params.get('keywords',[]),
+            'task_type':req.task_type,'sort_by':req.params.get('sort','top')})
         from src.common.database import get_db
         db = await get_db()
         task_id = str(uuid.uuid4())[:12]
@@ -661,6 +615,19 @@ async def create_scheduled_task(req: ScheduledTaskRequest):
 async def update_scheduled_task(task_id: str, req: ScheduledTaskRequest):
     """更新定时任务配置"""
     try:
+        from src.collection.schedule import trigger
+        req.params["analyze"] = False
+        req.params.pop("opinion_detail", None)
+        req.params.pop("opinion_rules", None)
+        req.workflows = []
+        req.params.setdefault("cron_dialect", "unix")
+        req.params.setdefault("timezone", "Asia/Shanghai")
+        if req.params.get("missed_policy", "skip") not in ("skip", "once"):
+            raise ValueError("漏跑策略必须为 skip 或 once")
+        trigger(req.cron_expression, req.params["timezone"], req.params["cron_dialect"])
+        from src.collection.engine import CollectionSpec
+        CollectionSpec(**{**req.params, 'keywords':(req.params.get('urls') or req.params.get('keywords',[])) if req.task_type=='url_fetch' else req.params.get('keywords',[]),
+            'task_type':req.task_type,'sort_by':req.params.get('sort','top')})
         from src.common.database import get_db
         db = await get_db()
         now = datetime.now().isoformat()
@@ -694,7 +661,7 @@ async def delete_scheduled_task(task_id: str):
 
 
 @app.post("/api/scheduled-tasks/{task_id}/run")
-async def run_scheduled_task_now(task_id: str):
+async def run_scheduled_task_now(task_id: str, collection_id: str | None = None, comments_only: bool = False):
     """立即执行一次定时任务"""
     try:
         from src.common.database import get_db
@@ -708,6 +675,12 @@ async def run_scheduled_task_now(task_id: str):
             "params": json.loads(row[5]) if row[5] else {},
             "save_path": row[6], "workflows": json.loads(row[7]) if row[7] else [],
         }
+        if collection_id:
+            from src.collection.store import Store
+            if Store().get(collection_id)['owner'] != task_id:
+                raise ValueError("采集记录与定时任务不匹配")
+            task['collection_id'] = collection_id
+            task['comments_only'] = comments_only
         run = _claim_scheduled_run(task_id)
         if run is None:
             return {"status": "error", "message": "该任务正在运行或正在停止，请勿重复执行", "error": "该任务正在运行或正在停止，请勿重复执行"}
@@ -754,6 +727,10 @@ async def _load_scheduled_jobs():
             (_stale_cut, *active_ids),
         )
         await db.commit()
+        from src.collection.scheduler import init_state
+        await init_state(db)
+        await db.execute("UPDATE schedule_state SET signature='',next_due=NULL WHERE task_id IN (SELECT id FROM scheduled_tasks WHERE enabled=0)")
+        await db.commit()
         cursor = await db.execute("SELECT id, name, cron_expression, params, save_path, workflows, task_type FROM scheduled_tasks WHERE enabled=1")
         rows = await cursor.fetchall()
         desired = {f"task_{row[0]}" for row in rows if len(row[2].split()) == 5}
@@ -767,16 +744,20 @@ async def _load_scheduled_jobs():
                 "params": json.loads(params_json) if params_json else {},
                 "save_path": save_path, "workflows": json.loads(workflows_json) if workflows_json else [],
             }
-            # 解析 cron
-            parts = cron_expr.split()
-            if len(parts) == 5:
-                _task_scheduler.add_job(
-                    _execute_scheduled_task, "cron",
-                    minute=parts[0], hour=parts[1], day=parts[2],
-                    month=parts[3], day_of_week=parts[4],
-                    args=[task_config], id=f"task_{task_id}",
-                    name=task_id, replace_existing=True,
-                )
+            from src.collection.scheduler import register, dispatch
+            try:
+                compiled = await register(db, task_config, cron_expr)
+                _task_scheduler.add_job(dispatch, compiled, args=[task_config],
+                    id=f"task_{task_id}", name=task_id, replace_existing=True,
+                    misfire_grace_time=60, coalesce=True, max_instances=1)
+            except (ValueError, KeyError) as exc:
+                if _task_scheduler.get_job(f"task_{task_id}"):
+                    _task_scheduler.remove_job(f"task_{task_id}")
+                await db.execute("UPDATE scheduled_tasks SET last_error=? WHERE id=?",(f"定时配置错误: {exc}", task_id))
+                await db.commit()
+        from src.collection.scheduler import reconcile
+        _task_scheduler.add_job(reconcile, "interval", seconds=60, id="schedule_reconcile", replace_existing=True)
+        await reconcile()
         if not _task_scheduler.running:
             _task_scheduler.start()
         logger.info(f"调度器已加载 {len(rows)} 个定时任务")
@@ -839,6 +820,55 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
     asyncio.set_event_loop(loop)
 
     async def crawl():
+        if hasattr(run, 'collection_spec'):
+            from src.collection.engine import collect
+            from src.collection.store import Store
+            from src.crawlers.real_crawler import _tweet_to_post, _tweet_reply_to_post, _reddit_to_post, _reddit_comment_to_post, _parse_replies
+            last_signature = None
+            def snapshot(rows):
+                nonlocal last_signature
+                groups = {}
+                for row in rows:
+                    platform = row['platform']
+                    kw = row.get('keyword','')
+                    posts = groups.setdefault(platform,[])
+                    if platform == 'twitter':
+                        posts.append(_tweet_to_post(row,kw))
+                        posts.extend(_tweet_reply_to_post(r,str(row.get('tweet_id','')),kw) for r in _parse_replies(row.get('replies_data')))
+                    else:
+                        posts.append((_reddit_comment_to_post if row.get('type')=='comment' else _reddit_to_post)(row,kw))
+                for platform, posts in groups.items():
+                    run.save(platform,posts)
+                signature = tuple((p.platform,p.post_id,p.content,p.raw_data.get('comments_status')) for group in groups.values() for p in group)
+                if signature != last_signature:
+                    beat()
+                    last_signature = signature
+            def platform_event(event, platform):
+                if event == 'waiting':
+                    run.waiting_for_slot = True
+                elif event == 'acquired':
+                    run.waiting_for_slot = False
+                    beat()
+                elif event == 'start':
+                    run.start_platform(platform)
+                elif event == 'done':
+                    run.finish_platform(platform)
+            try:
+                rows, detail = await collect(Store(),run.collection_id,
+                    {platform:{**cookies,'proxy':proxy} for platform,cookies,proxy in targets},
+                    cancelled=run.cancelled.is_set,comments_only=run.comments_only,checkpoint=snapshot,seen_ids=seen_ids,
+                    platform_event=platform_event)
+                snapshot(rows)
+                for platform,_,_ in targets:
+                    run.finish_platform(platform)
+                if detail['errors']:
+                    run.errors['采集'] = '；'.join(detail['errors'])
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                run.errors['采集'] = friendly_error(exc)
+            return
+
         for platform, cookies, proxy in targets:
             if run.cancelled.is_set():
                 break
@@ -904,7 +934,15 @@ async def _execute_scheduled_task(task_config: dict, *, _claimed=None):
         logger.warning("[定时任务 %s] 上次执行尚未退出，跳过重复触发", task_id)
         return
     try:
-        await _execute_scheduled_task_body(task_config, run)
+        # Queue on the API loop before creating dedicated crawler threads.
+        loop = asyncio.get_running_loop()
+        capacity = getattr(loop, "_scheduled_worker_capacity", None)
+        if capacity is None:
+            capacity = asyncio.Semaphore(4)
+            loop._scheduled_worker_capacity = capacity
+        async with capacity:
+            if not run.cancelled.is_set():
+                await _execute_scheduled_task_body(task_config, run)
     finally:
         if run.future is not None and not run.future.done():
             run.cancel()
@@ -920,7 +958,7 @@ async def _execute_scheduled_task(task_config: dict, *, _claimed=None):
 
 
 async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
-    """执行单个定时任务：抓取 → 保存 → 分析"""
+    """执行单个定时任务：抓取 → 保存"""
     task_id = task_config.get("id", "unknown")
     task_name = task_config.get("name", "") or task_id
     logger.info(f"[定时任务 {task_id} / 运行 {run.run_id}] 开始执行，任务名: {task_name}")
@@ -932,16 +970,19 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
                          (now, task_id))
         await db.commit()
 
-        params = task_config.get("params", {})
+        params = dict(task_config.get("params", {}))
+        if task_config.get('collection_id'):
+            from src.collection.store import Store
+            saved_spec = Store().get(task_config['collection_id'])['spec']
+            params.update(saved_spec)
+            params['sort'] = saved_spec.get('sort_by','top')
+            if saved_spec.get('task_type')=='url_fetch':
+                params['urls'] = saved_spec['keywords']
         keywords = params.get("keywords", [])
         platform_names = params.get("platforms", ["twitter"])
         count = params.get("count", 50)
         sort_by = params.get("sort", "hot")
         include_replies = params.get("include_replies", False)
-        opinion_detail = params.get("opinion_detail", "")
-        opinion_rules = params.get("opinion_rules", "")
-        # 执行目标：True=抓取+分析黑词并提取（默认）；False=仅抓取数据
-        analyze = params.get("analyze", True)
 
         # 历史去重维度（仅定时任务）：关键词维度保留30天，用户主页维度保留90天
         _task_type = task_config.get("task_type", "search")
@@ -1004,6 +1045,31 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
         )
         logger.info(f"[定时任务 {task_id}] 开始真实抓取，平台: {[p for (p, _, _) in targets]}, 关键词: {query.keywords}")
 
+        from src.collection.engine import CollectionSpec
+        from src.collection.store import Store
+        _collection_store = Store()
+        if task_config.get('collection_id'):
+            run.collection_id = task_config['collection_id']
+            _spec = CollectionSpec(**_collection_store.get(run.collection_id)['spec'])
+            for unit, (saved_rows, saved_state) in _collection_store.units(run.collection_id).items():
+                saved_state.pop('search_finished', None)
+                if not saved_state.get('error'):
+                    saved_state['partition'] = 0
+                _collection_store.save(run.collection_id,unit,saved_rows,saved_state)
+        else:
+            _spec = CollectionSpec(**{**params, 'keywords': (params.get('urls') or keywords) if _task_type == 'url_fetch' else keywords,
+                'task_type':_task_type, 'sort_by':sort_by, 'count_scope':params.get('count_scope','per_keyword')})
+            if _spec.incremental and not _spec.since:
+                from datetime import timezone
+                watermark = _collection_store.watermark(task_id)
+                if watermark:
+                    _spec.since = datetime.fromisoformat(watermark).date() - timedelta(days=_spec.lookback_days)
+                    _spec.until = datetime.now(timezone.utc).date() + timedelta(days=1)
+            _spec = CollectionSpec(**_spec.model_dump(mode='json'))
+            run.collection_id = _collection_store.create(_spec.model_dump(mode='json'),owner=task_id)
+        run.collection_spec = _spec
+        run.comments_only = task_config.get('comments_only',False)
+
         import concurrent.futures as _cf
         loop = asyncio.get_running_loop()
         stall_limit = max(1, int(os.environ.get("VOCAB_SCHED_STALL_LIMIT", "2400")))
@@ -1018,7 +1084,7 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
                 await asyncio.wait({run.future}, timeout=_SCHED_POLL_SECONDS)
                 if run.future.done():
                     break
-                if run.idle_seconds() > stall_limit:
+                if not getattr(run,"waiting_for_slot",False) and run.idle_seconds() > stall_limit:
                     stopped = True
                     run.cancel()
                     logger.warning("[定时运行 %s] %s 秒无有效进展，请求停止", run.run_id, stall_limit)
@@ -1047,43 +1113,11 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
         if _new_ids:
             await _storage.record_seen_posts(_new_ids, _dimension, task_id, datetime.now().isoformat())
 
-        # 加载模型配置：从数据库读取用户配置的 LLM API，用于自动分析
-        cursor_cfg = await db.execute("SELECT config_key, config_value FROM model_config")
-        model_rows = await cursor_cfg.fetchall()
-        model_cfg = {r[0]: r[1] for r in model_rows}
-        model_api_key = model_cfg.get("model_api_key", "")
-        model_base_url = model_cfg.get("model_base_url", "")
-        model_name = model_cfg.get("model_name", "")
-        model_backup_base_url = model_cfg.get("model_backup_base_url", "")
-        model_backup_api_key = model_cfg.get("model_backup_api_key", "")
-        model_backup_name = model_cfg.get("model_backup_name", "")
-
-        # 用预取结果构建 Pipeline（复用去重/分析/落盘逻辑）
+        # 旧任务即使保留 analyze/model 配置，也只进行采集和导出。
         from src.crawlers.real_crawler import PrefetchedCrawler
         _crawlers = {p: PrefetchedCrawler(p, posts_by_platform.get(p, [])) for (p, _, _) in targets}
-
-        if analyze and model_api_key and model_base_url:
-            pipeline = Pipeline.from_config_with_model(
-                base_url=model_base_url, api_key=model_api_key, model=model_name,
-                backup_model=model_backup_name,
-                backup_base_url=model_backup_base_url or model_base_url,
-                backup_api_key=model_backup_api_key or model_api_key,
-            )
-            pipeline.crawlers = _crawlers
-            logger.info(f"[定时任务 {task_id}] 使用用户配置的模型 API 进行分析")
-        else:
-            from src.adapter.mock import MockAdapter
-            pipeline = Pipeline(crawlers=_crawlers, adapter=MockAdapter())
-            if analyze:
-                logger.info(f"[定时任务 {task_id}] 未配置模型 API，分析将使用 Mock 适配器")
-            else:
-                logger.info(f"[定时任务 {task_id}] 执行目标：仅抓取数据（不分析黑词）")
-
-        stats = await pipeline.run(
-            query, task_name=task_name,
-            opinion_detail=opinion_detail, opinion_rules=opinion_rules,
-            analyze=analyze, dedup_ctx=None,  # 去重已在抓取层完成，Pipeline 不再标记 duplicate
-        )
+        pipeline = Pipeline(crawlers=_crawlers)
+        stats = await pipeline.run(query, task_name=task_name, analyze=False, dedup_ctx=None)
         stats["skipped_platforms"] = skipped_platforms
 
         # 保存结果到指定路径
@@ -1099,10 +1133,14 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
             )
             if saved_file:
                 logger.info(f"[定时任务 {task_id}] 结果已保存: {saved_file}")
+            else:
+                crawl_errors["导出"] = "自动导出失败；原始数据仍在采集记录中，可重新下载"
         else:
-            logger.info(f"[定时任务 {task_id}] 未设置保存路径，本次不落盘")
+            logger.info(f"[定时任务 {task_id}] 未设置自动导出路径，可从采集记录下载")
 
         # 综合状态与失败原因：若本次未拓回任何数据且存在抳错/跳过，则标记 failed 并记录原因
+        if stats.get("error"):
+            crawl_errors["处理"] = stats["error"]
         _reasons = [f"{p}：{r}" for p, r in (crawl_errors or {}).items()]
         for _sp in skipped_platforms:
             _reasons.append(f"{_sp['platform']}：{_sp['reason']}")
@@ -1387,7 +1425,7 @@ async def export_vocabulary(format: str = "json", status: str | None = None):
                 if key in row:
                     row[key] = json.dumps(row[key], ensure_ascii=False)
             rows.append(row)
-        xlsx_bytes = _generate_xlsx_bytes(rows, fields, "词库导出")
+        xlsx_bytes = await asyncio.to_thread(_generate_xlsx_bytes, rows, fields, "词库导出")
         return Response(
             content=xlsx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1396,101 +1434,6 @@ async def export_vocabulary(format: str = "json", status: str | None = None):
     else:
         raise HTTPException(400, f"不支持的格式: {format}")
 
-
-@app.post("/api/import")
-async def import_data(
-    file: UploadFile = File(...), platform: str = "unknown",
-    model_api_key: str = Form(default=""), model_base_url: str = Form(default=""),
-    model_name: str = Form(default=""), model_backup: str = Form(default=""),
-    model_backup_base_url: str = Form(default=""), model_backup_api_key: str = Form(default=""),
-    model_backup_name: str = Form(default=""), import_mode: str = Form(default="manual"),
-    type_post: str = Form(default="true"), type_comment: str = Form(default="true"),
-    include_author: str = Form(default="false"),
-    opinion_detail: str = Form(default=""), opinion_rules: str = Form(default=""),
-):
-    """导入数据文件（JSON/CSV），走工作流提取关键词"""
-    filename = file.filename or "upload"
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-
-    if ext not in ("json", "csv"):
-        raise HTTPException(400, f"不支持的文件格式: {ext}，请上传 .json 或 .csv 文件")
-
-    content = await file.read()
-
-    posts: list[ParsedPost] = []
-    try:
-        if ext == "json":
-            data = json.loads(content.decode("utf-8-sig"))
-            if isinstance(data, dict):
-                data = data.get("data", data.get("items", data.get("posts", [data])))
-            if not isinstance(data, list):
-                data = [data]
-            for i, item in enumerate(data):
-                if isinstance(item, str): item = {"content": item}
-                post_type = item.get("type", "post")
-                posts.append(ParsedPost(
-                    platform=item.get("platform", platform),
-                    post_id=str(item.get("id", item.get("post_id", str(uuid.uuid4())[:12]))),
-                    content=str(item.get("content", item.get("text", item.get("body", "")))),
-                    author=str(item.get("author", item.get("user", item.get("username", "unknown")))),
-                    published_at=_parse_date(item.get("published_at", item.get("created_at", item.get("date", "")))),
-                    metrics=item.get("metrics", {}),
-                    tags=item.get("tags", []),
-                    raw_data={"type": post_type},
-                ))
-
-        elif ext == "csv":
-            text = content.decode("utf-8-sig")
-            reader = csv.DictReader(io.StringIO(text))
-            for i, row in enumerate(reader):
-                post_type = row.get("type", "post")
-                posts.append(ParsedPost(
-                    platform=row.get("platform", platform),
-                    post_id=str(row.get("id", row.get("post_id", str(uuid.uuid4())[:12]))),
-                    content=str(row.get("content", row.get("text", row.get("body", "")))),
-                    author=str(row.get("author", row.get("user", row.get("username", "unknown")))),
-                    published_at=_parse_date(row.get("published_at", row.get("created_at", row.get("date", "")))),
-                    metrics={},
-                    tags=[],
-                    raw_data={"type": post_type},
-                ))
-    except Exception as e:
-        raise HTTPException(400, f"文件解析失败: {str(e)}")
-
-    if not posts:
-        raise HTTPException(400, "文件中没有找到有效数据")
-
-    want_post = type_post.lower() == "true"
-    want_comment = type_comment.lower() == "true"
-    filtered_posts = []
-    for p in posts:
-        ptype = p.raw_data.get("type", "post")
-        if ptype == "post" and want_post: filtered_posts.append(p)
-        elif ptype == "comment" and want_comment: filtered_posts.append(p)
-        elif ptype not in ("post", "comment"): filtered_posts.append(p)
-    posts = filtered_posts
-
-    posts = [p for p in posts if p.content.strip()]
-    if not posts: raise HTTPException(400, "文件中没有有效的帖子内容")
-
-    if include_author.lower() != "true":
-        for p in posts: p.author = ""
-
-    if import_mode.lower() == "manual" or not (model_api_key and model_base_url):
-        pipeline = Pipeline.from_config()
-    else:
-        pipeline = Pipeline.from_config_with_model(
-            base_url=model_base_url, api_key=model_api_key, model=model_name,
-            backup_model=model_backup_name or model_backup,
-            backup_base_url=model_backup_base_url or model_base_url,
-            backup_api_key=model_backup_api_key or model_api_key,
-        )
-
-    stats = await pipeline.process_posts(
-        posts, source=f"import:{filename}", task_name=f"导入:{filename}",
-        opinion_detail=opinion_detail, opinion_rules=opinion_rules,
-    )
-    return stats
 
 def _parse_date(val) -> datetime:
     if not val: return datetime.now()
@@ -1505,616 +1448,41 @@ def _parse_date(val) -> datetime:
 
 @app.post("/api/twitter-fetch")
 async def twitter_fetch(req: TwitterUrlFetchRequest):
-    """物理隔离线程池版：用户主页抓取"""
-    if not req.urls:
-        raise HTTPException(400, "请提供至少一个 Twitter/X 用户主页链接")
-
-    # 自动将本次使用的 Cookie 同步到服务端（供定时任务共用）
-    if req.ct0 and req.auth_token:
-        await _auto_persist_cookies(twitter={"ct0": req.ct0, "auth_token": req.auth_token, "proxy": req.proxy or ""})
-
-    task_id = str(uuid.uuid4())
-    _set_task_status(task_id, {"status": "running", "result": None})
-
-    def _thread_target():
-        import asyncio
-        import base64
-        import traceback as tb
-        from src.crawlers.twitter_url import TwitterCookieFetcher, extract_username
-
-        # 在新线程中开启独立的事件循环
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        async def _run():
-            try:
-                fetcher = TwitterCookieFetcher(proxy=req.proxy or None, block_resources=req.block_resources)
-                if req.ct0 and req.auth_token:
-                    cookies = {"ct0": req.ct0.strip(), "auth_token": req.auth_token.strip()}
-                else:
-                    cookies = fetcher.get_cookies()
-
-                if not cookies:
-                    _set_task_status(task_id, {"status": "error", "error": "未配置 Cookie，请在页面中填写"})
-                    return
-
-                usernames: list[str] = []
-                for url in req.urls:
-                    name = extract_username(url.strip())
-                    if name and name not in usernames:
-                        usernames.append(name)
-
-                if not usernames:
-                    _set_task_status(task_id, {"status": "error", "error": "未能提取有效用户名"})
-                    return
-
-                tweets, csv_string = await fetcher.fetch_user_tweets(usernames, count=req.count, include_replies=req.include_replies, cookies=cookies)
-                
-                if not tweets:
-                    _set_task_status(task_id, {
-                        "status": "success",
-                        "result": {"status": "empty", "total_posts": 0, "sampled_posts": [], "csv_data": "", "error": "未抓取到任何推文"}
-                    })
-                    return
-
-                sampled = []
-                for t in tweets[:50]:
-                    sampled.append({
-                        "platform": "twitter", "post_id": t["tweet_id"], "author": t["author"],
-                        "content": t["content"][:200] if len(t["content"]) > 200 else t["content"],
-                        "published_at": t["created_at"], "metrics": {"likes": t["likes"], "retweets": t["retweets"], "replies": t["replies"]},
-                        "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"),
-                        "media_urls": t.get("media_urls", ""), "replies_count": t.get("replies_count", 0),
-                    })
-
-                csv_b64 = base64.b64encode(csv_string.encode("utf-8-sig")).decode("ascii")
-                # v1.5.5: 生成 xlsx 数据
-                xlsx_fields = ["platform", "post_id", "author", "content", "created_at", "url", "likes", "retweets", "replies"]
-                xlsx_rows = []
-                for t in tweets:
-                    xlsx_rows.append({"platform": "twitter", "post_id": t.get("tweet_id", ""), "author": t.get("author_name", "") or t.get("author", ""), "content": t.get("content", ""), "created_at": t.get("created_at", ""), "url": t.get("url", ""), "likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)})
-                try:
-                    xlsx_b64 = base64.b64encode(_generate_xlsx_bytes(xlsx_rows, xlsx_fields, "推文抓取")).decode("ascii")
-                except Exception as xlsx_err:
-                    logger.warning(f"xlsx 生成失败: {xlsx_err}")
-                    xlsx_b64 = ""
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                _set_task_status(task_id, {
-                    "status": "success",
-                    "result": {"status": "success", "total_posts": len(tweets), "total_comments": sum(t.get("replies_count", 0) for t in tweets), "errors": comment_warnings(tweets), "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"tweets_{timestamp}.csv", "xlsx_data": xlsx_b64, "xlsx_filename": f"tweets_{timestamp}.xlsx"}
-                })
-            except Exception as e:
-                tb.print_exc()
-                from src.crawlers.real_crawler import friendly_error
-                _set_task_status(task_id, {"status": "error", "error": friendly_error(e)})
-
-        try:
-            loop.run_until_complete(_run())
-        finally:
-            _close_crawl_loop(loop)
-
-    threading.Thread(target=_thread_target, daemon=True).start()
-    return {"status": "started", "task_id": task_id}
+    from src.collection.api import start
+    from src.collection.engine import CollectionSpec
+    from src.crawlers.twitter_url import extract_username
+    users = [extract_username(u) for u in req.urls]
+    if not users or not all(users):
+        raise HTTPException(400, "请输入有效的 X 用户主页链接")
+    try:
+        spec = CollectionSpec(keywords=users, platforms=["twitter"], count=req.count,
+            count_scope="per_keyword", task_type="url_fetch", include_replies=req.include_replies,
+            block_resources=req.block_resources, sort_by="live")
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    return await start(spec, [{"platform":"twitter", "ct0":req.ct0, "auth_token":req.auth_token, "proxy":req.proxy}])
 
 
 @app.post("/api/search")
 async def multi_platform_search(req: MultiPlatformSearchRequest):
-    """物理隔离线程池版：统一多平台搜索"""
-    if not req.keyword.strip():
-        raise HTTPException(400, "请输入搜索关键词")
-    if not req.platforms:
-        raise HTTPException(400, "请至少选择一个搜索平台")
-
-    # 自动将本次使用的各平台 Cookie 同步到服务端（供定时任务共用同一份）
-    for _cfg in (req.cookies or []):
-        if _cfg.platform == "twitter":
-            await _auto_persist_cookies(twitter={"ct0": _cfg.ct0 or "", "auth_token": _cfg.auth_token or "", "proxy": _cfg.proxy or ""})
-        elif _cfg.platform == "reddit":
-            await _auto_persist_cookies(reddit={
-                "reddit_session": _cfg.reddit_session or "", "reddit_token": _cfg.reddit_token or "",
-                "edgebucket": _cfg.edgebucket or "", "redesign_optout": _cfg.redesign_optout or "",
-                "extra_cookies": _cfg.extra_cookies or {}, "proxy": _cfg.proxy or "",
-            })
-
-    task_id = str(uuid.uuid4())
-    _set_task_status(task_id, {"status": "running", "result": None})
-
-    def _thread_target():
-        import asyncio
-        import base64
-        import traceback as tb
-        import io
-        import csv
-        from src.crawlers.twitter_url import TwitterCookieFetcher
-        from src.crawlers.reddit_crawler import RedditCookieFetcher
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        async def _run():
-            try:
-                cookie_map: dict[str, dict] = {}
-                for cfg in req.cookies:
-                    cookie_map[cfg.platform] = {
-                        "ct0": cfg.ct0 or "", "auth_token": cfg.auth_token or "",
-                        "reddit_session": cfg.reddit_session or "", "reddit_token": cfg.reddit_token or "",
-                        "edgebucket": cfg.edgebucket or "", "redesign_optout": cfg.redesign_optout or "",
-                        "extra_cookies": cfg.extra_cookies or {}, "proxy": cfg.proxy or "",
-                    }
-
-                tasks = []
-                platform_names = []
-                skipped_platforms: list[dict] = []
-
-                for platform in req.platforms:
-                    pc = cookie_map.get(platform, {})
-                    proxy = pc.get("proxy") or None
-                    if proxy and not proxy.startswith(("http://", "https://", "socks5://")): proxy = f"http://{proxy}"
-
-                    if platform == "twitter":
-                        if not pc.get("ct0") or not pc.get("auth_token"):
-                            skipped_platforms.append({"platform": "twitter", "reason": "Cookie 未配置"})
-                            continue
-                        fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=req.block_resources)
-                        cookies = {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}
-                        tasks.append(fetcher.search_tweets(req.keyword.strip(), count=req.count, include_replies=req.include_replies, cookies=cookies, sort_by=req.sort_by, task_id=task_id))
-                        platform_names.append("twitter")
-
-                    elif platform == "reddit":
-                        if not pc.get("reddit_session"):
-                            skipped_platforms.append({"platform": "reddit", "reason": "Cookie 未配置"})
-                            continue
-                        fetcher = RedditCookieFetcher(proxy=proxy)
-                        cookies = {k: pc[k] for k in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout") if pc.get(k)}
-                        if pc.get("extra_cookies"): cookies.update(pc["extra_cookies"])
-                        tasks.append(fetcher.search_posts(req.keyword.strip(), count=req.count, cookies=cookies, include_replies=req.include_replies, sort="hot" if req.sort_by == "top" else "new", task_id=task_id))
-                        platform_names.append("reddit")
-
-                if not tasks:
-                    _set_task_status(task_id, {"status": "error", "error": "所选平台均未配置 Cookie，请先填写"})
-                    return
-
-                # 按平台分别计算超时（X:30分钟/R:20分钟），仅作为兜底保护
-                search_timeout = (
-                    (_TC.single_keyword_timeout if "twitter" in platform_names else 0)
-                    + (_RC.single_keyword_timeout if "reddit" in platform_names else 0)
-                )
-                search_timeout = max(search_timeout, 120)  # 最低 2 分钟保底
-                
-                # 使用可中断的循环代替 asyncio.gather（支持取消操作）
-                was_cancelled = False
-                errors_from_timeout = False
-                results = [None] * len(tasks)
-                task_to_idx = {}
-                pending_tasks = set()
-                for i, t in enumerate(tasks):
-                    atask = asyncio.create_task(t)
-                    task_to_idx[atask] = i
-                    pending_tasks.add(atask)
-
-                _search_start = time.time()
-
-                while pending_tasks:
-                    # 检查取消标记
-                    if _is_task_cancelled(task_id):
-                        was_cancelled = True
-                        logger.info(f"搜索任务被取消，正在终止 {len(pending_tasks)} 个进行中子任务: {task_id}")
-                        for task in pending_tasks:
-                            task.cancel()
-                        # 等待已取消任务清理（给 3 秒）
-                        try:
-                            await asyncio.wait_for(
-                                asyncio.gather(*pending_tasks, return_exceptions=True),
-                                timeout=3.0
-                            )
-                        except asyncio.TimeoutError:
-                            pass
-                        break
-
-                    # 等待任意一个任务完成（最多等 2 秒后再次检查取消标记）
-                    done, pending_tasks = await asyncio.wait(
-                        pending_tasks,
-                        timeout=2.0,
-                        return_when=asyncio.FIRST_COMPLETED
-                    )
-
-                    for completed_task in done:
-                        idx = task_to_idx.get(completed_task)
-                        if idx is not None:
-                            try:
-                                results[idx] = completed_task.result()
-                            except asyncio.CancelledError:
-                                logger.info(f"子任务 {idx} 已被取消")
-                                results[idx] = None
-                            except Exception as e:
-                                logger.error(f"子任务 {idx} 异常: {e}")
-                                results[idx] = e
-
-                    # 总体超时兜底：防止子任务本身出现死锁导致前端一直显示"搜索中"
-                    if pending_tasks and not done:
-                        elapsed = time.time() - _search_start
-                        if elapsed >= search_timeout:
-                            logger.warning(
-                                f"多平台搜索总超时（{search_timeout}秒），"
-                                f"强制终止剩余 {len(pending_tasks)} 个子任务"
-                            )
-                            for task in pending_tasks:
-                                task.cancel()
-                            try:
-                                await asyncio.wait_for(
-                                    asyncio.gather(*pending_tasks, return_exceptions=True),
-                                    timeout=5.0
-                                )
-                            except asyncio.TimeoutError:
-                                logger.warning("超时后子任务 5 秒内未全部退出，强制跳过")
-                            errors_from_timeout = True
-                            break
-                
-                if was_cancelled:
-                    # 取消时保存已获取的数据
-                    logger.info(f"搜索任务已取消，保存已获取的数据: {task_id}")
-                
-                if not results and not was_cancelled:
-                    _set_task_status(task_id, {"status": "error", "error": f"搜索超时（{search_timeout}秒），请减少关键词数量或稍后重试"})
-                    return
-
-                all_posts: list[dict] = []
-                errors: list[str] = []
-                platform_counts: dict[str, int] = {}
-
-                count_results = []
-                for plat, result in zip(platform_names, results):
-                    available_posts = result[0] if isinstance(result, tuple) else []
-                    count_result = search_count_result(available_posts, req.count, plat, req.keyword.strip())
-                    count_results.append(count_result)
-                    if count_result["missing_count"] and isinstance(result, tuple):
-                        errors.append(search_count_warning(count_result))
-                    if isinstance(result, Exception):
-                        from src.crawlers.real_crawler import friendly_error
-                        error_msg = f"{plat}：{friendly_error(result)}"
-                        errors.append(error_msg)
-                        logger.error(f"平台 {plat} 抓取出错: {result}\n{tb.format_exc()}")
-                        tb.print_exc()
-                        continue
-                    if result is None:
-                        # 子任务被取消或总体超时兜底触发时未产生结果
-                        if errors_from_timeout:
-                            errors.append(f"{plat}: 搜索总超时（{search_timeout}秒），已强制终止")
-                        continue
-                    posts, csv_string = result
-                    if not posts:
-                        logger.warning(f"平台 {plat} 返回空结果")
-                    else:
-                        logger.info(f"平台 {plat} 返回 {len(posts)} 条结果")
-                    platform_counts[plat] = sum(1 for p in posts if p.get("type", "post") != "comment")
-                    for p in posts: p["platform"] = plat
-                    all_posts.extend(posts)
-
-                if not all_posts:
-                    error_msg = "、".join(errors) if errors else "所有平台均未返回结果"
-                    _set_task_status(task_id, {"status": "success", "result": {"status": "empty", "total_posts": 0, "sampled_posts": [], "csv_data": "", "csv_filename": "", "error": f"搜索无结果。{error_msg}", "count_results": count_results, "platform_counts": platform_counts, "skipped_platforms": skipped_platforms}})
-                    return
-
-                sampled = []
-                for t in all_posts:
-                    if t.get("type") == "comment": continue
-                    platform = t.get("platform", "unknown")
-                    if platform == "twitter":
-                        sampled.append({"platform": "twitter", "post_id": t.get("tweet_id", ""), "author": t.get("author_name", "") or t.get("author", ""), "content": t.get("content", "")[:200], "published_at": t.get("created_at", ""), "metrics": {"likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)}, "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"), "media_urls": t.get("media_urls", ""), "replies_count": t.get("replies_count", 0)})
-                    elif platform == "reddit":
-                        sampled.append({"platform": "reddit", "post_id": t.get("post_id", ""), "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", ""))[:200].strip(), "published_at": t.get("created_at", ""), "metrics": {"score": t.get("score", 0), "comments": t.get("num_comments", 0)}, "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"), "media_urls": t.get("media_urls", ""), "replies_count": t.get("comments_fetched", 0)})
-                    if len(sampled) >= 500: break
-
-                export_rows = search_export_rows(all_posts)
-                errors.extend(comment_warnings(all_posts))
-                csv_buf = io.StringIO()
-                csv_buf.write("\ufeff")
-                all_csv_fields = ['platform', 'type', 'post_id', 'parent_id', 'author', 'commenter', 'content', 'created_at', 'url', 'likes', 'retweets', 'replies', 'score', 'num_comments', 'has_media', 'media_type', 'media_urls', 'comments_status', 'comments_warning']
-                writer = csv.DictWriter(csv_buf, fieldnames=all_csv_fields, extrasaction="ignore")
-                writer.writeheader()
-                writer.writerows(export_rows)
-                csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
-                xlsx_fields = all_csv_fields
-                xlsx_rows = export_rows
-                try:
-                    xlsx_b64 = base64.b64encode(_generate_xlsx_bytes(xlsx_rows, xlsx_fields, "搜索结果")).decode("ascii")
-                except Exception as xlsx_err:
-                    logger.warning(f"xlsx 生成失败: {xlsx_err}")
-                    xlsx_b64 = ""
-                # 缓存搜索结果供自动分析使用
-                with _LAST_SEARCH_LOCK:
-                    _LAST_SEARCH_DATA[task_id] = csv_buf.getvalue()
-                    # 只保留最近 3 份
-                    while len(_LAST_SEARCH_DATA) > 3:
-                        _LAST_SEARCH_DATA.pop(next(iter(_LAST_SEARCH_DATA)))
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                result_status = "cancelled" if was_cancelled else "success"
-                result_msg = "搜索已取消，数据已保存" if was_cancelled else None
-                _set_task_status(task_id, {"status": "success", "result": {"status": result_status, "total_posts": sum(1 for p in all_posts if p.get("type", "post") != "comment"), "total_rows": len(export_rows), "count_results": count_results, "sampled_posts": sampled, "csv_data": csv_b64, "csv_filename": f"multi_search_{timestamp}.csv", "xlsx_data": xlsx_b64, "xlsx_filename": f"multi_search_{timestamp}.xlsx", "platform_counts": platform_counts, "skipped_platforms": skipped_platforms, "errors": errors, "message": result_msg}})
-            except Exception as e:
-                tb.print_exc()
-                _set_task_status(task_id, {"status": "error", "error": str(e)})
-            finally:
-                _remove_cancelled(task_id)
-
-        try:
-            loop.run_until_complete(_run())
-        finally:
-            _close_crawl_loop(loop)
-
-    threading.Thread(target=_thread_target, daemon=True).start()
-    return {"status": "started", "task_id": task_id}
+    from src.collection.api import start
+    from src.collection.engine import CollectionSpec
+    try:
+        spec = CollectionSpec(**{**req.model_dump(exclude={"cookies", "keyword"}), "keywords":[req.keyword]})
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return await start(spec, req.cookies)
 
 
 @app.post("/api/batch-search")
 async def batch_search(req: BatchSearchRequest):
-    """
-    批量关键词搜索（关键词级 Job 队列，按用户目标数量分页采集）
-
-    - 每 (keyword, platform) 独立成一个 job：失败可单独重试
-    - 支持平台错峰（stagger_platforms=True 时先跑 Reddit 再跑 Twitter）
-    - 支持自动分批（batch_size>0 时切分大规模任务，每批间冷却降低 IP 限流风险）
-    - 主帖数量与评论数量独立统计；默认不自动降低用户设置的 count
-    - 进度实时上报到 /api/task-status 的 progress 字段
-    - 关键词上限 50（前端亦已同步）
-    """
-    if not req.keywords: raise HTTPException(400, "请提供至少一个关键词")
-    if len(req.keywords) > 50: raise HTTPException(400, f"关键词数量过多（{len(req.keywords)} 个），单次最多 50 个")
-
-    # 自动将本次使用的各平台 Cookie 同步到服务端（供定时任务共用同一份）
-    for _cfg in (req.cookies or []):
-        if _cfg.platform == "twitter":
-            await _auto_persist_cookies(twitter={"ct0": _cfg.ct0 or "", "auth_token": _cfg.auth_token or "", "proxy": _cfg.proxy or ""})
-        elif _cfg.platform == "reddit":
-            await _auto_persist_cookies(reddit={
-                "reddit_session": _cfg.reddit_session or "", "reddit_token": _cfg.reddit_token or "",
-                "edgebucket": _cfg.edgebucket or "", "redesign_optout": _cfg.redesign_optout or "",
-                "extra_cookies": _cfg.extra_cookies or {}, "proxy": _cfg.proxy or "",
-            })
-
-    task_id = str(uuid.uuid4())
-    _set_task_status(task_id, {"status": "running", "result": None, "progress": {"total": 0, "completed": 0, "percent": 0}})
-
-    def _thread_target():
-        import asyncio
-        import base64
-        import traceback as tb
-        import io
-        import csv
-        from src.crawlers.twitter_url import TwitterCookieFetcher
-        from src.crawlers.reddit_crawler import RedditCookieFetcher
-        from src.orchestrator.job_queue import KeywordJobQueue, JobStatus
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        async def _run():
-            try:
-                cookie_map: dict[str, dict] = {}
-                for cfg in req.cookies:
-                    cookie_map[cfg.platform] = {"ct0": cfg.ct0 or "", "auth_token": cfg.auth_token or "", "reddit_session": cfg.reddit_session or "", "reddit_token": cfg.reddit_token or "", "edgebucket": cfg.edgebucket or "", "redesign_optout": cfg.redesign_optout or "", "extra_cookies": cfg.extra_cookies or {}, "proxy": cfg.proxy or ""}
-
-                all_rows: list[dict] = []
-                keyword_results: list[dict] = []
-                errors: list[str] = []
-                platform_counts: dict[str, int] = {}
-                skipped_platforms: list[dict] = []
-
-                # ── Cookie 校验 & 跳过平台 ──
-                active_platforms = []
-                for platform in req.platforms:
-                    pc = cookie_map.get(platform, {})
-                    if platform == "twitter" and (not pc.get("ct0") or not pc.get("auth_token")):
-                        skipped_platforms.append({"platform": "twitter", "reason": "Cookie 未配置"})
-                    elif platform == "reddit" and not pc.get("reddit_session"):
-                        skipped_platforms.append({"platform": "reddit", "reason": "Cookie 未配置"})
-                    else:
-                        active_platforms.append(platform)
-
-                if not active_platforms:
-                    _set_task_status(task_id, {"status": "success", "result": {
-                        "status": "empty", "total_posts": 0, "total_rows": 0,
-                        "keyword_results": [], "sampled_posts": [],
-                        "csv_data": "", "csv_filename": "",
-                        "error": "所选平台均未配置 Cookie，请先填写",
-                        "skipped_platforms": skipped_platforms,
-                    }})
-                    return
-
-                valid_keywords = [kw.strip() for kw in req.keywords if kw.strip()]
-
-                # 默认尊重用户设置的主帖条数；仅显式设置正数上限时降量并提示。
-                twitter_effective_count = req.count
-                if req.include_replies and 0 < req.twitter_count_cap_with_replies < req.count:
-                    twitter_effective_count = req.twitter_count_cap_with_replies
-                    errors.append(f"已按设置将 Twitter 每关键词主帖上限调整为 {twitter_effective_count} 条")
-                    logger.info(
-                        f"[batch-search {task_id}] include_replies=True 且 count={req.count} > "
-                        f"{req.twitter_count_cap_with_replies}: Twitter 单关键词条数自动降为 "
-                        f"{twitter_effective_count}（Reddit 保持 {req.count}）"
-                    )
-
-                # ── Worker：单个 (keyword, platform) 抓取 ──
-                async def _worker(keyword: str, platform: str):
-                    pc = cookie_map.get(platform, {})
-                    proxy = pc.get("proxy") or None
-                    if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
-                        proxy = f"http://{proxy}"
-
-                    if platform == "twitter":
-                        fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=req.block_resources)
-                        cookies = {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}
-                        posts, _csv = await asyncio.wait_for(
-                            fetcher.search_tweets(keyword, count=twitter_effective_count,
-                                                  include_replies=req.include_replies,
-                                                  cookies=cookies, sort_by=req.sort_by, task_id=task_id),
-                            timeout=_TC.single_keyword_timeout,
-                        )
-                    elif platform == "reddit":
-                        fetcher = RedditCookieFetcher(proxy=proxy)
-                        cookies = {k: pc[k] for k in ("reddit_session", "reddit_token", "edgebucket", "redesign_optout") if pc.get(k)}
-                        if pc.get("extra_cookies"): cookies.update(pc["extra_cookies"])
-                        posts, _csv = await asyncio.wait_for(
-                            fetcher.search_posts(keyword, count=req.count, cookies=cookies,
-                                                 include_replies=req.include_replies,
-                                                 sort="hot" if req.sort_by == "top" else "new",
-                                                 task_id=task_id),
-                            timeout=_RC.single_keyword_timeout,
-                        )
-                    else:
-                        return []
-
-                    for p in posts:
-                        p["platform"] = platform
-                        p["keyword"] = keyword
-                    return posts
-
-                # ── 构建 Job 队列 ──
-                platform_order = None
-                if req.stagger_platforms and set(active_platforms) == {"twitter", "reddit"}:
-                    # Reddit 用 JSON API 极快，先跑完；Twitter 用浏览器较慢，后跑
-                    platform_order = ["reddit", "twitter"]
-
-                # v1.5.4: 大规模抓取自动分批（前端未指定 batch_size 时按启发式决定）
-                effective_batch_size = req.batch_size
-                if effective_batch_size == 0:
-                    # 启发式：>20 关键词 或（含评论 且 >10 关键词）自动分成 size=10 的批
-                    if len(valid_keywords) > 20 or (req.include_replies and len(valid_keywords) > 10):
-                        effective_batch_size = 10
-                        logger.info(
-                            f"[batch-search {task_id}] 关键词数 {len(valid_keywords)} 触发自动分批，"
-                            f"batch_size={effective_batch_size}, cooldown={req.batch_cooldown}s"
-                        )
-
-                queue = KeywordJobQueue(
-                    concurrency=max(1, min(req.worker_concurrency, 5)),
-                    is_cancelled=lambda: _is_task_cancelled(task_id),
-                    platform_order=platform_order or [],
-                    batch_size=effective_batch_size,
-                    batch_cooldown=req.batch_cooldown,
-                )
-                for kw in valid_keywords:
-                    for plat in active_platforms:
-                        queue.enqueue(kw, plat, worker=_worker, max_retries=max(0, min(req.max_retries, 3)))
-
-                # ── 进度回调：写入任务状态供前端轮询 ──
-                def _progress_cb(snap):
-                    prev = _get_task_status(task_id) or {}
-                    prev["progress"] = snap.as_dict()
-                    _set_task_status(task_id, prev)
-
-                logger.info(
-                    f"[batch-search {task_id}] queue={len(valid_keywords)}kw × {len(active_platforms)}plat = "
-                    f"{len(valid_keywords) * len(active_platforms)} jobs, concurrency={queue.concurrency}, "
-                    f"stagger={platform_order}"
-                )
-                await queue.run(progress_callback=_progress_cb)
-
-                # ── 汇总结果 ──
-                jobs = queue.results()
-                was_cancelled = any(j.status == JobStatus.CANCELLED for j in jobs) and not any(j.status == JobStatus.SUCCESS for j in jobs[:1])
-                # 更严谨判定：若任务确实被外部取消 且 存在 CANCELLED job，则视为取消
-                if _is_task_cancelled(task_id):
-                    was_cancelled = True
-
-                # 按关键词汇总
-                by_keyword: dict[str, dict] = {kw: {"keyword": kw, "post_count": 0, "total_rows": 0} for kw in valid_keywords}
-                count_results = []
-                for j in jobs:
-                    target_count = twitter_effective_count if j.platform == "twitter" else req.count
-                    count_result = search_count_result(j.result or [], target_count, j.platform, j.keyword)
-                    count_results.append(count_result)
-                    if j.status == JobStatus.SUCCESS:
-                        if count_result["missing_count"]:
-                            errors.append(search_count_warning(count_result))
-                        posts = j.result or []
-                        all_rows.extend(posts)
-                        post_cnt = sum(1 for p in posts if p.get("type", "post") != "comment")
-                        by_keyword[j.keyword]["post_count"] += post_cnt
-                        by_keyword[j.keyword]["total_rows"] += len(search_export_rows(posts))
-                        for p in posts:
-                            if p.get("type", "post") != "comment":
-                                platform_counts[j.platform] = platform_counts.get(j.platform, 0) + 1
-                    elif j.status == JobStatus.FAILED:
-                        errors.append(f"「{j.keyword}」{j.platform}: {j.error} (已重试 {j.retries} 次)")
-                    elif j.status == JobStatus.CANCELLED:
-                        errors.append(f"「{j.keyword}」{j.platform}: 已取消") if _is_task_cancelled(task_id) else None
-                keyword_results = list(by_keyword.values())
-
-                if not all_rows:
-                    _set_task_status(task_id, {"status": "success", "result": {
-                        "status": "empty", "total_posts": 0, "total_rows": 0,
-                        "keyword_results": keyword_results, "sampled_posts": [],
-                        "csv_data": "", "csv_filename": "",
-                        "error": f"批量搜索无结果。{'、'.join(errors)}" if errors else "批量搜索无结果",
-                        "count_results": count_results,
-                        "skipped_platforms": skipped_platforms,
-                    }})
-                    return
-
-                sampled = []
-                for t in all_rows:
-                    if t.get("type") == "comment": continue
-                    plat = t.get("platform", "unknown")
-                    if plat == "twitter": sampled.append({"platform": "twitter", "post_id": t.get("tweet_id", ""), "author": t.get("author_name", "") or t.get("author", ""), "content": t.get("content", "")[:200], "published_at": t.get("created_at", ""), "keyword": t.get("keyword", ""), "metrics": {"likes": t.get("likes", 0), "retweets": t.get("retweets", 0), "replies": t.get("replies", 0)}, "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"), "media_urls": t.get("media_urls", ""), "replies_count": t.get("replies_count", 0)})
-                    elif plat == "reddit": sampled.append({"platform": "reddit", "post_id": t.get("post_id", ""), "author": t.get("author", ""), "content": (t.get("title", "") + "\n" + t.get("content", ""))[:200].strip(), "published_at": t.get("created_at", ""), "keyword": t.get("keyword", ""), "metrics": {"score": t.get("score", 0), "comments": t.get("num_comments", 0)}, "has_media": t.get("has_media", False), "media_type": t.get("media_type", "none"), "media_urls": t.get("media_urls", ""), "replies_count": t.get("comments_fetched", 0)})
-                    if len(sampled) >= 500: break
-
-                export_rows = search_export_rows(all_rows)
-                errors.extend(comment_warnings(all_rows))
-                csv_buf = io.StringIO()
-                csv_buf.write("\ufeff")
-                all_csv_fields = ['keyword', 'platform', 'type', 'post_id', 'parent_id', 'author', 'commenter', 'content', 'created_at', 'url', 'likes', 'retweets', 'replies', 'score', 'num_comments', 'has_media', 'media_type', 'media_urls', 'comments_status', 'comments_warning']
-                writer = csv.DictWriter(csv_buf, fieldnames=all_csv_fields, extrasaction="ignore")
-                writer.writeheader()
-                writer.writerows(export_rows)
-                csv_b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8-sig")).decode("ascii")
-                xlsx_fields = all_csv_fields
-                xlsx_rows = export_rows
-                try:
-                    xlsx_b64 = base64.b64encode(_generate_xlsx_bytes(xlsx_rows, xlsx_fields, "批量搜索结果")).decode("ascii")
-                except Exception as xlsx_err:
-                    logger.warning(f"xlsx 生成失败: {xlsx_err}")
-                    xlsx_b64 = ""
-                # 缓存批量搜索结果供自动分析使用
-                with _LAST_SEARCH_LOCK:
-                    _LAST_SEARCH_DATA[task_id] = csv_buf.getvalue()
-                    while len(_LAST_SEARCH_DATA) > 3:
-                        _LAST_SEARCH_DATA.pop(next(iter(_LAST_SEARCH_DATA)))
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                # 有取消 job 且触发取消标记 → cancelled；否则 success
-                result_status = "cancelled" if _is_task_cancelled(task_id) else "success"
-                result_msg = "搜索已取消，数据已保存" if result_status == "cancelled" else None
-                # 组装最终 progress 快照供前端最后展示
-                final_snap = queue.snapshot().as_dict()
-                _set_task_status(task_id, {"status": "success", "progress": final_snap, "result": {
-                    "status": result_status,
-                    "total_posts": sum(1 for p in all_rows if p.get("type", "post") != "comment"),
-                    "total_rows": len(export_rows), "count_results": count_results,
-                    "keyword_results": keyword_results,
-                    "sampled_posts": sampled,
-                    "csv_data": csv_b64,
-                    "csv_filename": f"batch_search_{timestamp}.csv",
-                    "xlsx_data": xlsx_b64,
-                    "xlsx_filename": f"batch_search_{timestamp}.xlsx",
-                    "skipped_platforms": skipped_platforms,
-                    "errors": errors,
-                    "progress": final_snap,
-                    "message": result_msg,
-                }})
-            except Exception as e:
-                tb.print_exc()
-                _set_task_status(task_id, {"status": "error", "error": str(e)})
-            finally:
-                _remove_cancelled(task_id)
-
-        try:
-            loop.run_until_complete(_run())
-        finally:
-            _close_crawl_loop(loop)
-
-    threading.Thread(target=_thread_target, daemon=True).start()
-    return {"status": "started", "task_id": task_id}
+    from src.collection.api import start
+    from src.collection.engine import CollectionSpec
+    try:
+        spec = CollectionSpec(**req.model_dump(exclude={"cookies"}))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return await start(spec, req.cookies)
 
 
 # ── 重点：版本号强制保底，防止返回为空 ──
@@ -2522,3 +1890,6 @@ async def preflight_proxy(req: ProxyPreflightRequest):
         return {"status": "error", "error": f"目标不可达: {e}"}
     except Exception as e:
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+from src.collection.api import router as collection_router
+app.include_router(collection_router)

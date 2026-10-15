@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 def _resolve_data_dir() -> str:
@@ -71,41 +71,6 @@ class CrawlersConfig(BaseModel):
     reddit: CrawlerPlatformConfig = Field(default_factory=CrawlerPlatformConfig)
 
 
-class WorkflowApiConfig(BaseModel):
-    base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    api_key: str = ""
-    workflow_id: str = ""
-    model: str = "glm-4-plus"
-    backup_model: str = "glm-4-flash"
-    timeout: int = 300
-    poll_interval: int = 5
-    batch_size: int = 10
-
-    @field_validator("base_url", "model", "backup_model", mode="before")
-    @classmethod
-    def _empty_to_default(cls, v: str, info) -> str:
-        """空字符串回退到字段默认值，防止配置文件空值覆盖"""
-        if not v or not v.strip():
-            defaults = {
-                "base_url": "https://open.bigmodel.cn/api/paas/v4",
-                "model": "glm-4-plus",
-                "backup_model": "glm-4-flash",
-            }
-            return defaults.get(info.field_name, v)
-        return v
-
-
-class WorkflowQueueConfig(BaseModel):
-    type: str = ""
-    url: str = ""
-
-
-class WorkflowConfig(BaseModel):
-    adapter: str = "mock"
-    api: WorkflowApiConfig = Field(default_factory=WorkflowApiConfig)
-    queue: WorkflowQueueConfig = Field(default_factory=WorkflowQueueConfig)
-
-
 class VocabularyConfig(BaseModel):
     auto_approve_threshold: int = 10
     max_context_samples: int = 5
@@ -122,7 +87,6 @@ class Settings(BaseModel):
     app: AppConfig = Field(default_factory=AppConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     crawlers: CrawlersConfig = Field(default_factory=CrawlersConfig)
-    workflow: WorkflowConfig = Field(default_factory=WorkflowConfig)
     vocabulary: VocabularyConfig = Field(default_factory=VocabularyConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
 
