@@ -52,7 +52,8 @@ jobs:
         run: pip install pyinstaller
 
       - name: Run unit tests
-        run: python -m pytest tests/ -x -q -m "not integration and not interactive"
+        timeout-minutes: 20
+        run: python -m pytest tests/ -x -q --durations=10 -m "not integration and not interactive"
 
       - name: Verify browser interfaces
         run: |
@@ -221,7 +222,8 @@ jobs:
         run: pip install pyinstaller
 
       - name: Run unit tests
-        run: python -m pytest tests/ -x -q -m "not integration and not interactive"
+        timeout-minutes: 20
+        run: python -m pytest tests/ -x -q --durations=10 -m "not integration and not interactive"
 
       - name: Verify browser interfaces
         run: |

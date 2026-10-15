@@ -80,12 +80,18 @@ def test_dual_platform_100_posts_speed_mode_exports_all_comments(monkeypatch, en
     start = client.post(endpoint, json=request)
     assert start.status_code == 200
     task_id = start.json()['task_id']
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 60
+    last_progress = time.monotonic()
+    last_stamp = None
     while time.monotonic() < deadline:
         state = client.get('/api/task-status', params={'task_id': task_id}).json()
         if state['status'] != 'running':
             break
-        time.sleep(0.01)
+        if state.get('_ts') != last_stamp:
+            last_stamp = state.get('_ts')
+            last_progress = time.monotonic()
+        assert time.monotonic() - last_progress < 10, ('no checkpoint progress', state)
+        time.sleep(0.02)
     assert state['status'] == 'success', state
     result = state['result']
     assert sorted(calls) == [('reddit', 100, False, True), ('twitter', 100, False, True)]

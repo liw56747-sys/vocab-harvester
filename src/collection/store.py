@@ -47,6 +47,8 @@ class Store:
         self.path = Path(path or Path(data_dir) / 'collection.db')
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
+            # WAL allows readers during checkpoint writes; keep FULL commit durability.
+            db.execute('PRAGMA journal_mode=WAL')
             db.executescript('''
             CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, spec TEXT NOT NULL, status TEXT,
                 created TEXT, updated TEXT, error TEXT DEFAULT '', owner TEXT DEFAULT '');
@@ -59,6 +61,7 @@ class Store:
     def connect(self):
         db = sqlite3.connect(str(self.path), timeout=30)
         db.row_factory = sqlite3.Row
+        db.execute('PRAGMA synchronous=FULL')
         try:
             with db:
                 yield db
@@ -98,9 +101,10 @@ class Store:
 
     def save(self, rid, unit, rows, state):
         with self.connect() as db:
-            db.execute('INSERT INTO units VALUES(?,?,?,?) ON CONFLICT(run_id,unit_id) DO UPDATE SET rows_json=excluded.rows_json,state=excluded.state',
+            changed = db.execute('INSERT INTO units VALUES(?,?,?,?) ON CONFLICT(run_id,unit_id) DO UPDATE SET rows_json=excluded.rows_json,state=excluded.state WHERE units.rows_json != excluded.rows_json OR units.state != excluded.state',
                        (rid, unit, json.dumps(rows, ensure_ascii=False), json.dumps(state, ensure_ascii=False)))
-            db.execute('UPDATE runs SET updated=? WHERE id=?', (now(), rid))
+            if changed.rowcount:
+                db.execute('UPDATE runs SET updated=? WHERE id=?', (now(), rid))
 
     def units(self, rid):
         with self.connect() as db:

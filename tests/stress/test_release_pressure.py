@@ -35,6 +35,8 @@ def test_concurrent_checkpoints_and_watermarks(tmp_path):
         list(pool.map(write, range(16)))
     with store.connect() as db:
         assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
+        assert db.execute('PRAGMA journal_mode').fetchone()[0]=='wal'
+        assert db.execute('PRAGMA synchronous').fetchone()[0]==2
     assert all(len(store.rows(rid))==30 for rid in ids)
     assert store.watermark('shared')=='2026-10-30T00:00:00+00:00'
 
@@ -242,3 +244,15 @@ async def test_completed_download_cache_is_bounded_and_rebuilds(monkeypatch):
     assert restored['result']['csv_data']==original['csv_data']
     assert restored['result']['total_rows']==40
     assert 'csv_data' not in api._get_task_status(rid)['result']
+
+
+def test_identical_checkpoint_does_not_rewrite_database():
+    store=Store();rid=store.create(CollectionSpec(keywords=['same']).model_dump(mode='json'))
+    rows=[{'platform':'twitter','tweet_id':'one','content':'saved'}]
+    store.save(rid,'unit',rows,{'partition':1})
+    before=store.get(rid)['updated']
+    time.sleep(.01)
+    for _ in range(100):store.save(rid,'unit',rows,{'partition':1})
+    assert store.get(rid)['updated']==before
+    store.save(rid,'unit',rows,{'partition':2})
+    assert store.get(rid)['updated']!=before
