@@ -24,13 +24,13 @@ async def main():
         async def route(r):
             path = urlparse(r.request.url).path
             if path == '/':
-                await r.fulfill(content_type='text/html', body=(ROOT / 'static/index.html').read_text())
+                await r.fulfill(content_type='text/html', body=(ROOT / 'static/index.html').read_text(encoding='utf-8'))
                 return
             data = {
                 '/api/stats': dict(total=0, pending=0, approved=0, rejected=0),
                 '/api/vocabulary': dict(items=[], total=0),
                 '/api/chromium-status': dict(status='installed'),
-                '/api/version': dict(version=(ROOT / 'VERSION').read_text().strip()),
+                '/api/version': dict(version=(ROOT / 'VERSION').read_text(encoding='utf-8').strip()),
                 '/api/scheduled-notifications': dict(latest_id=0, notifications=[]),
                 '/api/search': dict(task_id='test'), '/api/batch-search': dict(task_id='test'),
                 '/api/twitter-fetch': dict(task_id='test'),

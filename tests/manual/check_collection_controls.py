@@ -20,7 +20,7 @@ async def main():
             path=urlparse(r.request.url).path
             paths.append(path)
             if path=='/':
-                await r.fulfill(content_type='text/html',body=(ROOT/'static/index.html').read_text());return
+                await r.fulfill(content_type='text/html',body=(ROOT/'static/index.html').read_text(encoding='utf-8'));return
             data={}
             if r.request.method=='POST' or r.request.method=='PUT':
                 requests.append((r.request.url,r.request.post_data_json if r.request.post_data else None))

@@ -56,11 +56,7 @@ jobs:
         run: python -m pytest tests/ -x -q --durations=10 -m "not integration and not interactive"
 
       - name: Verify browser interfaces
-        run: |
-          python tests/manual/check_collection_controls.py
-          python tests/manual/check_result_summary.py
-          python tests/manual/check_desktop_navigation.py --iterations 350
-          python tests/manual/check_update_ui.py
+        run: python tests/manual/check_release_ui.py
 
       - name: Build executable with PyInstaller
         run: pyinstaller build.spec --noconfirm
@@ -226,11 +222,7 @@ jobs:
         run: python -m pytest tests/ -x -q --durations=10 -m "not integration and not interactive"
 
       - name: Verify browser interfaces
-        run: |
-          python tests/manual/check_collection_controls.py
-          python tests/manual/check_result_summary.py
-          python tests/manual/check_desktop_navigation.py --iterations 350
-          python tests/manual/check_update_ui.py
+        run: python tests/manual/check_release_ui.py
 
       - name: Build .app with PyInstaller
         run: pyinstaller build_mac.spec --noconfirm

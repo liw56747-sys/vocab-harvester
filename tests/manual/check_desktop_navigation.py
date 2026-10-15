@@ -25,7 +25,7 @@ async def main():
         async def route(r):
             path = urlparse(r.request.url).path
             if path == '/':
-                await r.fulfill(content_type='text/html', body=(ROOT / 'static/index.html').read_text())
+                await r.fulfill(content_type='text/html', body=(ROOT / 'static/index.html').read_text(encoding='utf-8'))
                 return
             data = {
                 '/api/stats': dict(total=0, pending=0, approved=0, rejected=0),
@@ -33,7 +33,7 @@ async def main():
                 '/api/vocabulary/filter-options': {},
                 '/api/scheduled-tasks': dict(tasks=[]),
                 '/api/chromium-status': dict(status='installed'),
-                '/api/version': dict(version=(ROOT / 'VERSION').read_text().strip()),
+                '/api/version': dict(version=(ROOT / 'VERSION').read_text(encoding='utf-8').strip()),
                 '/api/scheduled-notifications': dict(latest_id=0, notifications=[]),
             }.get(path, {})
             await r.fulfill(content_type='application/json', body=json.dumps(data))
