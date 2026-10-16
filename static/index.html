@@ -2475,7 +2475,8 @@ const I18N = {
     search_result: '关键词搜索结果',
     no_search_result: '无搜索结果', search_complete: '搜索完成', search_failed: '搜索失败',
     open_download_page: '打开下载页', update_temporarily_unavailable: '暂时无法检查更新，可打开下载页手动更新。',
-    summary_complete: '采集完成', summary_partial: '采集完成（部分未完成）',
+    summary_complete: '本轮采集完成', summary_partial: '本轮已结束，仍有缺口',
+    summary_running: '正在采集或补抓', summary_finishing: '正在保存本轮结果',
     summary_failed: '采集失败', summary_cancelled: '采集已取消',
     summary_target: '目标主帖数', summary_comments: '已采集评论', summary_missing: '主帖缺口', summary_posts_unit: '条主帖',
     summary_partial_note: '部分主帖或评论未采集完整，已保留现有结果。',
@@ -2725,7 +2726,8 @@ const I18N = {
     search_result: 'Search Results',
     no_search_result: 'No results', search_complete: 'Search complete', search_failed: 'Search failed',
     open_download_page: 'Open download page', update_temporarily_unavailable: 'Update check is temporarily unavailable. Open the download page to update manually.',
-    summary_complete: 'Collection complete', summary_partial: 'Collection complete (partial)',
+    summary_complete: 'Collection complete', summary_partial: 'Run ended with gaps',
+    summary_running: 'Collection or recovery running', summary_finishing: 'Saving results',
     summary_failed: 'Collection failed', summary_cancelled: 'Collection cancelled',
     summary_target: 'Target posts', summary_comments: 'Comments collected', summary_missing: 'Missing posts', summary_posts_unit: 'posts',
     summary_partial_note: 'Some posts or comments could not be collected. Available results have been retained.',
@@ -3461,7 +3463,7 @@ function showPage(name, el) {
   if (name === 'dashboard') run(loadStats);
   if (name === 'vocabulary') { run(loadVocab); run(loadVocabFilterOptions); }
   if (name === 'schedule') run(loadScheduleTasks);
-  if (name === 'twitter') run(loadAllCookies);
+  if (name === 'twitter') {run(loadAllCookies); if(document.getElementById('collection-history-panel')?.open)run(()=>loadCollectionHistory());}
   if (name === 'import') run(loadAuditStatus);
   if (name === 'settings') run(loadSettings);
 }
@@ -4293,6 +4295,7 @@ function setTwitterSortBy(val) {
 // 采集结果只渲染汇总；详细数据通过文件下载，异常正文保留在后台诊断中。
 function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skippedPlatforms = []} = {}) {
   const div = document.getElementById(containerId);
+  div.dataset.runId = stats.run_id || '';
   const number = value => Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : 0;
   const counts = Array.isArray(stats.count_results) ? stats.count_results : [];
   const requested = stats.requested_posts ?? counts.reduce((sum, item) => sum + number(item.requested_count), 0);
@@ -4301,12 +4304,13 @@ function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skipped
   const hasRows = stats.total_rows != null;
   const comments = stats.total_comments != null ? number(stats.total_comments)
     : (hasRows ? Math.max(0, number(stats.total_rows) - posts) : null);
-  const failed = !['success', 'partial', 'empty', 'cancelled'].includes(stats.status);
+  const running = ['running', 'pending', 'finishing'].includes(stats.status);
+  const failed = !running && !['success', 'partial', 'empty', 'cancelled', 'interrupted'].includes(stats.status);
   const empty = stats.status === 'empty';
-  const cancelled = stats.status === 'cancelled';
-  const partial = missing > 0 || Boolean(stats.error) || Boolean(stats.errors?.length);
+  const cancelled = ['cancelled', 'interrupted'].includes(stats.status);
+  const partial = stats.status === 'partial' || number(stats.comments_pending) > 0 || missing > 0 || Boolean(stats.error) || Boolean(stats.errors?.length);
   const warning = !failed && (empty || cancelled || partial);
-  const heading = failed ? 'summary_failed' : cancelled ? 'summary_cancelled'
+  const heading = running ? (stats.status === 'finishing' ? 'summary_finishing' : 'summary_running') : failed ? 'summary_failed' : cancelled ? 'summary_cancelled'
     : empty ? 'no_search_result' : partial ? 'summary_partial' : 'summary_complete';
   const metrics = [];
   const metric = (value, key) => metrics.push(`<div class="result-stat"><div class="num">${number(value)}</div><div class="lbl">${t(key)}</div></div>`);
@@ -4324,7 +4328,7 @@ function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skipped
   }
   const platformHtml = Object.entries(platforms).map(([platform, count]) =>
     `<span>${esc(platform === 'twitter' ? 'Twitter / X' : platform === 'reddit' ? 'Reddit' : platform)}: ${number(count)} ${t('summary_posts_unit')}</span>`).join(' · ');
-  const note = failed || empty ? t('summary_retry') : cancelled ? t('summary_cancelled_note') : partial ? t('summary_partial_note') : '';
+  const note = running ? '当前是已保存进度，尚未结束；评论数量增加不代表已补完整。' : failed || empty ? t('summary_retry') : cancelled ? t('summary_cancelled_note') : partial ? t('summary_partial_note') : '';
   div.innerHTML = `<h4 style="margin-bottom:12px;color:var(--text-primary);font-size:15px">${esc(title || t('search_result'))}</h4>
     <div class="crawl-result ${failed ? 'error' : warning ? 'warning' : ''}">
       <strong>${t(heading)}</strong>
@@ -4333,6 +4337,9 @@ function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skipped
       ${metrics.length ? `<div class="result-stats">${metrics.join('')}</div>` : ''}
       ${stats.preflight ? '<p>本次仅检查搜索可用性，不代表正式采集数量或评论完整性。</p>':''}
       ${stats.comments_pending != null ? `<p>评论已处理主帖：${number(stats.comments_finished)}；待补抓：${number(stats.comments_pending)}</p>`:''}
+      ${stats.new_comments != null ? `<p>本轮新增评论：${number(stats.new_comments)}；已核验无可访问评论的主帖：${number(stats.comments_empty)}</p>`:''}
+      ${Array.isArray(stats.comments_reasons) && stats.comments_reasons.length ? `<p>${stats.comments_reasons.map(r=>`${esc(r.label)}：${number(r.count)} 个主帖`).join('；')}</p>`:''}
+      ${!running && !failed && !cancelled && !partial && stats.comments_enabled ? '<p>可访问评论已处理完成；不包含平台隐藏、删除或权限受限的评论。</p>':''}
       ${stats.refreshed_posts ? `<p>本轮新增主帖：${number(stats.new_posts)}；回查旧帖：${number(stats.refreshed_posts)}（与新增目标分开计数）</p>`:''}
       ${stats.run_id && stats.errors?.length ? `<p>${esc(stats.errors.join('；'))}</p>`:''}
       ${platformHtml ? `<div style="margin-top:8px;font-size:13px">${platformHtml}</div>` : ''}
@@ -4767,34 +4774,98 @@ async function previewSchedule() {
     el.textContent=`${r.description} · ${r.timezone} · 下次：${r.next_run_at||'无'}${r.legacy_weekdays?' · 旧规则：0=周一，建议使用上方星期选择器重新确认':''}`;
   } catch(e) {el.textContent='请检查定时表达式或时区';}
 }
-async function loadCollectionHistory(offset=0) {
+let collectionHistoryTimer = null;
+let collectionHistoryBusy = false;
+let collectionHistoryQueued = false;
+let collectionHistoryRevision = 0;
+let collectionHistoryOffset = 0;
+let collectionSelectedRun = null;
+const collectionRestarting = new Set();
+const collectionDownloading = new Set();
+function collectionHistoryVisible() {
+  return document.getElementById('collection-history-panel')?.open &&
+    document.getElementById('page-twitter')?.classList.contains('active') && !document.hidden;
+}
+async function loadCollectionHistory(offset=collectionHistoryOffset) {
+  collectionHistoryOffset = offset;
+  clearTimeout(collectionHistoryTimer);
+  if (collectionHistoryBusy) {collectionHistoryQueued=true;return;}
+  collectionHistoryQueued=false;
   const el=document.getElementById('collection-history');
   if(!el)return;
+  collectionHistoryBusy = true;
+  let keepPolling = false;
+  const revision = collectionHistoryRevision;
+  const controller = new AbortController();
+  const timeout = setTimeout(()=>controller.abort(),10000);
   try {
-    const data=await api('/api/collections?offset='+offset);
-    const labels={running:'运行中',pending:'待执行',partial:'部分完成',success:'完成',failed:'失败',interrupted:'已中断'};
-    el.innerHTML=(data.runs||[]).map(r=>`<div style="margin:8px 0;padding:8px;border:1px solid var(--border)">
-      ${esc(r.created)} · ${esc(labels[r.status]||r.status)} · 已保存 ${Number(r.saved_posts)||0} 条主帖
+    // Poll summaries only; never build CSV/Excel on a timer.
+    const response = await fetch('/api/collections?offset='+offset,{signal:controller.signal});
+    if (!response.ok) throw new Error('读取进度失败');
+    const data=await response.json();
+    if(revision!==collectionHistoryRevision){keepPolling=true;return;}
+    const runs=data.runs||[];
+    keepPolling=runs.some(r=>r.active);
+    const labels={running:'运行中',finishing:'正在保存结果',pending:'待执行',partial:'本轮结束，仍有缺口',success:'本轮完成',failed:'本轮失败',interrupted:'已中断'};
+    el.innerHTML=runs.map(r=>`<div style="margin:8px 0;padding:8px;border:1px solid var(--border)">
+      ${esc(new Date(r.created).toLocaleString())} · ${esc(labels[r.status]||r.status)} · 已保存 ${Number(r.saved_posts)||0} 条主帖
+      ${r.comments_pending != null ? `<div>评论已处理主帖：${Number(r.comments_finished)||0}；待补抓：${Number(r.comments_pending)||0}；本轮新增评论：${Number(r.new_comments)||0}</div>`:''}
       ${r.error?`<div style="font-size:12px">${esc(r.error)}</div>`:''}
-      <button class="btn btn-secondary" data-result="${esc(r.id)}">汇总与下载</button>
-      ${!r.active?`<button class="btn btn-secondary" data-resume="${esc(r.id)}">继续补抓</button><button class="btn btn-secondary" data-comments="${esc(r.id)}">只补评论</button>`:''}</div>`).join('')||'暂无采集记录';
+      <button class="btn btn-secondary" data-result="${esc(r.id)}" ${collectionDownloading.has(r.id)?'disabled':''}>汇总与下载</button>
+      ${!r.active?`<button class="btn btn-secondary" data-resume="${esc(r.id)}" ${collectionRestarting.has(r.id)?'disabled':''}>继续补抓</button><button class="btn btn-secondary" data-comments="${esc(r.id)}" ${collectionRestarting.has(r.id)?'disabled':''}>只补评论</button>`:''}</div>`).join('')||'暂无采集记录';
     el.insertAdjacentHTML('beforeend',`${offset?`<button class="btn btn-secondary" onclick="loadCollectionHistory(${Math.max(0,offset-30)})">上一页</button>`:''}${data.has_more?`<button class="btn btn-secondary" onclick="loadCollectionHistory(${offset+30})">下一页</button>`:''}`);
+    const selected=runs.find(r=>r.id===collectionSelectedRun);
+    if(selected) {
+      document.querySelectorAll('[data-run-id]').forEach(div=>{
+        if(div.dataset.runId===selected.id) renderCrawlResult(div.id,selected,{title:'本轮采集与评论进度'});
+      });
+      renderCrawlResult('collection-history-result',selected,{title:'本轮采集与评论进度'});
+    }
     el.querySelectorAll('[data-result]').forEach(b=>b.onclick=async()=>{
-      const r=await api('/api/collections/'+encodeURIComponent(b.dataset.result)+'/result');
-      renderCrawlResult('collection-history-result',r,{title:'已保存结果'});
+      const rid=b.dataset.result;
+      if(b.disabled || collectionDownloading.has(rid))return;
+      collectionDownloading.add(rid);
+      b.disabled=true;
+      const exportRevision=collectionHistoryRevision;
+      collectionSelectedRun=rid;
+      try {
+        const r=await api('/api/collections/'+encodeURIComponent(rid)+'/result');
+        if(collectionSelectedRun===rid && exportRevision===collectionHistoryRevision)renderCrawlResult('collection-history-result',r,{title:'已保存结果（下载为当前快照）'});
+      }catch(e){ /* api already reports the error */ }
+      finally{collectionDownloading.delete(rid);b.disabled=false;el.querySelectorAll('[data-result]').forEach(button=>{if(button.dataset.result===rid)button.disabled=false;});}
     });
     const restart=async(rid,comments)=>{
-      const r=await api('/api/collections/'+encodeURIComponent(rid)+'/resume?comments_only='+comments,{method:'POST'});
-      if(!['started','ok'].includes(r.status)){toast(r.error||'启动失败','error');return;}
-      toast(comments?'评论补抓已启动':'续抓已启动','success');loadCollectionHistory();
+      if(collectionRestarting.has(rid))return;
+      collectionRestarting.add(rid);
+      collectionHistoryRevision++;
+      el.querySelectorAll('[data-resume],[data-comments]').forEach(b=>{if((b.dataset.resume||b.dataset.comments)===rid)b.disabled=true;});
+      try {
+        const r=await api('/api/collections/'+encodeURIComponent(rid)+'/resume?comments_only='+comments,{method:'POST'});
+        if(!['started','ok'].includes(r.status)){toast(r.error||'启动失败','error');return;}
+        collectionSelectedRun=rid;
+        const running={status:'running',run_id:rid,total_posts:runs.find(x=>x.id===rid)?.saved_posts||0};
+        document.querySelectorAll('[data-run-id]').forEach(div=>{if(div.dataset.runId===rid)renderCrawlResult(div.id,running,{title:'补抓进度'});});
+        renderCrawlResult('collection-history-result',running,{title:'补抓进度'});
+        toast(comments?'评论补抓已启动':'续抓已启动','success');
+      }catch(e){ /* api already reports the error */ }
+      finally{collectionRestarting.delete(rid);loadCollectionHistory();}
     };
     el.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>restart(b.dataset.resume,false));
     el.querySelectorAll('[data-comments]').forEach(b=>b.onclick=()=>restart(b.dataset.comments,true));
-  }catch(e){el.textContent='采集记录暂时不可用，请稍后刷新';}
+  }catch(e){
+    keepPolling=true;
+    el.textContent='进度暂时无法刷新，任务可能仍在运行；正在重试，请勿重复启动。';
+  }finally{
+    clearTimeout(timeout);
+    collectionHistoryBusy=false;
+    if(collectionHistoryVisible() && (keepPolling || collectionHistoryQueued || offset!==collectionHistoryOffset))
+      collectionHistoryTimer=setTimeout(()=>loadCollectionHistory(),3000);
+  }
 }
+document.addEventListener('visibilitychange',()=>{if(collectionHistoryVisible())loadCollectionHistory();else clearTimeout(collectionHistoryTimer);});
 document.getElementById('multi-search-result').insertAdjacentHTML('beforebegin',collectionOptionsHtml('collect'));
 document.getElementById('schedule-cron').closest('.form-row').insertAdjacentHTML('afterend',collectionOptionsHtml('schedule-collect',true));
-document.getElementById('multi-search-result').insertAdjacentHTML('afterend',`<details style="margin:16px 0" ontoggle="if(this.open)loadCollectionHistory()"><summary>采集记录、断点续抓与评论补抓</summary><button class="btn btn-secondary" onclick="loadCollectionHistory()">刷新记录</button><div id="collection-history"></div><div id="collection-history-result"></div></details>`);
+document.getElementById('multi-search-result').insertAdjacentHTML('afterend',`<details id="collection-history-panel" style="margin:16px 0" ontoggle="if(this.open)loadCollectionHistory();else clearTimeout(collectionHistoryTimer)"><summary>采集记录、断点续抓与评论补抓</summary><button class="btn btn-secondary" onclick="loadCollectionHistory()">刷新记录</button><div id="collection-history"></div><div id="collection-history-result"></div></details>`);
 
 document.getElementById('multi-search-result').insertAdjacentHTML('beforebegin','<button class="btn btn-secondary" id="collection-preflight" onclick="checkCollectionAccess()">检查账号配置与搜索可用性</button>');
 async function checkCollectionAccess() {

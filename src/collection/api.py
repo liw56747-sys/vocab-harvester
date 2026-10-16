@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 from src.collection.store import Store
 from src.collection.engine import CollectionSpec, collect, expected_posts
 from src.crawlers.comment_results import search_export_rows
+from src.crawlers.comment_state import comment_summary
 
 router = APIRouter()
 _active = set()
@@ -30,7 +31,7 @@ def _result(store, rid, detail=None):
     rows = store.rows(rid)
     exported = search_export_rows(rows)
     fields = ['keyword','search_query','platform','type','post_id','comment_id','parent_id','author','commenter','content','created_at','url',
-              'likes','retweets','score','num_comments','media_urls','comments_status','comments_warning','collection_kind']
+              'likes','retweets','score','num_comments','media_urls','comments_status','comments_warning','comments_reason','comments_attempts','comments_empty_verified','collection_kind']
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
@@ -49,13 +50,13 @@ def _result(store, rid, detail=None):
             target = state.get('target', spec.count)
             counts.append({'platform':state.get('platform') or posts[0]['platform'],'keyword':state.get('keyword') or posts[0]['keyword'],
                            'actual_count':n,'requested_count':target,'missing_count':max(0,target-n), 'status':'fulfilled' if n>=target else 'shortfall'})
-    pending = sum(r.get('comments_status')!='finished' for r in main) if spec.include_replies else 0
-    return {**(detail or {}), 'run_id':rid, 'status':'cancelled' if record['status']=='interrupted' else 'success' if record['status']=='success' else 'partial',
+    return {**(detail or {}), 'run_id':rid, 'status': 'cancelled' if record['status']=='interrupted' else record['status'],
             'count_scope':spec.count_scope, 'requested_posts':expected,'missing_posts':0 if spec.probe else max(0,expected-len(new)),
             'preflight':spec.probe,
             'total_posts':len(main), 'new_posts':len(new), 'refreshed_posts':len(main)-len(new),
             'total_rows':len(exported),'total_comments':len(exported)-len(main),
-            'comments_pending':pending,'comments_finished':len(main)-pending if spec.include_replies else 0,
+            **comment_summary(rows, spec.include_replies),
+            'new_comments': (store.progress(rid) or {}).get('new_comments', 0),
             'errors':[record['error']] if record['error'] else [], 'count_results':counts,
             'platform_counts':{p:sum(r['platform']==p for r in main) for p in spec.platforms},
             'keyword_results':[{'keyword':kw,'post_count':sum(r.get('keyword')==kw for r in main),'total_rows':sum(r.get('keyword')==kw for r in exported)} for kw in spec.keywords],
@@ -141,23 +142,54 @@ async def start(spec, supplied_cookies=None, rid=None, comments_only=False, rese
         raise
 
 
+def run_active(rid):
+    with _lock:
+        if rid in _active:
+            return True
+    from src.api.main import _scheduled_runs, _scheduled_runs_lock
+    with _scheduled_runs_lock:
+        return any(getattr(run, 'collection_id', None) == rid for run in _scheduled_runs.values())
+
+
+def summary(store, rid):
+    record = store.get(rid)
+    spec = CollectionSpec(**record['spec'])
+    cached = store.progress(rid)
+    if cached is None:
+        rows = store.rows(rid)
+        cached = comment_summary(rows, spec.include_replies)
+        cached['refreshed_posts'] = sum(r.get('type', 'post') != 'comment' and r.get('collection_kind') == 'revisit' for r in rows)
+        cached = store.progress(rid, cached, only_if_missing=True)
+    active = run_active(rid)
+    status = record['status']
+    if active:
+        status = 'running' if status in {'running', 'pending'} else 'finishing'
+    elif status in {'running', 'pending'}:
+        status = 'interrupted'
+    expected = expected_posts(spec)
+    missing = 0 if spec.probe else max(0, expected-cached['saved_posts']+cached.get('refreshed_posts', 0))
+    if status == 'success' and (missing or cached.get('comments_pending')):
+        status = 'partial'
+    return {**cached, 'id': rid, 'run_id': rid, 'created': record['created'], 'updated': record['updated'],
+            'status': status, 'active': active, 'error': record['error'],
+            'errors': [record['error']] if record['error'] else [],
+            'total_posts': cached['saved_posts'], 'requested_posts': expected, 'missing_posts': missing,
+            'preflight': spec.probe}
+
+
 @router.get('/api/collections')
 def history(offset: int = Query(0,ge=0)):
     store = Store()
     runs = store.list(offset=offset)
-    with _lock:
-        active = set(_active)
-    for r in runs:
-        r['active'] = r['id'] in active
-        if r['status']=='running' and not r['active']:
-            # Scheduled runs are tracked separately by their collection run id.
-            from src.api.main import _scheduled_runs, _scheduled_runs_lock
-            with _scheduled_runs_lock:
-                r['active'] = any(getattr(run,'collection_id',None)==r['id'] for run in _scheduled_runs.values())
-            if not r['active']:
-                r['status']='interrupted'
-        r['saved_posts'] = sum(p.get('type','post')!='comment' for p in store.rows(r['id']))
-    return {'runs':runs,'offset':offset,'has_more':len(runs)==30}
+    return {'runs': [summary(store, r['id']) for r in runs], 'offset': offset, 'has_more': len(runs)==30}
+
+
+@router.get('/api/collections/{rid}/summary')
+def saved_summary(rid: str):
+    try:
+        return summary(Store(), rid)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
 
 
 @router.post('/api/collections/{rid}/resume')

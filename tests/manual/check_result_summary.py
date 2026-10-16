@@ -77,7 +77,7 @@ async def main():
                 assert await container.locator('.post-card, img, .error-box').count() == 0
                 assert '耗时' in text
                 if status == 'partial':
-                    assert '部分未完成' in text and '49' in text and '76' in text
+                    assert '仍有缺口' in text and '49' in text and '76' in text
                     assert await container.locator('.crawl-result.warning').count() == 1
                     before = len(await page.evaluate('downloads'))
                     await container.locator('[data-download="csv"]').click()

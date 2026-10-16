@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.crawlers.platform_config import reddit_config as _RC
+from src.crawlers.comment_state import error_reason
+from urllib.parse import urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,31 @@ class RedditCookieFetcher:
         if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
             proxy = f"http://{proxy}"
         self.proxy = proxy or None
+        self._preferred_host = "www.reddit.com"
+        self._session_cookies = None
+        self._comment_host = None
+        self._comment_denials = 0
+        self.comment_circuit_open = False
         logger.info(f"RedditCookieFetcher 初始化, proxy={self.proxy}")
+
+    @staticmethod
+    def request_headers():
+        return {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Referer": "https://www.reddit.com/",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+        }
 
     # ── 搜索入口 ──────────────────────────────────────────
 
@@ -66,23 +92,7 @@ class RedditCookieFetcher:
             if v:
                 cookie_dict[k] = v
 
-        # 完整浏览器请求头
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/126.0.0.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Referer": "https://www.reddit.com/",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-User": "?1",
-            "Upgrade-Insecure-Requests": "1",
-        }
+        headers = self.request_headers()
 
         proxy_url = self.proxy if self.proxy else None
 
@@ -139,6 +149,8 @@ class RedditCookieFetcher:
 
                             if resp.status_code == 200:
                                 data = resp.json()
+                                self._preferred_host = urlsplit(endpoint).hostname
+                                self._session_cookies = httpx.Cookies(client.cookies)
                                 break
 
                             if resp.status_code == 403:
@@ -248,6 +260,7 @@ class RedditCookieFetcher:
                             content = content[:2000] + "..."
 
                         all_posts.append({
+                            "reddit_endpoint": self._preferred_host,
                             "type": "post",
                             "post_id": post_id,
                             "parent_id": "",
@@ -321,8 +334,8 @@ class RedditCookieFetcher:
             async with httpx.AsyncClient(
                 timeout=_RC.comment_request_timeout,
                 follow_redirects=True,
-                cookies=cookie_dict,
-                headers=headers,
+                cookies=self._session_cookies if self._session_cookies is not None else cookie_dict,
+                headers=self.request_headers(),
                 proxy=proxy_url,
             ) as client:
                 async def _fetch_one(post: dict):
@@ -330,13 +343,13 @@ class RedditCookieFetcher:
                         post_id = post.get("post_id", "")
                         subreddit = post.get("subreddit", "").replace("r/", "")
                         post["comments_fetched"] = 0
-                        post["comments_status"] = "finished"
-                        post["comments_warning"] = ""
+                        post["comments_status"] = "pending"
+                        post["comments_reason"] = "pending"
+                        post["comments_warning"] = "评论正在处理"
+                        post["comments_empty_verified"] = False
                         if not post_id or not subreddit:
                             post["comments_status"] = "failed"
                             post["comments_warning"] = "缺少帖子链接，无法抓取评论"
-                            return []
-                        if post.get("num_comments") == 0:
                             return []
 
                         try:
@@ -350,7 +363,8 @@ class RedditCookieFetcher:
                         except Exception as e:
                             logger.warning(f"帖子 {post_id} 评论抓取失败: {e}")
                             post["comments_status"] = "failed"
-                            post["comments_warning"] = f"评论抓取失败: {e}"
+                            post["comments_reason"] = error_reason(e)[0]
+                            post["comments_warning"] = f"评论抓取失败: {str(e) or type(e).__name__}"
                             return []
 
                 # 并发抓取所有帖子的评论
@@ -359,6 +373,7 @@ class RedditCookieFetcher:
                     return_exceptions=True,
                 )
 
+                self._session_cookies = httpx.Cookies(client.cookies)
                 # 合并评论到 all_rows
                 for i, result in enumerate(results):
                     if isinstance(result, Exception):
@@ -366,18 +381,47 @@ class RedditCookieFetcher:
                     elif result:
                         all_rows.extend(result)
 
-        except httpx.ProxyError:
-            logger.warning("评论抓取: 无法连接代理")
-        except httpx.ConnectError:
-            logger.warning("评论抓取: 无法连接 Reddit")
-        except Exception as e:
-            logger.warning(f"评论抓取异常: {e}")
+        except Exception as exc:
+            logger.warning("评论抓取异常: %s", str(exc) or type(exc).__name__)
+            for post in posts:
+                if post.get("comments_status") != "finished":
+                    post["comments_status"] = "partial" if partial_comments.get(post.get("post_id")) else "failed"
+                    post["comments_reason"] = error_reason(exc)[0]
+                    post["comments_warning"] = f"评论抓取失败: {str(exc) or type(exc).__name__}"
+            known = {row.get("comment_id") for row in all_rows if row.get("type") == "comment"}
+            all_rows.extend(row for group in partial_comments.values() for row in group if row.get("comment_id") not in known)
 
         comment_count = len(all_rows) - len(posts)
         logger.info(f"Reddit 评论抓取完成: 共 {comment_count} 条评论")
         return all_rows
 
     async def _get_comment_json(self, client, url: str, params: dict):
+        """Reuse the working public endpoint; never loop on authentication or rate limits."""
+        import httpx
+        if self.comment_circuit_open:
+            raise RuntimeError("403 评论访问连续被拒绝，本轮暂停后续请求；请检查会话和网络后补抓")
+        parts = urlsplit(url)
+        hosts = list(dict.fromkeys([self._preferred_host, 'www.reddit.com', 'old.reddit.com']))
+        for index, host in enumerate(hosts):
+            target = urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+            try:
+                data = await self._request_comment_json(client, target, params)
+                self._preferred_host = host
+                self._comment_host = host
+                self._comment_denials = 0
+                return data
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code != 403:
+                    raise
+                if index + 1 == len(hosts):
+                    self._comment_denials += 1
+                    self.comment_circuit_open = self._comment_denials >= _RC.comment_denial_limit
+                    raise
+            except (httpx.TransportError, ValueError):
+                if index + 1 == len(hosts):
+                    raise
+
+    async def _request_comment_json(self, client, url: str, params: dict):
         """对临时网络错误、429 和 5xx 有限重试；鉴权失败透传给调用者。"""
         import httpx
         from email.utils import parsedate_to_datetime
@@ -418,9 +462,13 @@ class RedditCookieFetcher:
             max_comments = _RC.comment_max_replies
         if progress is None:
             progress = {}
+        preferred = progress.get("reddit_endpoint")
+        if self._comment_host is None and preferred in {"www.reddit.com", "old.reddit.com"}:
+            self._preferred_host = preferred
         url = f"https://www.reddit.com/r/{subreddit}/comments/{post_id}.json"
         params = {"depth": "10", "limit": "500", "raw_json": "1"}
         data = await self._get_comment_json(client, url, params)
+        progress["reddit_endpoint"] = self._preferred_host
         if not isinstance(data, list) or len(data) < 2:
             raise RuntimeError("Reddit 评论接口返回了无效数据")
 
@@ -470,10 +518,13 @@ class RedditCookieFetcher:
             if not warning and requested - seen:
                 warning = "平台未返回部分折叠评论（可能已删除或不可访问）"
         except Exception as e:
-            warning = f"部分评论加载失败，已保留已采集评论: {e}"
+            warning = f"部分评论加载失败，已保留已采集评论: {str(e) or type(e).__name__}"
             logger.warning(warning)
-        if not comments and progress.get("num_comments", 0) and not warning:
-            warning = "页面显示有评论，但接口未返回可访问评论"
+        advertised = progress.get("num_comments", 0) or 0
+        if not warning and len(comments) < advertised:
+            warning = f"页面显示 {advertised} 条评论，实际采集 {len(comments)} 条；可能存在未返回或不可访问评论"
+        progress["comments_reason"] = error_reason(warning)[0] if warning else ""
+        progress["comments_empty_verified"] = not warning and not comments
         progress["comments_status"] = "partial" if warning else "finished"
         progress["comments_warning"] = warning
         progress["comments_fetched"] = len(comments)

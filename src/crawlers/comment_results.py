@@ -34,7 +34,7 @@ def search_export_rows(posts: list[dict]) -> list[dict]:
             author = reply.get("display_name") or reply.get("author", "")
             rows.append({
                 **reply, "keyword": post.get("keyword", ""),
-                "platform": "twitter", "type": "comment", "post_id": rid,
+                "platform": "twitter", "type": "comment", "post_id": rid, "comment_id": rid,
                 "parent_id": row["post_id"], "author": author, "commenter": author,
                 "url": reply.get("url") or (f"https://x.com/i/status/{rid}" if rid else ""),
             })

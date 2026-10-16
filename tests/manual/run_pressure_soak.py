@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import time
+import threading
 import pytest
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -18,7 +19,7 @@ os.chdir(ROOT)
 results=[]
 for index in range(args.rounds):
     start=time.monotonic()
-    status=pytest.main(['tests/stress/test_release_pressure.py','-q','--disable-warnings'])
+    status=pytest.main(['tests/stress/test_release_pressure.py','tests/stress/test_comment_recovery_pressure.py','-q','--disable-warnings'])
     gc.collect()
     try:
         import resource
@@ -27,7 +28,9 @@ for index in range(args.rounds):
     except ImportError:
         peak_mb=None
     results.append({'round':index+1,'exit_code':int(status),'seconds':round(time.monotonic()-start,2),
-                    'process_peak_rss_mb':round(peak_mb,1) if peak_mb else None})
+                    'process_peak_rss_mb':round(peak_mb,1) if peak_mb else None,
+                    'thread_count':threading.active_count(),
+                    'open_fds':len(os.listdir('/dev/fd')) if Path('/dev/fd').is_dir() else None})
     Path(args.report).write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf-8')
     print('SOAK_ROUND',json.dumps(results[-1]),flush=True)
     if status:sys.exit(int(status))

@@ -34,6 +34,8 @@ class ReplyPage:
         self.set_default_timeout = lambda value: None
 
     async def evaluate(self, script, arg=None):
+        if script == TwitterCookieFetcher._COMMENT_PAGE_STATE_JS:
+            return ""
         if script == _EXPAND_TWEETS_JS:
             return 0
         if script == TwitterCookieFetcher._EXTRACT_REPLIES_JS:
@@ -79,14 +81,19 @@ async def test_twitter_limit_is_exact_and_reported(no_wait):
 
 async def test_twitter_page_failure_preserves_collected_replies(no_wait):
     page = ReplyPage([[1, 2]], fail_at=2)
-    context = SimpleNamespace(new_page=AsyncMock(return_value=page))
+    retry_pages = [ReplyPage([]), ReplyPage([])]
+    for retry in retry_pages:
+        retry.goto.side_effect = RuntimeError('page crashed')
+    context = SimpleNamespace(new_page=AsyncMock(side_effect=[page, *retry_pages]))
     tweet = {'url': page.url}
     await TwitterCookieFetcher(block_resources=True)._parallel_scrape_replies(context, [tweet])
     assert tweet['replies_count'] == 2
     assert len(json.loads(tweet['replies_data'])) == 2
     assert tweet['comments_status'] == 'partial'
     assert 'page crashed' in tweet['comments_warning']
-    page.close.assert_awaited_once()
+    assert context.new_page.await_count == 3
+    for opened in [page, *retry_pages]:
+        opened.close.assert_awaited_once()
 
 
 async def test_twitter_retries_initial_navigation_failure(no_wait):

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from src.crawlers.platform_config import twitter_config as _TC
+from src.crawlers.comment_state import error_reason, replies as saved_replies
 from src.crawlers.progress import report_rows, observe_rows, row_observer
 
 logger = logging.getLogger(__name__)
@@ -598,8 +599,9 @@ class TwitterCookieFetcher:
         for tweet in tweets:
             tweet["comments_status"] = "pending"
             tweet["comments_warning"] = "评论任务尚未完成"
-            tweet["replies_count"] = 0
-            tweet["replies_data"] = "[]"
+            tweet["replies_count"] = len(saved_replies(tweet))
+            tweet["comments_reason"] = "pending"
+            tweet["comments_empty_verified"] = False
 
         async def _scrape_one_reply(tweet: dict):
             async with sem:
@@ -609,6 +611,8 @@ class TwitterCookieFetcher:
                     return
                 for attempt in range(_TC.comment_retry_attempts):
                     page = None
+                    before = tweet["replies_count"]
+                    tweet["comments_attempts"] = tweet.get("comments_attempts", 0) + 1
                     try:
                         page = await context.new_page()
                         page.set_default_timeout(_TC.comment_request_timeout * 1000)
@@ -620,17 +624,23 @@ class TwitterCookieFetcher:
                         report_rows(tweets)
                         if not tweet["replies_count"] and tweet.get("replies", 0):
                             raise RuntimeError("页面显示有回复，但未加载出评论，请稍后重试")
-                        return
+                        if tweet.get("comments_status") == "finished":
+                            return
+                        if tweet.get("comments_reason") not in {"shortfall", "network", "unknown"}:
+                            return
+                        if attempt and tweet["replies_count"] <= before:
+                            return  # A second exhausted pass made no progress; leave an explicit gap.
                     except asyncio.CancelledError:
                         tweet["comments_status"] = "partial" if tweet["replies_count"] else "failed"
                         tweet["comments_warning"] = "评论抓取超时或被取消，已保留已采集评论"
                         raise
                     except Exception as e:
                         tweet["comments_status"] = "partial" if tweet["replies_count"] else "failed"
-                        tweet["comments_warning"] = f"评论抓取未完成: {e}"
+                        tweet["comments_reason"] = error_reason(e)[0]
+                        tweet["comments_warning"] = f"评论抓取未完成: {str(e) or type(e).__name__}"
                         logger.warning(f"评论抓取失败 ({tweet.get('url')}): {e}")
                         # 已采到的评论不丢弃；登录失效无需重复请求。
-                        if tweet["replies_count"] or "Cookie" in str(e):
+                        if tweet["comments_reason"] in {"authentication", "access_denied", "unavailable", "rate_limit"}:
                             return
                     finally:
                         if page is not None:
@@ -1140,6 +1150,16 @@ class TwitterCookieFetcher:
         return false;
     }"""
 
+    _COMMENT_PAGE_STATE_JS = """() => {
+        const text = Array.from(document.querySelectorAll('[data-testid="error-detail"], [data-testid="emptyState"]'))
+            .map(e => e.innerText || '').join(' ').toLowerCase();
+        if (/doesn.t exist|not available|account suspended|不存在|无法查看|已停用/.test(text))
+            return '帖子或评论 unavailable，无法确认完整性';
+        if (/rate limit|请求过于频繁/.test(text)) return '评论请求 429 限流';
+        if (/something went wrong|try reloading|出错|重试/.test(text)) return '评论页面 network 加载异常';
+        return '';
+    }"""
+
     async def _scrape_replies_page(
         self, page, tweet_url: str, max_replies: int | None = None,
         *, progress: dict | None = None,
@@ -1151,12 +1171,22 @@ class TwitterCookieFetcher:
             max_replies = _TC.comment_max_replies
         if progress is None:
             progress = {}
-        await page.goto(tweet_url, wait_until="domcontentloaded", timeout=60000)
+        response = await page.goto(tweet_url, wait_until="domcontentloaded", timeout=60000)
+        http_status = getattr(response, "status", None)
+        if isinstance(http_status, int) and http_status in {401, 403, 404, 410, 429}:
+            raise RuntimeError(f"评论页面 HTTP {http_status}")
         await asyncio.sleep(_TC.search_initial_wait)
         if "login" in page.url or "flow" in page.url:
             raise RuntimeError("Cookie 已过期，请重新登录后抓取评论")
-        await page.wait_for_selector('article[data-testid="tweet"]', timeout=_TC.search_load_timeout)
+        try:
+            await page.wait_for_selector('article[data-testid="tweet"]', timeout=_TC.comment_load_timeout)
+        except Exception:
+            state = await page.evaluate(self._COMMENT_PAGE_STATE_JS)
+            if state:
+                raise RuntimeError(state)
+            raise
 
+        retained = {str(r.get("tweet_id")): r for r in saved_replies(progress) if r.get("tweet_id")}
         collected = {}
         stall_count = 0
         started = _time.monotonic()
@@ -1176,7 +1206,7 @@ class TwitterCookieFetcher:
             )
             for r in new_replies:
                 tid = r.get("tweetId", "")
-                if tid and tid != main_id and tid not in collected and len(collected) < max_replies:
+                if tid and tid != main_id and tid not in collected and (tid in retained or len(retained) < max_replies):
                     collected[tid] = {
                         "tweet_id": tid, "author": r.get("author", ""),
                         "display_name": r.get("displayName", ""),
@@ -1185,11 +1215,13 @@ class TwitterCookieFetcher:
                         "media_type": r.get("mediaType", "none"),
                         "media_urls": r.get("mediaUrls", ""),
                     }
-            progress["replies_count"] = len(collected)
-            progress["replies_data"] = json.dumps(list(collected.values()), ensure_ascii=False)
+                    retained[tid] = collected[tid]
+            retained.update(collected)
+            progress["replies_count"] = len(retained)
+            progress["replies_data"] = json.dumps(list(retained.values()), ensure_ascii=False)
             if len(collected) > prev_count:
                 report_rows(list(collected.values()))
-            if len(collected) >= max_replies:
+            if len(retained) >= max_replies:
                 warning = f"达到单帖评论上限 {max_replies} 条，可能仍有未采集评论"
                 break
             stall_count = stall_count + 1 if len(collected) == prev_count else 0
@@ -1200,19 +1232,26 @@ class TwitterCookieFetcher:
                     stall_count = 0
                     continue
             if stall_count >= _TC.comment_max_stalls:
+                state = await page.evaluate(self._COMMENT_PAGE_STATE_JS)
+                if state:
+                    raise RuntimeError(state)
                 warning = ""
                 break
+            if stall_count >= 2:
+                await asyncio.sleep(_TC.comment_stall_wait)
             # X 使用虚拟列表，直接跳到底部会跳过尚未提取的中间评论。
             await page.evaluate("window.scrollBy(0, Math.max(300, window.innerHeight * 0.75))")
             await asyncio.sleep(_TC.scroll_wait("comment"))
 
         expected = progress.get("replies", 0)
-        if not warning and isinstance(expected, (int, float)) and len(collected) < expected:
-            warning = f"页面显示 {expected} 条回复，实际采集 {len(collected)} 条；可能存在未加载或不可访问的回复"
+        if not warning and isinstance(expected, (int, float)) and len(retained) < expected:
+            warning = f"页面显示 {expected} 条回复，实际采集 {len(retained)} 条；可能存在未加载或不可访问的回复"
+        progress["comments_reason"] = error_reason(warning)[0] if warning else ""
+        progress["comments_empty_verified"] = not warning and not retained
         progress["comments_status"] = "partial" if warning else "finished"
         progress["comments_warning"] = warning
         logger.info(f"共获取 {len(collected)} 条回复" + (f"（{warning}）" if warning else ""))
-        return list(collected.values())
+        return list(retained.values())
 
     # ── 导出 ──────────────────────────────────────────────
 

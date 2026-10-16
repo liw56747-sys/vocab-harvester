@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 from src.collection.store import Store, key, merge
+from src.crawlers.comment_state import comment_summary, error_reason
 from src.crawlers.progress import observe_rows, report_progress
 
 
@@ -190,7 +191,7 @@ async def fetch_comments(fetcher, platform, posts, cookies):
         finally:
             await fetcher._safe_close(context, label='context(comment-recovery)')
         return posts
-    headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Referer': 'https://www.reddit.com/'}
+    headers = fetcher.request_headers()
     return await fetcher._fetch_all_comments_parallel(posts, cookies, headers, fetcher.proxy)
 
 
@@ -215,6 +216,24 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
     previous = store.units(rid)
     all_rows = store.rows(rid)
     counts, errors = [], []
+    baseline = comment_summary(all_rows, spec.include_replies)['total_comments']
+    attempt_started = datetime.now(timezone.utc).isoformat()
+    def publish_progress(phase='collecting'):
+        summary = comment_summary(all_rows, spec.include_replies)
+        summary['refreshed_posts'] = sum(r.get('type', 'post') != 'comment' and r.get('collection_kind') == 'revisit' for r in all_rows)
+        summary.update(phase=phase, attempt_started=attempt_started,
+                       new_comments=max(0, summary['total_comments']-baseline),
+                       comments_only=comments_only)
+        store.progress(rid, summary)
+    publish_progress()
+    # Legacy zero-comment shortcuts were never verified against the comment endpoint.
+    if comments_only:
+        for uid, (saved_rows, saved_state) in previous.items():
+            for row in saved_rows:
+                if row.get('platform') == 'reddit' and row.get('type', 'post') != 'comment' and row.get('num_comments') == 0 and not row.get('comments_empty_verified'):
+                    row['comments_status'] = 'pending'
+            store.save(rid, uid, saved_rows, saved_state)
+
     async def acquire(platform):
         if platform_event:
             platform_event('waiting',platform)
@@ -260,6 +279,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                         current = merge(current,incoming)
                         store.save(rid,uid,current,old_state)
                         all_rows = merge(all_rows,current)
+                        publish_progress("comments")
                         if checkpoint:
                             checkpoint(all_rows)
                     save_revisit([post])
@@ -289,6 +309,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     state['last_saved_id'] = key(rows[-1]) if rows else None
                     store.save(rid, unit, rows, state)
                     all_rows = merge(all_rows, rows)
+                    publish_progress("comments" if comments_only else "collecting")
                     if checkpoint:
                         checkpoint(all_rows)
                     if progress:
@@ -396,6 +417,11 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     for post in parents:
                         if cancelled():
                             raise asyncio.CancelledError
+                        if getattr(fetcher, 'comment_circuit_open', False):
+                            post.update(comments_status='failed', comments_reason='access_denied',
+                                        comments_warning='评论访问连续被拒绝，本轮暂停后续请求；请检查会话和网络后补抓')
+                            persist([post])
+                            continue
                         await acquire(platform)
                         began, error = time.monotonic(), None
                         try:
@@ -407,6 +433,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                         except Exception as exc:
                             error = exc
                             post['comments_status'] = 'partial' if post.get('replies_data') else 'failed'
+                            post['comments_reason'] = error_reason(exc)[0]
                             post['comments_warning'] = classify(exc)[2]
                             persist([post])
                         finally:
@@ -431,6 +458,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
         if pending:
             errors.append(f'{pending} 个主帖的评论待补抓')
         status = 'partial' if errors else 'success'
+        publish_progress('finished')
         store.status(rid,status,'；'.join(dict.fromkeys(errors)))
         if owner and status=='success':
             store.watermark(owner,stamp)
@@ -439,8 +467,10 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
             'comments_finished':len(main)-pending if spec.include_replies else 0, 'run_id':rid,
             'count_scope':spec.count_scope, 'date_filter_note': '日期范围按 UTC 日期、结束日期不含当天；Reddit 在可访问搜索结果内筛选，语言过滤仅作用于 X' if spec.since or spec.languages else ''}
     except asyncio.CancelledError:
+        publish_progress('interrupted')
         store.status(rid,'interrupted','已停止并保存检查点，可继续抓取')
         raise
     except Exception as exc:
+        publish_progress('failed')
         store.status(rid,'failed',classify(exc)[2])
         raise

@@ -53,6 +53,9 @@ class PlatformTiming:
     comment_request_timeout: float = 30.0
     comment_retry_attempts: int = 3
     comment_retry_wait: float = 2.0
+    comment_load_timeout: int = 45000
+    comment_stall_wait: float = 5.0
+    comment_denial_limit: int = 3
 
     def scroll_wait(self, page_type: str = "search") -> float:
         """返回指定页面类型的随机滚动等待值"""

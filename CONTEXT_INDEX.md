@@ -11,6 +11,7 @@
 | 定时运行隔离、进度和取消 | `src/api/main.py`；`src/crawlers/scheduled_run.py`、`progress.py`、`browser_manager.py`；两平台抓取器及 `real_crawler.py` | `tests/test_scheduled_lifecycle.py`；`tests/test_comment_collection.py`；`tests/test_x_session_browser.py`；`tests/manual/check_result_summary.py` |
 | 定时保存及去重 | `src/api/main.py` 的 `save_task_results_to_file` / `generate_export_filename`（任务名＋完成月日，同名加序号）；`src/collection/store.py` 的 `export_names` 固定历史下载名称；`src/vocabulary/storage.py`；`src/common/database.py` | `tests/test_schedule_save.py`；`tests/test_schedule_dedup.py` |
 | X 会话与搜索失败 | `src/crawlers/browser_manager.py`；`src/crawlers/twitter_url.py`；`src/crawlers/real_crawler.py` | `tests/test_x_session.py`；`tests/test_x_session_browser.py`（本地服务+真实 Chromium，支持 `VOCAB_TEST_BROWSER_EXECUTABLE`） |
+| 评论补抓故障与进度 | `src/crawlers/comment_state.py`；两平台评论入口；`src/collection/store.py` 的 `run_progress`；`src/collection/api.py` 的 `summary`；历史记录轮询 | `tests/test_comment_reliability.py`；`tests/stress/test_comment_recovery_pressure.py`；`tests/manual/check_comment_recovery_ui.py`；`work/comment-recovery-2026-10-16.md` |
 | 搜索评论与数量 | `src/crawlers/comment_results.py`；`src/api/main.py` 搜索接口；`src/crawlers/twitter_url.py`、`src/crawlers/reddit_crawler.py` | `tests/test_comment_exports.py`；`tests/test_search_quantity.py` |
 | 结果汇总界面 | `static/index.html` 的 `renderCrawlResult` | `tests/manual/check_result_summary.py` |
 | 更新检查 | `src/common/version.py`；`static/index.html` 的 `manualCheckUpdate` | `tests/test_update_check.py`；`tests/manual/check_update_ui.py` |

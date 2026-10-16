@@ -54,6 +54,7 @@ class Store:
                 created TEXT, updated TEXT, error TEXT DEFAULT '', owner TEXT DEFAULT '');
             CREATE TABLE IF NOT EXISTS units(run_id TEXT, unit_id TEXT, rows_json TEXT NOT NULL DEFAULT '[]',
                 state TEXT DEFAULT '{}', PRIMARY KEY(run_id,unit_id));
+            CREATE TABLE IF NOT EXISTS run_progress(run_id TEXT PRIMARY KEY, summary TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS export_names(run_id TEXT PRIMARY KEY, stem TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS watermarks(owner TEXT PRIMARY KEY, completed_at TEXT NOT NULL);
             ''')
@@ -117,6 +118,15 @@ class Store:
         for rows, _ in self.units(rid).values():
             result = merge(result, rows)
         return result
+
+    def progress(self, rid, summary=None, *, only_if_missing=False):
+        with self.connect() as db:
+            if summary is not None:
+                conflict = 'DO NOTHING' if only_if_missing else 'DO UPDATE SET summary=excluded.summary'
+                db.execute('INSERT INTO run_progress VALUES(?,?) ON CONFLICT(run_id) ' + conflict,
+                           (rid, json.dumps(summary, ensure_ascii=False)))
+            row = db.execute('SELECT summary FROM run_progress WHERE run_id=?', (rid,)).fetchone()
+            return json.loads(row[0]) if row else None
 
     def set_export_stem(self, rid, stem):
         with self.connect() as db:
