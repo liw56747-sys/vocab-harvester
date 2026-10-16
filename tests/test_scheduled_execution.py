@@ -1,6 +1,6 @@
 """覆盖定时任务执行入口到文件落盘，外部平台返回固定数据。"""
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -47,6 +47,14 @@ async def test_scheduled_crawl_runs_and_saves_results(init_test_db, tmp_path, mo
     monkeypatch.setattr(api, '_scheduled_real_crawl', crawl_mock)
     notify = Mock()
     monkeypatch.setattr(api, '_push_scheduled_notification', notify)
+    class CompletionClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            # UTC 仍为 10 月 15 日，但任务的北京时间已经是 10 月 16 日。
+            value = datetime(2026, 10, 15, 16, 30, tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+
+    monkeypatch.setattr(api, 'datetime', CompletionClock)
     await api._execute_scheduled_task({
         'id': task_id, 'name': '定时抓取测试', 'task_type': 'search', 'save_path': str(tmp_path),
         'params': {'keywords': ['测试'], 'platforms': ['twitter', 'reddit'], 'count': 100,
@@ -57,6 +65,7 @@ async def test_scheduled_crawl_runs_and_saves_results(init_test_db, tmp_path, mo
     crawl_mock.assert_called_once()
     files = list(tmp_path.glob('*.' + save_format))
     assert len(files) == 1
+    assert files[0].name == f"定时抓取测试1016.{save_format}"
     if save_format == 'csv':
         with files[0].open(encoding='utf-8-sig', newline='') as f:
             rows = list(csv.DictReader(f))

@@ -9,7 +9,7 @@
 | 桌面白屏与日志 | `app.py`；`src/common/desktop_runtime.py`；`static/index.html` 的 Windows 样式和导航 | `tests/test_desktop_runtime.py`；`tests/manual/check_desktop_navigation.py` |
 | 定时执行失败 | `src/api/main.py` 的 `_execute_scheduled_task`、`_load_scheduled_jobs`、`run_scheduled_task_now`；`src/orchestrator/pipeline.py` | `tests/test_scheduled_execution.py`；`SCHEDULE_FAILURE_FIX.md` |
 | 定时运行隔离、进度和取消 | `src/api/main.py`；`src/crawlers/scheduled_run.py`、`progress.py`、`browser_manager.py`；两平台抓取器及 `real_crawler.py` | `tests/test_scheduled_lifecycle.py`；`tests/test_comment_collection.py`；`tests/test_x_session_browser.py`；`tests/manual/check_result_summary.py` |
-| 定时保存及去重 | `src/api/main.py` 的 `save_task_results_to_file`；`src/vocabulary/storage.py`；`src/common/database.py` | `tests/test_schedule_save.py`；`tests/test_schedule_dedup.py` |
+| 定时保存及去重 | `src/api/main.py` 的 `save_task_results_to_file` / `generate_export_filename`（任务名＋完成月日，同名加序号）；`src/collection/store.py` 的 `export_names` 固定历史下载名称；`src/vocabulary/storage.py`；`src/common/database.py` | `tests/test_schedule_save.py`；`tests/test_schedule_dedup.py` |
 | X 会话与搜索失败 | `src/crawlers/browser_manager.py`；`src/crawlers/twitter_url.py`；`src/crawlers/real_crawler.py` | `tests/test_x_session.py`；`tests/test_x_session_browser.py`（本地服务+真实 Chromium，支持 `VOCAB_TEST_BROWSER_EXECUTABLE`） |
 | 搜索评论与数量 | `src/crawlers/comment_results.py`；`src/api/main.py` 搜索接口；`src/crawlers/twitter_url.py`、`src/crawlers/reddit_crawler.py` | `tests/test_comment_exports.py`；`tests/test_search_quantity.py` |
 | 结果汇总界面 | `static/index.html` 的 `renderCrawlResult` | `tests/manual/check_result_summary.py` |

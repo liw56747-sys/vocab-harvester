@@ -93,13 +93,22 @@ async def test_scheduled_url_uses_same_durable_engine(init_test_db,monkeypatch,t
     await api._save_platform_cookies_db('twitter',{'ct0':'c','auth_token':'a'})
     fetch=AsyncMock(return_value=([{'tweet_id':'post','content':'profile post'}],''))
     monkeypatch.setattr(TwitterCookieFetcher,'fetch_user_tweets',fetch)
-    await api._execute_scheduled_task({'id':'profile','task_type':'url_fetch','save_path':str(tmp_path),
+    await api._execute_scheduled_task({'id':'profile','name':'主页任务','task_type':'url_fetch','save_path':str(tmp_path),
         'params':{'urls':['https://x.com/example'],'platforms':['twitter'],'count':1,'analyze':False}})
     assert fetch.call_args.args[0]==['example']
     run=Store().list(owner='profile')[0]
     assert run['status']=='success'
     assert Store().rows(run['id'])[0]['content']=='profile post'
-    assert list(tmp_path.glob('*.csv'))
+    saved_files = list(tmp_path.glob('*.csv'))
+    assert len(saved_files) == 1 and saved_files[0].stem.startswith('主页任务')
+    # 重新打开数据库、修改运行更新时间后，下载仍使用原来固定的完成日期。
+    store = Store()
+    with store.connect() as connection:
+        connection.execute("UPDATE runs SET updated='2030-01-01T00:00:00+00:00' WHERE id=?", (run['id'],))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api.app),base_url='http://local') as client:
+        exported = (await client.get('/api/collections/'+run['id']+'/result')).json()
+    assert exported['csv_filename'] == saved_files[0].name
+    assert exported['xlsx_filename'] == saved_files[0].with_suffix('.xlsx').name
 
 
 async def test_legacy_scheduled_analysis_is_ignored(init_test_db,monkeypatch,tmp_path):

@@ -16,6 +16,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -39,40 +40,16 @@ from src.vocabulary.manager import VocabManager
 
 # ── 文件命名工具函数 ──────────────────────────────────────
 
-def generate_export_filename(task_name: str, ext: str = "csv") -> str:
-    """
-    生成规范化的导出文件名。
-    
-    格式：任务名-日期-编号.扩展名
-    例：Twitter抓取-20260708-001.csv
-    
-    Args:
-        task_name: 任务名称
-        ext: 文件扩展名（不含点号）
-    
-    Returns:
-        规范化的文件名
-    """
+def generate_export_filename(
+    task_name: str, ext: str = "csv", completed_at: datetime | None = None,
+) -> str:
+    """任务名 + 完成日期（月日）；调用方传入已固定、按任务时区换算的完成时间。"""
     import re
-    
-    # 净化任务名：移除操作系统不支持的特殊字符
-    # 不支持的字符：\ / : * ? " < > |
-    sanitized_name = re.sub(r'[\\/:*?"<>|]', '', task_name)
-    # 移除前后空白
-    sanitized_name = sanitized_name.strip()
-    # 如果净化后为空，使用默认名称
-    if not sanitized_name:
-        sanitized_name = "数据导出"
-    
-    # 日期格式化为 YYYYMMDD
-    date_str = datetime.now().strftime("%Y%m%d")
-    
-    # 编号使用精确到秒的时间戳（HHMMSS）
-    time_str = datetime.now().strftime("%H%M%S")
-    
-    # 组装文件名
-    filename = f"{sanitized_name}-{date_str}-{time_str}.{ext}"
-    return filename
+
+    sanitized_name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '', task_name).strip().strip('.')
+    sanitized_name = sanitized_name or "数据导出"
+    date_str = (completed_at or datetime.now()).strftime("%m%d")
+    return f"{sanitized_name}{date_str}.{ext}"
 
 
 # ── v1.5.5: XLSX 生成器（供 batch-search / search / export 复用） ──
@@ -143,6 +120,7 @@ async def save_task_results_to_file(
     stats: dict,
     results: list[dict] | None = None,
     file_format: str = "csv",
+    completed_at: datetime | None = None,
 ) -> str | None:
     """
     将任务结果保存到指定路径。
@@ -153,6 +131,7 @@ async def save_task_results_to_file(
         stats: 任务统计信息
         results: 详细帖子数据（可选；为 None 时自动从 stats 中提取 crawled_posts）
         file_format: 导出格式，"csv" 或 "xlsx"
+        completed_at: 按任务时区记录的抓取完成时间；缺省使用本次保存开始时间
 
     Returns:
         保存的文件路径，如果保存失败返回 None
@@ -190,6 +169,7 @@ async def save_task_results_to_file(
             "tags": p.get("tags", ""),
         }
 
+    completed_at = completed_at or datetime.now()
     rows = [_normalize(p) for p in posts]
 
     try:
@@ -197,20 +177,33 @@ async def save_task_results_to_file(
             os.makedirs(save_path, exist_ok=True)
             logger.info(f"已创建保存目录: {save_path}")
 
-        filename = generate_export_filename(task_name, fmt)
-        file_path = os.path.join(save_path, filename)
-
-        if fmt == "xlsx":
-            xlsx_bytes = await asyncio.to_thread(_generate_xlsx_bytes, rows, fields, sheet_title=task_name or "抓取结果")
-            with open(file_path, "wb") as f:
-                f.write(xlsx_bytes)
-        else:
-            # CSV：首行为表头，直接写入帖子明细（utf-8-sig 防止 Excel 中文乱码）
-            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.writer(f)
-                writer.writerow(fields)
-                for r in rows:
-                    writer.writerow([r.get(h, "") for h in fields])
+        filename = generate_export_filename(task_name, fmt, completed_at)
+        base_path = Path(save_path) / filename
+        xlsx_bytes = (await asyncio.to_thread(_generate_xlsx_bytes, rows, fields, sheet_title="抓取结果")
+                      if fmt == "xlsx" else None)
+        # 独占创建，多个同名任务并发完成时也不能覆盖已有文件。
+        counter = 0
+        while True:
+            file_path = str(base_path if counter == 0 else base_path.with_name(
+                f"{base_path.stem}_{counter}{base_path.suffix}"))
+            try:
+                f = (open(file_path, "xb") if fmt == "xlsx" else
+                     open(file_path, "x", newline="", encoding="utf-8-sig"))
+                break
+            except FileExistsError:
+                counter += 1
+        try:
+            with f:
+                if fmt == "xlsx":
+                    f.write(xlsx_bytes)
+                else:
+                    writer = csv.writer(f)
+                    writer.writerow(fields)
+                    for r in rows:
+                        writer.writerow([r.get(h, "") for h in fields])
+        except BaseException:
+            Path(file_path).unlink(missing_ok=True)
+            raise
 
         logger.info(f"任务结果已保存: {file_path}（{len(rows)} 条，格式 {fmt}）")
         return file_path
@@ -1100,6 +1093,11 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
                 _crawl_result.setdefault("errors", {})["任务"] = message
         finally:
             executor.shutdown(wait=False)
+        from zoneinfo import ZoneInfo
+        completed_at = datetime.now(ZoneInfo(params.get("timezone") or "Asia/Shanghai"))
+        _collection_store.set_export_stem(
+            run.collection_id, Path(generate_export_filename(task_name, "csv", completed_at)).stem,
+        )
         posts_by_platform = _crawl_result.get("posts", {})
         crawl_errors = _crawl_result.get("errors", {})  # {platform: 友好原因}
 
@@ -1130,6 +1128,7 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
                 stats=stats,
                 results=None,  # 从 stats.crawled_posts / sampled_posts 自动提取帖子明细
                 file_format=save_format,
+                completed_at=completed_at,
             )
             if saved_file:
                 logger.info(f"[定时任务 {task_id}] 结果已保存: {saved_file}")
@@ -1366,7 +1365,7 @@ async def download_csv(req: CsvDownloadRequest):
     return Response(
         content=raw,
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{req.filename}"'},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(req.filename, safe='')}"},
     )
 
 
@@ -1385,7 +1384,7 @@ async def download_xlsx(req: XlsxDownloadRequest):
     return Response(
         content=raw,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{req.filename}"'},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(req.filename, safe='')}"},
     )
 
 

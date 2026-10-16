@@ -26,6 +26,7 @@ def result(store, rid, detail=None):
 def _result(store, rid, detail=None):
     from src.api.main import _generate_xlsx_bytes
     record = store.get(rid)
+    export_stem = store.export_stem(rid) or f'collection_{rid[:12]}'
     rows = store.rows(rid)
     exported = search_export_rows(rows)
     fields = ['keyword','search_query','platform','type','post_id','comment_id','parent_id','author','commenter','content','created_at','url',
@@ -59,9 +60,9 @@ def _result(store, rid, detail=None):
             'platform_counts':{p:sum(r['platform']==p for r in main) for p in spec.platforms},
             'keyword_results':[{'keyword':kw,'post_count':sum(r.get('keyword')==kw for r in main),'total_rows':sum(r.get('keyword')==kw for r in exported)} for kw in spec.keywords],
             'sampled_posts':[], 'csv_data':base64.b64encode(buf.getvalue().encode('utf-8-sig')).decode(),
-            'csv_filename':f'collection_{rid[:12]}.csv',
+            'csv_filename':f'{export_stem}.csv',
             'xlsx_data':base64.b64encode(_generate_xlsx_bytes(exported,fields,'采集结果')).decode(),
-            'xlsx_filename':f'collection_{rid[:12]}.xlsx'}
+            'xlsx_filename':f'{export_stem}.xlsx'}
 
 
 async def start(spec, supplied_cookies=None, rid=None, comments_only=False, reset_search=False):

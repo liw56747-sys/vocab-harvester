@@ -1,6 +1,9 @@
 """v1.6.6: 定时任务结果落盘测试（CSV / xlsx）；v1.7.3: 评论单独成行 + type/parent_id 列"""
 
+import asyncio
 import csv
+from datetime import datetime
+from pathlib import Path
 import os
 
 import pytest
@@ -48,9 +51,10 @@ async def test_save_crawl_only_csv(tmp_path):
     path = await save_task_results_to_file(
         save_path=str(tmp_path), task_name="测试任务",
         stats=_sample_stats(), results=None, file_format="csv",
+        completed_at=datetime(2026, 10, 16, 23, 59),
     )
     assert path is not None
-    assert path.endswith(".csv")
+    assert Path(path).name == "测试任务1016.csv"
     assert os.path.exists(path)
 
     with open(path, "r", encoding="utf-8-sig", newline="") as f:
@@ -71,9 +75,10 @@ async def test_save_crawl_only_xlsx(tmp_path):
     path = await save_task_results_to_file(
         save_path=str(tmp_path), task_name="测试任务",
         stats=_sample_stats(), results=None, file_format="xlsx",
+        completed_at=datetime(2026, 1, 6, 23, 59),
     )
     assert path is not None
-    assert path.endswith(".xlsx")
+    assert Path(path).name == "测试任务0106.xlsx"
 
     wb = load_workbook(path)
     ws = wb.active
@@ -112,3 +117,34 @@ async def test_save_no_path_returns_none():
         save_path="", task_name="t", stats=_sample_stats(), file_format="csv",
     )
     assert path is None
+
+
+@pytest.mark.parametrize("fmt", ["csv", "xlsx"])
+async def test_same_day_exports_preserve_existing_files(tmp_path, fmt):
+    existing = tmp_path / f"测试任务1016.{fmt}"
+    existing.write_bytes(b"previous result")
+    paths = await asyncio.gather(*[
+        save_task_results_to_file(str(tmp_path), "测试任务", _sample_stats(),
+                                  file_format=fmt, completed_at=datetime(2026, 10, 16))
+        for _ in range(3)
+    ])
+    assert existing.read_bytes() == b"previous result"
+    assert {Path(p).name for p in paths} == {f"测试任务1016_{n}.{fmt}" for n in (1, 2, 3)}
+    assert all(Path(p).stat().st_size > 0 for p in paths)
+
+
+@pytest.mark.parametrize("fmt", ["csv", "xlsx"])
+async def test_chinese_filename_download(fmt):
+    import base64
+    import httpx
+    from urllib.parse import unquote
+    from src.api.main import app
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(f"/api/download-{fmt}", json={
+            f"{fmt}_data": base64.b64encode(b"export bytes").decode(),
+            "filename": f"测试任务1016.{fmt}",
+        })
+    assert response.status_code == 200
+    assert response.content == b"export bytes"
+    assert unquote(response.headers["content-disposition"]) == f"attachment; filename*=UTF-8''测试任务1016.{fmt}"
