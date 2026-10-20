@@ -156,6 +156,8 @@ async def init_db(db_path: str | Path | None = None) -> aiosqlite.Connection:
         except aiosqlite.OperationalError:
             pass  # 列已存在
 
+    from src.collection.migrations import migrate_keyword_targets
+    await migrate_keyword_targets(_connection)
     await _connection.commit()
 
     return _connection

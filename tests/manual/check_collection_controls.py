@@ -83,6 +83,31 @@ async def main():
         await page.wait_for_function("!document.getElementById('collection-preflight').disabled")
         assert any(url.endswith('/api/collection-preflight') for url,body in requests)
         assert not any(path in paths for path in ['/api/model-config','/api/analyze-last','/api/import'])
+        await page.evaluate("showPage('schedule');showScheduleForm()")
+        assert await page.locator('#schedule-collect-scope').input_value() == 'per_keyword'
+        await page.locator('#schedule-name').fill('六关键词任务')
+        await page.locator('#schedule-keywords').fill('a\nb\nc\nd\ne\nf\na\n ')
+        await page.evaluate('openFetchConfigModal()')
+        await page.locator('#modal-platform-checks input[value="twitter"]').check()
+        await page.locator('#modal-platform-checks input[value="reddit"]').check()
+        await page.locator('#modal-search-count').fill('50')
+        assert '总目标 600 条主帖' in await page.locator('#modal-target-preview').inner_text()
+        assert '每个关键词 100 条' in await page.locator('#modal-target-preview').inner_text()
+        await page.locator('#modal-search-count').fill('25')
+        assert '总目标 300 条主帖' in await page.locator('#modal-target-preview').inner_text()
+        await page.locator('#modal-search-count').fill('50')
+        await page.evaluate('confirmFetchConfig()')
+        assert '总目标 600 条主帖' in await page.locator('#schedule-target-preview').inner_text()
+        await page.evaluate('saveScheduleTask()')
+        await page.wait_for_timeout(100)
+        created=next(body for url,body in requests if url.endswith('/api/scheduled-tasks') and body.get('name')=='六关键词任务')
+        assert created['params']['count_scope']=='per_keyword'
+        assert created['params']['count']==50 and created['params']['platforms']==['twitter','reddit']
+        await page.evaluate("setCollectionOptions('collect');showPage('twitter')")
+        await page.locator('#search-keyword').fill('a,b,c,d,e,f')
+        await page.locator('#search-count').fill('50')
+        assert await page.locator('#collect-scope').input_value() == 'per_keyword'
+        assert '总目标 600 条主帖' in await page.locator('#collect-target-preview').inner_text()
         assert not errors,errors
         await browser.close()
         print('PASS: scope/ranges/languages/combinations payload, summary-only recovery, comment retry, legacy calendar preservation, weekday preset, incremental/misfire settings and preflight button')

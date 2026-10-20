@@ -2342,7 +2342,7 @@ const I18N = {
     upload_batch_title_attr: '从 TXT 文件导入多个关键词，逐条搜索后合并结果',
     upload_batch_hint: '每行一个关键词，逐条搜索后合并为一个 CSV',
     platform_label: '搜索平台', platform_hint: '（至少选一个）',
-    per_platform_count: '每平台条数', sort_label: '排序',
+    per_platform_count: '主帖条数（默认每关键词、每平台）', sort_label: '排序',
     sort_top: '热门', sort_live: '最新',
     block_resources: '加速模式（屏蔽图片/媒体，页面加载更快）',
     btn_search: '开始搜索',
@@ -3860,7 +3860,7 @@ async function loadScheduleTasks() {
         <td><strong>${esc(task.name || '-')}</strong></td>
         <td>${task.task_type === 'search' ? t('type_search') : t('type_url')}${modeBadge}</td>
         <td>${esc(task.description || task.cron_expression)}<br><small>${esc(task.timezone||'')}<br>下次：${esc(task.next_run_at||'未启用/无后续时间')}${task.legacy_weekdays?'<br>旧星期规则：0=周一':''}${task.missed_count?`<br>漏跑 ${Number(task.missed_count)} 次；最近 ${esc(task.last_missed)}`:''}${task.schedule_error?`<br>${esc(task.schedule_error)}`:''}</small></td>
-        <td title="${esc(keywords)}">${esc(keywords.slice(0, 30))}${keywords.length > 30 ? '...' : ''}</td>
+        <td title="${esc(keywords)}">${esc(keywords.slice(0, 30))}${keywords.length > 30 ? '...' : ''}<br><small>${esc(collectionTargetText(params.keywords || [], params.platforms || ['twitter'], Number(params.count)||50, params.count_scope || 'per_keyword'))}</small>${params.count_scope_migrated==='1.8.3' && params.count_scope==='per_keyword'?'<br><small>升级后新一轮按每关键词、每平台计算；历史记录目标不变。</small>':''}</td>
         <td><code>${esc(task.save_path || '-')}</code></td>
         <td>${task.last_run_at ? new Date(task.last_run_at).toLocaleString() : '-'}</td>
         <td><span class="badge ${statusBadge}">${statusText}</span>${errHtml}</td>
@@ -3968,11 +3968,13 @@ function openFetchConfigModal() {
   }
   
   modal.classList.add('show');
+  updateCollectionTargets();
 }
 
 function closeFetchConfigModal() {
   const modal = document.getElementById('fetch-config-modal');
   if (modal) modal.classList.remove('show');
+  updateCollectionTargets();
 }
 
 function setModalSortBy(type) {
@@ -4016,7 +4018,7 @@ function updateFetchConfigSummary() {
     tags.push(`<span class="summary-tag"><span class="tag-dot ${p}"></span>${label}</span>`);
   });
   // 条数
-  tags.push(`<span class="summary-tag">${_fetchConfig.count || 50} 条/平台</span>`);
+  tags.push(`<span class="summary-tag">${_fetchConfig.count || 50} 条 · ${esc(document.getElementById('schedule-collect-scope').selectedOptions[0].textContent)}</span>`);
   // 排序
   const sortLabel = (_fetchConfig.sort || 'hot') === 'hot' ? '热门优先' : '最新优先';
   tags.push(`<span class="summary-tag">${sortLabel}</span>`);
@@ -4031,6 +4033,7 @@ function updateFetchConfigSummary() {
   
   tagsEl.innerHTML = tags.join('');
   summaryEl.classList.add('show');
+  updateCollectionTargets();
 }
 
 async function saveScheduleTask() {
@@ -4719,11 +4722,38 @@ function downloadXlsx(b64Data, filename) {
   }).catch(e => toast(t('download_failed'), 'error'));
 }
 
+function collectionTargetText(keywords, platforms, count, scope) {
+  const n = new Set(keywords.map(k=>k.trim()).filter(Boolean)).size;
+  const p = new Set(platforms).size;
+  if (!n || !p) return '请填写关键词并选择平台，以确认主帖目标。';
+  if (scope === 'per_platform') return `总目标 ${p * count} 条主帖：${p} 个平台 × ${count} 条；${n} 个关键词按顺序共享额度，后续关键词可能不执行。评论另计。`;
+  if (scope === 'total') return `总目标 ${count} 条主帖：${n} 个关键词、${p} 个平台按顺序共享额度。评论另计。`;
+  return `总目标 ${n * p * count} 条主帖：${n} 个关键词 × ${p} 个平台 × ${count} 条；每个关键词 ${p * count} 条（每平台 ${count} 条）。评论另计。`;
+}
+function updateCollectionTargets() {
+  const scheduleKeywords = (document.getElementById('schedule-keywords')?.value || '').split('\n');
+  const modalOpen = document.getElementById('fetch-config-modal')?.classList.contains('show');
+  const platforms = modalOpen ? [...document.querySelectorAll('#modal-platform-checks input:checked')].map(x=>x.value) : (_fetchConfig?.platforms || []);
+  const count = Number(modalOpen ? document.getElementById('modal-search-count').value : _fetchConfig?.count) || 50;
+  const text = collectionTargetText(scheduleKeywords, platforms, count, document.getElementById('schedule-collect-scope')?.value);
+  for (const id of ['schedule-target-preview','modal-target-preview']) {
+    const el = document.getElementById(id); if (el) el.textContent = text;
+  }
+  const el = document.getElementById('collect-target-preview');
+  if (el) el.textContent = collectionTargetText((document.getElementById('search-keyword').value || '').split(/[\n,，;；、]+/).map(k=>k.trim().replace(/^["']+|["']+$/g, '').trim()), getSelectedPlatforms(), Number(document.getElementById('search-count').value)||50, document.getElementById('collect-scope')?.value);
+}
+document.addEventListener('input', updateCollectionTargets);
+document.addEventListener('change', event=>{
+  if(event.target.id==='schedule-collect-scope') updateFetchConfigSummary();
+  updateCollectionTargets();
+});
+window.addEventListener('DOMContentLoaded', updateCollectionTargets);
+
 function collectionOptionsHtml(prefix, schedule=false) {
   return `<details style="margin:12px 0"><summary>采集范围与恢复设置</summary>
-  <p style="font-size:12px">目标按去重主帖计算，评论另计。达到目标不等于覆盖平台全部内容。</p>
+  <p style="font-size:12px">默认目标＝关键词数 × 平台数 × 主帖条数。按去重主帖计算，评论另计；不足时显示缺口。</p>
   <div class="form-row">
-    <label>数量口径 <select id="${prefix}-scope"><option value="per_platform">每个平台合计</option><option value="per_keyword">每关键词、每平台分别计算</option><option value="total">整个任务合计（按平台顺序）</option></select></label>
+    <label>数量口径 <select id="${prefix}-scope"><option value="per_keyword">每关键词、每平台分别计算（默认）</option><option value="per_platform">每个平台合计（关键词共享额度）</option><option value="total">整个任务合计（按平台顺序）</option></select></label>
     <label>开始日期（UTC） <input type="date" id="${prefix}-since"></label>
     <label>结束日期（不含当天） <input type="date" id="${prefix}-until"></label>
     <label>分段天数 <input type="number" id="${prefix}-window" value="7" min="1" max="366" style="width:70px"></label>
@@ -4745,7 +4775,8 @@ function getCollectionOptions(prefix) {
     lookback_days:Number(document.getElementById(prefix+'-lookback')?.value||3)};
 }
 function setCollectionOptions(prefix, p={}) {
-  document.getElementById(prefix+'-scope').value=p.count_scope||'per_platform';
+  queueMicrotask(updateCollectionTargets);
+  document.getElementById(prefix+'-scope').value=p.count_scope||'per_keyword';
   document.getElementById(prefix+'-since').value=p.since||'';
   document.getElementById(prefix+'-until').value=p.until||'';
   document.getElementById(prefix+'-window').value=p.window_days||7;
@@ -4863,8 +4894,8 @@ async function loadCollectionHistory(offset=collectionHistoryOffset) {
   }
 }
 document.addEventListener('visibilitychange',()=>{if(collectionHistoryVisible())loadCollectionHistory();else clearTimeout(collectionHistoryTimer);});
-document.getElementById('multi-search-result').insertAdjacentHTML('beforebegin',collectionOptionsHtml('collect'));
-document.getElementById('schedule-cron').closest('.form-row').insertAdjacentHTML('afterend',collectionOptionsHtml('schedule-collect',true));
+document.getElementById('multi-search-result').insertAdjacentHTML('beforebegin',collectionOptionsHtml('collect')+'<p id="collect-target-preview"></p>');
+document.getElementById('schedule-cron').closest('.form-row').insertAdjacentHTML('afterend',collectionOptionsHtml('schedule-collect',true)+'<p id="schedule-target-preview"></p>');
 document.getElementById('multi-search-result').insertAdjacentHTML('afterend',`<details id="collection-history-panel" style="margin:16px 0" ontoggle="if(this.open)loadCollectionHistory();else clearTimeout(collectionHistoryTimer)"><summary>采集记录、断点续抓与评论补抓</summary><button class="btn btn-secondary" onclick="loadCollectionHistory()">刷新记录</button><div id="collection-history"></div><div id="collection-history-result"></div></details>`);
 
 document.getElementById('multi-search-result').insertAdjacentHTML('beforebegin','<button class="btn btn-secondary" id="collection-preflight" onclick="checkCollectionAccess()">检查账号配置与搜索可用性</button>');
@@ -4966,7 +4997,7 @@ async function checkCollectionAccess() {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>每平台条数</label>
+          <label>主帖条数（默认每关键词、每平台）</label>
           <input type="number" id="modal-search-count" value="50" min="1" max="10000" style="width:120px">
         </div>
         <div class="form-group">
@@ -4977,6 +5008,7 @@ async function checkCollectionAccess() {
           </div>
         </div>
       </div>
+      <p id="modal-target-preview"></p>
       <div class="form-group">
         <label class="checkbox-label">
           <input type="checkbox" id="modal-include-replies">

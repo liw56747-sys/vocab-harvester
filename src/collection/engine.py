@@ -19,7 +19,7 @@ class CollectionSpec(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     platforms: list[Literal['twitter', 'reddit']] = Field(default_factory=lambda: ['twitter'])
     count: int = Field(default=50, ge=1, le=10000)
-    count_scope: Literal['per_keyword', 'per_platform', 'total'] = 'per_platform'
+    count_scope: Literal['per_keyword', 'per_platform', 'total'] = 'per_keyword'
     include_replies: bool = False
     block_resources: bool = False
     sort_by: Literal['top', 'live', 'hot', 'new'] = 'top'

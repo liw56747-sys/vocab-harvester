@@ -82,6 +82,7 @@ async def test_invalid_schedule_never_saved_and_valid_schedule_preview_matches(i
         good=(await client.post('/api/scheduled-tasks',json=body)).json()
         assert good['status']=='ok'
         task=(await client.get('/api/scheduled-tasks')).json()['tasks'][0]
+        assert task['params']['count_scope']=='per_keyword'
         assert task['description']=='周三 15:00'
         assert not task['legacy_weekdays'] and task['timezone']=='Asia/Shanghai'
 

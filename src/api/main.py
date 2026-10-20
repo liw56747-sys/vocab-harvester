@@ -335,7 +335,7 @@ class PlatformCookieConfig(BaseModel):
     proxy: str | None = None       
 
 class CollectionOptions(BaseModel):
-    count_scope: str = "per_platform"
+    count_scope: str = "per_keyword"
     since: str | None = None
     until: str | None = None
     window_days: int = 7
@@ -573,6 +573,7 @@ async def create_scheduled_task(req: ScheduledTaskRequest):
     try:
         from src.collection.schedule import trigger
         req.params["analyze"] = False
+        req.params.setdefault("count_scope", "per_keyword")
         req.params.pop("opinion_detail", None)
         req.params.pop("opinion_rules", None)
         req.workflows = []
@@ -610,6 +611,7 @@ async def update_scheduled_task(task_id: str, req: ScheduledTaskRequest):
     try:
         from src.collection.schedule import trigger
         req.params["analyze"] = False
+        req.params.setdefault("count_scope", "per_keyword")
         req.params.pop("opinion_detail", None)
         req.params.pop("opinion_rules", None)
         req.workflows = []

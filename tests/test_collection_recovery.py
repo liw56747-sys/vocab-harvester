@@ -258,3 +258,30 @@ async def test_explicit_legacy_comment_cap_is_honored_without_implicit_reduction
 def test_date_filter_converts_timezone_to_utc():
     from datetime import date
     assert engine.in_window(tweet(1,created_at='2026-10-15T01:00:00+08:00'),date(2026,10,14),date(2026,10,15))
+
+
+async def test_default_six_keywords_two_platforms_fifty_each(monkeypatch):
+    from collections import Counter
+    from src.api.main import CollectionOptions
+    assert CollectionOptions().count_scope == 'per_keyword'
+    spec = CollectionSpec(keywords=['a','b','c','d','e','f'], platforms=['twitter','reddit'], count=50)
+    calls = []
+    async def search_x(self, keyword, count, **kwargs):
+        calls.append(('twitter', keyword, count))
+        return [tweet(f'{keyword}-{i}') for i in range(count)], ''
+    async def search_reddit(self, keyword, count, **kwargs):
+        calls.append(('reddit', keyword, count))
+        return [{'post_id':f'{keyword}-{i}', 'content':'post', 'type':'post'} for i in range(count)], ''
+    monkeypatch.setattr(TwitterCookieFetcher, 'search_tweets', search_x)
+    monkeypatch.setattr(RedditCookieFetcher, 'search_posts', search_reddit)
+    store = Store(); rid = store.create(spec.model_dump(mode='json'))
+    rows, info = await collect(store, rid, COOKIES)
+    assert info['requested_posts'] == 600 and info['missing_posts'] == 0
+    assert info['status'] == 'success'
+    assert len(calls) == 12 and all(count == 50 for _, _, count in calls)
+    assert Counter((r['platform'],r['keyword']) for r in rows) == {
+        (p,k):50 for p in spec.platforms for k in spec.keywords}
+    assert Counter(r['keyword'] for r in rows) == dict.fromkeys(spec.keywords,100)
+    # Reopening the saved run must retain all twelve targets and avoid duplicate searches.
+    await collect(Store(store.path), rid, COOKIES)
+    assert len(calls) == 12 and len(store.rows(rid)) == 600
