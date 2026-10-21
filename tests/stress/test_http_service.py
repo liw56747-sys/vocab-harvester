@@ -53,6 +53,9 @@ uvicorn.run(main.app,host="127.0.0.1",port=int(sys.argv[1]),log_level="warning")
                 assert (await client.get(f'/api/collections/{rid}/result')).status_code==200
                 assert (await client.get('/api/stats')).json()['total']==0
                 print(f'HTTP_LOAD requests=300 concurrency=20 p95_ms={sorted(durations)[284]*1000:.1f}')
+        except BaseException:
+            print('HTTP server diagnostics:\n' + (tmp_path/'server.log').read_text(encoding='utf-8', errors='replace'))
+            raise
         finally:
             process.terminate()
             try:process.wait(timeout=10)
