@@ -38,7 +38,7 @@ async def main():
             nonlocal exports
             path=urlparse(r.request.url).path
             if path=='/':
-                await r.fulfill(content_type='text/html',body=(ROOT/'static/index.html').read_text());return
+                await r.fulfill(content_type='text/html',body=(ROOT/'static/index.html').read_text(encoding='utf-8'));return
             if r.request.method=='POST':requests.append((r.request.url,r.request.post_data_json if r.request.post_data else None))
             data={}
             if path=='/api/chromium-status':data={'status':'installed'}
