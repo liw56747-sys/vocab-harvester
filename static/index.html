@@ -3860,7 +3860,7 @@ async function loadScheduleTasks() {
         <td><strong>${esc(task.name || '-')}</strong></td>
         <td>${task.task_type === 'search' ? t('type_search') : t('type_url')}${modeBadge}</td>
         <td>${esc(task.description || task.cron_expression)}<br><small>${esc(task.timezone||'')}<br>下次：${esc(task.next_run_at||'未启用/无后续时间')}${task.legacy_weekdays?'<br>旧星期规则：0=周一':''}${task.missed_count?`<br>漏跑 ${Number(task.missed_count)} 次；最近 ${esc(task.last_missed)}`:''}${task.schedule_error?`<br>${esc(task.schedule_error)}`:''}</small></td>
-        <td title="${esc(keywords)}">${esc(keywords.slice(0, 30))}${keywords.length > 30 ? '...' : ''}<br><small>${esc(collectionTargetText(params.keywords || [], params.platforms || ['twitter'], Number(params.count)||50, params.count_scope || 'per_keyword'))}</small>${params.count_scope_migrated==='1.8.3' && params.count_scope==='per_keyword'?'<br><small>升级后新一轮按每关键词、每平台计算；历史记录目标不变。</small>':''}</td>
+        <td title="${esc(keywords)}">${esc(keywords.slice(0, 30))}${keywords.length > 30 ? '...' : ''}<br><small>${params.content_mode==='images'?'仅图片（含评论配图，ZIP 导出） · ':''}${esc(collectionTargetText(params.keywords || [], params.platforms || ['twitter'], Number(params.count)||50, params.count_scope || 'per_keyword'))}</small>${params.count_scope_migrated==='1.8.3' && params.count_scope==='per_keyword'?'<br><small>升级后新一轮按每关键词、每平台计算；历史记录目标不变。</small>':''}</td>
         <td><code>${esc(task.save_path || '-')}</code></td>
         <td>${task.last_run_at ? new Date(task.last_run_at).toLocaleString() : '-'}</td>
         <td><span class="badge ${statusBadge}">${statusText}</span>${errHtml}</td>
@@ -3990,6 +3990,7 @@ function confirmFetchConfig() {
     return;
   }
   
+  updateCollectionTargets();
   const count = parseInt(document.getElementById('modal-search-count').value) || 50;
   const sortBtn = document.querySelector('#modal-sort-top.active');
   const sort = sortBtn ? 'hot' : 'latest';
@@ -4012,6 +4013,7 @@ function updateFetchConfigSummary() {
   if (!summaryEl || !tagsEl || !_fetchConfig) return;
   
   const tags = [];
+  if(document.getElementById('schedule-collect-mode')?.value==='images') tags.push('<span class="summary-tag">仅图片 · ZIP 来源清单</span>');
   // 平台标签
   (_fetchConfig.platforms || []).forEach(p => {
     const label = p === 'twitter' ? 'Twitter/X' : p === 'reddit' ? 'Reddit' : p;
@@ -4295,6 +4297,33 @@ function setTwitterSortBy(val) {
 // 🚀 以下是完全替换为防堵塞安全轮询的核心函数
 // ==========================================
 
+const imageExporting = new Set();
+const resultDownloading = new Set();
+async function downloadSavedResult(stats, format) {
+  const key=(stats.run_id||'result')+format;
+  if(resultDownloading.has(key))return;
+  resultDownloading.add(key);
+  try {
+    const result=stats[format+'_data']?stats:await api('/api/collections/'+encodeURIComponent(stats.run_id)+'/result');
+    if(format==='csv')downloadCsv(result.csv_data,result.csv_filename||'results.csv');
+    else downloadXlsx(result.xlsx_data,result.xlsx_filename||'results.xlsx');
+  } catch(e) { /* api displays the error */ }
+  finally {resultDownloading.delete(key);}
+}
+async function exportImages(rid) {
+  if(imageExporting.has(rid))return;
+  imageExporting.add(rid);
+  const updateButtons=()=>document.querySelectorAll('[data-run-id]').forEach(el=>{
+    if(el.dataset.runId===rid)el.querySelectorAll('[data-image-export]').forEach(b=>b.disabled=imageExporting.has(rid));
+  });
+  updateButtons();
+  try {
+    const r=await api('/api/collections/'+encodeURIComponent(rid)+'/images/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder:localStorage.getItem('download_folder')||''})});
+    toast('图片包已保存：'+r.path,'success');
+  } catch(e) { /* api displays the error */ }
+  finally{imageExporting.delete(rid);updateButtons();}
+}
+
 // 采集结果只渲染汇总；详细数据通过文件下载，异常正文保留在后台诊断中。
 function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skippedPlatforms = []} = {}) {
   const div = document.getElementById(containerId);
@@ -4346,13 +4375,15 @@ function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skipped
       ${stats.refreshed_posts ? `<p>本轮新增主帖：${number(stats.new_posts)}；回查旧帖：${number(stats.refreshed_posts)}（与新增目标分开计数）</p>`:''}
       ${stats.run_id && stats.errors?.length ? `<p>${esc(stats.errors.join('；'))}</p>`:''}
       ${platformHtml ? `<div style="margin-top:8px;font-size:13px">${platformHtml}</div>` : ''}
-      ${stats.csv_data || stats.xlsx_data ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
-        ${stats.csv_data ? `<button class="btn btn-download" data-download="csv">${t('btn_download_csv')}</button>` : ''}
-        ${stats.xlsx_data ? `<button class="btn btn-download" data-download="xlsx">${t('btn_download_xlsx')}</button>` : ''}
+      ${stats.content_mode==='images'?`<p>已发现图片地址：${number(stats.images_found)}；下载成功：${number(stats.images_downloaded)}；待下载：${number(stats.images_pending)}；失败/不支持：${number(stats.images_failed)}；去重文件：${number(stats.image_files)}</p><p>图片下载成功不代表评论已遍历完整。ZIP 为当前已保存快照；只补图片不会搜索尚未发现的图片。</p><button class="btn btn-download" data-image-export ${imageExporting.has(stats.run_id)?'disabled':''}>保存图片 ZIP 与来源清单</button>`:''}
+      ${stats.content_mode!=='images' && (stats.csv_data || stats.xlsx_data || stats.run_id) ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+        ${stats.csv_data || stats.run_id ? `<button class="btn btn-download" data-download="csv">${t('btn_download_csv')}</button>` : ''}
+        ${stats.xlsx_data || stats.run_id ? `<button class="btn btn-download" data-download="xlsx">${t('btn_download_xlsx')}</button>` : ''}
       </div>` : ''}
     </div>`;
-  div.querySelector('[data-download="csv"]')?.addEventListener('click', () => downloadCsv(stats.csv_data, stats.csv_filename || 'results.csv'));
-  div.querySelector('[data-download="xlsx"]')?.addEventListener('click', () => downloadXlsx(stats.xlsx_data, stats.xlsx_filename || 'results.xlsx'));
+  div.querySelector('[data-download="csv"]')?.addEventListener('click', () => downloadSavedResult(stats,'csv'));
+  div.querySelector('[data-download="xlsx"]')?.addEventListener('click', () => downloadSavedResult(stats,'xlsx'));
+  div.querySelector('[data-image-export]')?.addEventListener('click',()=>exportImages(stats.run_id));
 }
 
 async function startTwitterFetch() {
@@ -4731,6 +4762,17 @@ function collectionTargetText(keywords, platforms, count, scope) {
   return `总目标 ${n * p * count} 条主帖：${n} 个关键词 × ${p} 个平台 × ${count} 条；每个关键词 ${p * count} 条（每平台 ${count} 条）。评论另计。`;
 }
 function updateCollectionTargets() {
+  const imageSearch = document.getElementById('collect-mode')?.value==='images';
+  const imageSchedule = document.getElementById('schedule-collect-mode')?.value==='images';
+  for (const [id,enabled] of [['user-block-resources',imageSearch],['modal-block-resources',imageSchedule]]) {
+    const box=document.getElementById(id); if(box){box.disabled=enabled;if(enabled)box.checked=false;}
+  }
+  for (const [id,enabled] of [['search-include-replies',imageSearch],['modal-include-replies',imageSchedule]]) {
+    const box=document.getElementById(id);if(box){box.disabled=enabled;if(enabled)box.checked=true;}
+  }
+  if(imageSchedule && _fetchConfig){_fetchConfig.block_resources=false;_fetchConfig.include_replies=true;}
+  const format=document.getElementById('schedule-save-format');
+  if(format){format.disabled=imageSchedule;format.title=imageSchedule?'仅图片模式自动导出 ZIP 图片包与来源清单':'';}
   const scheduleKeywords = (document.getElementById('schedule-keywords')?.value || '').split('\n');
   const modalOpen = document.getElementById('fetch-config-modal')?.classList.contains('show');
   const platforms = modalOpen ? [...document.querySelectorAll('#modal-platform-checks input:checked')].map(x=>x.value) : (_fetchConfig?.platforms || []);
@@ -4744,7 +4786,7 @@ function updateCollectionTargets() {
 }
 document.addEventListener('input', updateCollectionTargets);
 document.addEventListener('change', event=>{
-  if(event.target.id==='schedule-collect-scope') updateFetchConfigSummary();
+  if(['schedule-collect-scope','schedule-collect-mode'].includes(event.target.id)) updateFetchConfigSummary();
   updateCollectionTargets();
 });
 window.addEventListener('DOMContentLoaded', updateCollectionTargets);
@@ -4752,6 +4794,8 @@ window.addEventListener('DOMContentLoaded', updateCollectionTargets);
 function collectionOptionsHtml(prefix, schedule=false) {
   return `<details style="margin:12px 0"><summary>采集范围与恢复设置</summary>
   <p style="font-size:12px">默认目标＝关键词数 × 平台数 × 主帖条数。按去重主帖计算，评论另计；不足时显示缺口。</p>
+  <label>采集内容 <select id="${prefix}-mode"><option value="text">文本及原有媒体链接</option><option value="images">仅图片（下载图片文件）</option></select></label>
+  <p style="font-size:12px">仅图片：自动检查匹配主帖及其评论里的图片，文字配图和纯图片均包含。主帖目标不是图片张数。自动关闭图片资源屏蔽；导出 ZIP 图片包与来源清单，不导出正文。支持平台原生图片，不含头像、视频封面及任意外链。</p>
   <div class="form-row">
     <label>数量口径 <select id="${prefix}-scope"><option value="per_keyword">每关键词、每平台分别计算（默认）</option><option value="per_platform">每个平台合计（关键词共享额度）</option><option value="total">整个任务合计（按平台顺序）</option></select></label>
     <label>开始日期（UTC） <input type="date" id="${prefix}-since"></label>
@@ -4765,7 +4809,7 @@ function collectionOptionsHtml(prefix, schedule=false) {
   <p style="font-size:12px">每页自动保存；重启后可在采集记录中续抓或只补评论。Reddit 按可访问结果筛选日期，语言条件仅作用于 X。加速模式仍受自动限速保护。</p></details>`;
 }
 function getCollectionOptions(prefix) {
-  return {count_scope:document.getElementById(prefix+'-scope').value,
+  return {content_mode:document.getElementById(prefix+'-mode').value, count_scope:document.getElementById(prefix+'-scope').value,
     since:document.getElementById(prefix+'-since').value||null, until:document.getElementById(prefix+'-until').value||null,
     window_days:Number(document.getElementById(prefix+'-window').value),
     languages:document.getElementById(prefix+'-languages').value.split(',').map(v=>v.trim()).filter(Boolean),
@@ -4776,6 +4820,7 @@ function getCollectionOptions(prefix) {
 }
 function setCollectionOptions(prefix, p={}) {
   queueMicrotask(updateCollectionTargets);
+  document.getElementById(prefix+'-mode').value=p.content_mode||'text';
   document.getElementById(prefix+'-scope').value=p.count_scope||'per_keyword';
   document.getElementById(prefix+'-since').value=p.since||'';
   document.getElementById(prefix+'-until').value=p.until||'';
@@ -4841,9 +4886,10 @@ async function loadCollectionHistory(offset=collectionHistoryOffset) {
     el.innerHTML=runs.map(r=>`<div style="margin:8px 0;padding:8px;border:1px solid var(--border)">
       ${esc(new Date(r.created).toLocaleString())} · ${esc(labels[r.status]||r.status)} · 已保存 ${Number(r.saved_posts)||0} 条主帖
       ${r.comments_pending != null ? `<div>评论已处理主帖：${Number(r.comments_finished)||0}；待补抓：${Number(r.comments_pending)||0}；本轮新增评论：${Number(r.new_comments)||0}</div>`:''}
+      ${r.content_mode==='images'?`<div>图片地址 ${Number(r.images_found)||0}；已下载 ${Number(r.images_downloaded)||0}；待下载 ${Number(r.images_pending)||0}；失败/不支持 ${Number(r.images_failed)||0}；去重文件 ${Number(r.image_files)||0}</div>`:''}
       ${r.error?`<div style="font-size:12px">${esc(r.error)}</div>`:''}
       <button class="btn btn-secondary" data-result="${esc(r.id)}" ${collectionDownloading.has(r.id)?'disabled':''}>汇总与下载</button>
-      ${!r.active?`<button class="btn btn-secondary" data-resume="${esc(r.id)}" ${collectionRestarting.has(r.id)?'disabled':''}>继续补抓</button><button class="btn btn-secondary" data-comments="${esc(r.id)}" ${collectionRestarting.has(r.id)?'disabled':''}>只补评论</button>`:''}</div>`).join('')||'暂无采集记录';
+      ${!r.active?`<button class="btn btn-secondary" data-resume="${esc(r.id)}" ${collectionRestarting.has(r.id)?'disabled':''}>继续补抓</button><button class="btn btn-secondary" data-comments="${esc(r.id)}" ${collectionRestarting.has(r.id)?'disabled':''}>只补评论</button>${r.content_mode==='images'?`<button class="btn btn-secondary" data-images="${esc(r.id)}" ${collectionRestarting.has(r.id)?'disabled':''}>只补图片</button>`:''}`:''}</div>`).join('')||'暂无采集记录';
     el.insertAdjacentHTML('beforeend',`${offset?`<button class="btn btn-secondary" onclick="loadCollectionHistory(${Math.max(0,offset-30)})">上一页</button>`:''}${data.has_more?`<button class="btn btn-secondary" onclick="loadCollectionHistory(${offset+30})">下一页</button>`:''}`);
     const selected=runs.find(r=>r.id===collectionSelectedRun);
     if(selected) {
@@ -4865,24 +4911,25 @@ async function loadCollectionHistory(offset=collectionHistoryOffset) {
       }catch(e){ /* api already reports the error */ }
       finally{collectionDownloading.delete(rid);b.disabled=false;el.querySelectorAll('[data-result]').forEach(button=>{if(button.dataset.result===rid)button.disabled=false;});}
     });
-    const restart=async(rid,comments)=>{
+    const restart=async(rid,comments,images=false)=>{
       if(collectionRestarting.has(rid))return;
       collectionRestarting.add(rid);
       collectionHistoryRevision++;
-      el.querySelectorAll('[data-resume],[data-comments]').forEach(b=>{if((b.dataset.resume||b.dataset.comments)===rid)b.disabled=true;});
+      el.querySelectorAll('[data-resume],[data-comments],[data-images]').forEach(b=>{if((b.dataset.resume||b.dataset.comments||b.dataset.images)===rid)b.disabled=true;});
       try {
-        const r=await api('/api/collections/'+encodeURIComponent(rid)+'/resume?comments_only='+comments,{method:'POST'});
+        const r=await api('/api/collections/'+encodeURIComponent(rid)+'/resume?comments_only='+comments+'&images_only='+images,{method:'POST'});
         if(!['started','ok'].includes(r.status)){toast(r.error||'启动失败','error');return;}
         collectionSelectedRun=rid;
-        const running={status:'running',run_id:rid,total_posts:runs.find(x=>x.id===rid)?.saved_posts||0};
+        const running={...runs.find(x=>x.id===rid),status:'running',run_id:rid,total_posts:runs.find(x=>x.id===rid)?.saved_posts||0};
         document.querySelectorAll('[data-run-id]').forEach(div=>{if(div.dataset.runId===rid)renderCrawlResult(div.id,running,{title:'补抓进度'});});
         renderCrawlResult('collection-history-result',running,{title:'补抓进度'});
-        toast(comments?'评论补抓已启动':'续抓已启动','success');
+        toast(images?'图片补下载已启动':comments?'评论补抓已启动':'续抓已启动','success');
       }catch(e){ /* api already reports the error */ }
       finally{collectionRestarting.delete(rid);loadCollectionHistory();}
     };
     el.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>restart(b.dataset.resume,false));
     el.querySelectorAll('[data-comments]').forEach(b=>b.onclick=()=>restart(b.dataset.comments,true));
+    el.querySelectorAll('[data-images]').forEach(b=>b.onclick=()=>restart(b.dataset.images,false,true));
   }catch(e){
     keepPolling=true;
     el.textContent='进度暂时无法刷新，任务可能仍在运行；正在重试，请勿重复启动。';

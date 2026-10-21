@@ -25,6 +25,12 @@ def result(store, rid, detail=None):
 
 
 def _result(store, rid, detail=None):
+    if store.get(rid)['spec'].get('content_mode') == 'images':
+        data = summary(store,rid)
+        data['status'] = store.get(rid)['status']
+        if data['status']=='success' and (data['missing_posts'] or data.get('comments_pending') or data['images_pending'] or data['images_failed']):
+            data['status'] = 'partial'
+        return data
     from src.api.main import _generate_xlsx_bytes
     record = store.get(rid)
     export_stem = store.export_stem(rid) or f'collection_{rid[:12]}'
@@ -66,7 +72,7 @@ def _result(store, rid, detail=None):
             'xlsx_filename':f'{export_stem}.xlsx'}
 
 
-async def start(spec, supplied_cookies=None, rid=None, comments_only=False, reset_search=False):
+async def start(spec, supplied_cookies=None, rid=None, comments_only=False, reset_search=False, images_only=False):
     from src.api import main as api
     store = Store()
     if rid:
@@ -106,7 +112,7 @@ async def start(spec, supplied_cookies=None, rid=None, comments_only=False, rese
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             async def execute():
-                task = asyncio.create_task(collect(store,rid,cookies,comments_only=comments_only,
+                task = asyncio.create_task(collect(store,rid,cookies,comments_only=comments_only,images_only=images_only,
                     cancelled=lambda:api._is_task_cancelled(rid),
                     progress=lambda p:api._set_task_status(rid,{'status':'running','progress':p,'result':None})))
                 try:
@@ -160,6 +166,9 @@ def summary(store, rid):
         cached = comment_summary(rows, spec.include_replies)
         cached['refreshed_posts'] = sum(r.get('type', 'post') != 'comment' and r.get('collection_kind') == 'revisit' for r in rows)
         cached = store.progress(rid, cached, only_if_missing=True)
+    if spec.content_mode == 'images':
+        from src.collection.images import Images
+        cached = {**cached, **Images(store).summary(rid)}
     active = run_active(rid)
     status = record['status']
     if active:
@@ -168,7 +177,7 @@ def summary(store, rid):
         status = 'interrupted'
     expected = expected_posts(spec)
     missing = 0 if spec.probe else max(0, expected-cached['saved_posts']+cached.get('refreshed_posts', 0))
-    if status == 'success' and (missing or cached.get('comments_pending')):
+    if status == 'success' and (missing or cached.get('comments_pending') or cached.get('images_pending') or cached.get('images_failed')):
         status = 'partial'
     return {**cached, 'id': rid, 'run_id': rid, 'created': record['created'], 'updated': record['updated'],
             'status': status, 'active': active, 'error': record['error'],
@@ -193,18 +202,20 @@ def saved_summary(rid: str):
 
 
 @router.post('/api/collections/{rid}/resume')
-async def resume(rid: str, comments_only: bool=False):
+async def resume(rid: str, comments_only: bool=False, images_only: bool=False):
     store = Store()
     try:
         record = store.get(rid)
     except ValueError as exc:
         raise HTTPException(404,str(exc))
+    if images_only and record['spec'].get('content_mode') != 'images':
+        raise HTTPException(400,'该记录不是图片采集任务')
     if record['owner']:
         # Scheduled recovery must use the scheduler's claim and export/analysis lifecycle.
         from src.api.main import run_scheduled_task_now
-        return await run_scheduled_task_now(record['owner'], collection_id=rid, comments_only=comments_only)
+        return await run_scheduled_task_now(record['owner'], collection_id=rid, comments_only=comments_only, images_only=images_only)
     # Claim before resetting checkpoints; competing resumes cannot mutate an active run.
-    return await start(None, rid=rid, comments_only=comments_only, reset_search=not comments_only)
+    return await start(None, rid=rid, comments_only=comments_only, reset_search=not comments_only and not images_only, images_only=images_only)
 
 
 @router.get('/api/collections/{rid}/result')
@@ -229,3 +240,18 @@ async def preflight(body: dict):
     except ValueError as exc:
         raise HTTPException(400,str(exc))
     return await start(spec,body.get('cookies',[]))
+
+
+@router.post('/api/collections/{rid}/images/export')
+async def export_images(rid: str, body: dict):
+    from src.collection.images import Images
+    try:
+        store = Store()
+        if store.get(rid)['spec'].get('content_mode') != 'images':
+            raise ValueError('该记录不是图片采集任务')
+        path = await run_in_threadpool(Images(store).export, rid, body.get('folder') or None)
+        return {'status':'ok','path':path}
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    except OSError:
+        raise HTTPException(500,'图片包保存失败，请检查目录权限或磁盘空间')

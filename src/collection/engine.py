@@ -20,6 +20,7 @@ class CollectionSpec(BaseModel):
     platforms: list[Literal['twitter', 'reddit']] = Field(default_factory=lambda: ['twitter'])
     count: int = Field(default=50, ge=1, le=10000)
     count_scope: Literal['per_keyword', 'per_platform', 'total'] = 'per_keyword'
+    content_mode: Literal['text', 'images'] = 'text'
     include_replies: bool = False
     block_resources: bool = False
     sort_by: Literal['top', 'live', 'hot', 'new'] = 'top'
@@ -67,7 +68,11 @@ class CollectionSpec(BaseModel):
             if not all(users):
                 raise ValueError('请输入有效的 X 用户名或主页链接')
             self.keywords = list(dict.fromkeys(users))
+        if self.content_mode == 'images':
+            self.block_resources = False
+            self.include_replies = True
         if self.probe:
+            self.content_mode = 'text'
             self.count=1
             self.include_replies=False
             self.since=self.until=None
@@ -195,7 +200,7 @@ async def fetch_comments(fetcher, platform, posts, cookies):
     return await fetcher._fetch_all_comments_parallel(posts, cookies, headers, fetcher.proxy)
 
 
-async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=None, comments_only=False, checkpoint=None, seen_ids=None, platform_event=None):
+async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=None, comments_only=False, checkpoint=None, seen_ids=None, platform_event=None, images_only=False):
     original_cancelled = cancelled
     cancelled = lambda: original_cancelled() or bool(asyncio.current_task().cancelling())
     record = store.get(rid)
@@ -203,6 +208,17 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
     if comments_only and not spec.include_replies:
         spec.include_replies = True
         store.update_spec(rid,spec.model_dump(mode='json'))
+    from src.collection.images import Images, without_text
+    images = Images(store) if spec.content_mode == 'images' else None
+    if images_only and images is None:
+        raise ValueError('该记录不是图片采集任务')
+    image_attempted = set()
+    async def download_images():
+        def progress_images():
+            publish_progress('images')
+            if platform_event: platform_event('progress', '')
+        await images.download(rid, {p:c.get('proxy') for p,c in cookie_map.items()}, cancelled,
+                              progress_images, attempted=image_attempted)
     owner = record['owner']
     stamp = record['created']
     history_rows = []
@@ -211,6 +227,8 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
             retention = 90 if spec.task_type=='url_fetch' else 30
             oldest = datetime.fromisoformat(stamp)-timedelta(days=retention)
             if old['id'] != rid and oldest <= datetime.fromisoformat(old['created']) < datetime.fromisoformat(stamp):
+                if store.get(old['id'])['spec'].get('content_mode','text') != spec.content_mode:
+                    continue
                 history_rows = merge(history_rows, store.rows(old['id']))
     historical = {key(r) for r in history_rows if r.get('type','post')!='comment'}
     previous = store.units(rid)
@@ -224,6 +242,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
         summary.update(phase=phase, attempt_started=attempt_started,
                        new_comments=max(0, summary['total_comments']-baseline),
                        comments_only=comments_only)
+        if images: summary.update(images.summary(rid))
         store.progress(rid, summary)
     publish_progress()
     # Legacy zero-comment shortcuts were never verified against the comment endpoint.
@@ -244,7 +263,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                 platform_event('acquired',platform)
     store.status(rid, 'running')
     try:
-        for platform in spec.platforms:
+        for platform in ([] if images_only else spec.platforms):
             if platform_event:
                 platform_event('start',platform)
             pc = cookie_map.get(platform, {})
@@ -276,6 +295,9 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     def save_revisit(incoming):
                         nonlocal current, all_rows
                         incoming = [{**r,'platform':platform,'keyword':parent.get('keyword',''), 'collection_kind':'revisit'} for r in incoming]
+                        if images:
+                            incoming = without_text(incoming)
+                            images.discover(rid, incoming)
                         current = merge(current,incoming)
                         store.save(rid,uid,current,old_state)
                         all_rows = merge(all_rows,current)
@@ -304,6 +326,9 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                 def persist(incoming=()):
                     nonlocal rows, all_rows
                     incoming = [{**r, 'platform':platform, 'keyword':keyword} for r in incoming]
+                    if images:
+                        incoming = without_text(incoming)
+                        images.discover(rid, incoming)
                     rows = merge(rows, incoming)
                     state['saved_posts'] = sum(r.get('type','post')!='comment' for r in rows)
                     state['last_saved_id'] = key(rows[-1]) if rows else None
@@ -438,6 +463,8 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                             persist([post])
                         finally:
                             Traffic.leave(platform, error, time.monotonic()-began)
+                if images:
+                    await download_images()
                 actual = sum(r.get('type','post')!='comment' for r in rows)
                 counts.append({'platform':platform, 'keyword':keyword, 'requested_count':target,
                                'actual_count':actual,'missing_count':max(0,target-actual),
@@ -447,7 +474,13 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     await asyncio.sleep(spec.batch_cooldown)
             if platform_event:
                 platform_event('done',platform)
+        if images_only:
+            await download_images()
         all_rows = store.rows(rid)
+        if images:
+            image_state = images.summary(rid)
+            if image_state['images_pending'] or image_state['images_failed']:
+                errors.append(f"图片待下载或失败 {image_state['images_pending'] + image_state['images_failed']} 个，可只补图片")
         main = [r for r in all_rows if r.get('type','post')!='comment']
         pending = sum(r.get('comments_status')!='finished' for r in main) if spec.include_replies else 0
         expected = expected_posts(spec)

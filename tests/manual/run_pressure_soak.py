@@ -19,7 +19,7 @@ os.chdir(ROOT)
 results=[]
 for index in range(args.rounds):
     start=time.monotonic()
-    status=pytest.main(['tests/stress/test_release_pressure.py','tests/stress/test_comment_recovery_pressure.py','-q','--disable-warnings'])
+    status=pytest.main(['tests/stress/test_release_pressure.py','tests/stress/test_comment_recovery_pressure.py','tests/stress/test_image_pressure.py','tests/test_image_collection.py','-q','--disable-warnings'])
     gc.collect()
     try:
         import resource

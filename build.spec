@@ -98,6 +98,11 @@ a = Analysis(
         'aiosqlite',
         # httpx
         'httpx',
+        'PIL.Image',
+        'PIL.PngImagePlugin',
+        'PIL.JpegImagePlugin',
+        'PIL.WebPImagePlugin',
+        'PIL.GifImagePlugin',
         # pydantic
         'pydantic',
         'pydantic.deprecated.decorator',
@@ -134,6 +139,7 @@ a = Analysis(
         'src.common.database',
         'src.common.models',
         'src.common.version',
+        'src.collection.images',
         'src.adapter',
         'src.adapter.base',
         'src.crawlers',

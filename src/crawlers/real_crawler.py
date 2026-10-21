@@ -103,7 +103,7 @@ def _tweet_to_post(t: dict, keyword: str) -> ParsedPost:
             "replies": t.get("replies", 0) or 0,
         },
         tags=[keyword] if keyword else [],
-        raw_data={"source": "twitter", "type": "post", "parent_id": "", "url": t.get("url", ""), **{k:t[k] for k in ("comments_status","comments_warning","media_urls","collection_kind") if k in t}},
+        raw_data={"source": "twitter", "type": "post", "parent_id": "", "url": t.get("url", ""), **{k:t[k] for k in ("comments_status","comments_warning","media_urls","image_urls","collection_kind") if k in t}},
     )
 
 
@@ -117,7 +117,7 @@ def _tweet_reply_to_post(r: dict, parent_id: str, keyword: str) -> ParsedPost:
         published_at=_parse_dt(r.get("created_at")),
         metrics={},
         tags=[keyword] if keyword else [],
-        raw_data={"source": "twitter", "type": "comment", "parent_id": parent_id, "url": ""},
+        raw_data={"source": "twitter", "type": "comment", "parent_id": parent_id, "url": r.get("url", ""), "image_urls": r.get("image_urls", []), "media_urls": r.get("media_urls", "")},
     )
 
 
@@ -138,7 +138,7 @@ def _reddit_to_post(d: dict, keyword: str) -> ParsedPost:
         },
         tags=[keyword] if keyword else [],
         raw_data={"source": "reddit", "type": "post", "parent_id": "",
-                  "subreddit": d.get("subreddit", ""), "url": d.get("url", ""), **{k:d[k] for k in ("comments_status","comments_warning","media_urls","collection_kind") if k in d}},
+                  "subreddit": d.get("subreddit", ""), "url": d.get("url", ""), **{k:d[k] for k in ("comments_status","comments_warning","media_urls","image_urls","collection_kind") if k in d}},
     )
 
 
@@ -153,7 +153,7 @@ def _reddit_comment_to_post(c: dict, keyword: str) -> ParsedPost:
         metrics={"score": c.get("score", 0) or 0},
         tags=[keyword] if keyword else [],
         raw_data={"source": "reddit", "type": "comment",
-                  "parent_id": str(c.get("post_id", "")), "comment_id": c.get("comment_id", ""), "url": c.get("url", "")},
+                  "parent_id": str(c.get("post_id", "")), "comment_id": c.get("comment_id", ""), "url": c.get("url", ""), "image_urls": c.get("image_urls", []), "media_urls": c.get("media_urls", "")},
     )
 
 

@@ -212,13 +212,15 @@ _EXTRACT_TWEETS_JS = r"""(args) => {
 
         // ── media（加速模式下跳过提取）──
         const mediaUrls = [];
+        const imageUrls = [];
         let hasPhoto = false, hasVideo = false;
         let mediaType = 'none';
         if (!skipMedia) {
             const photoEls = article.querySelectorAll('[data-testid="tweetPhoto"] img');
             for (const img of photoEls) {
                 const src = img.getAttribute('src') || '';
-                if (src && src.includes('pbs.twimg.com/media/') && !src.startsWith('blob:')) {
+                if (img.closest('article') === article && !img.closest('[data-testid="quoteTweet"]') && src && src.includes('pbs.twimg.com/media/') && !src.startsWith('blob:')) {
+                    imageUrls.push(src);
                     mediaUrls.push(src.replace(/&name=\w+/, '&name=large').replace(/\?name=\w+/, '?name=large'));
                     hasPhoto = true;
                 }
@@ -252,6 +254,7 @@ _EXTRACT_TWEETS_JS = r"""(args) => {
                 has_media: skipMedia ? false : (mediaUrls.length > 0 || hasVideo),
                 media_type: mediaType,
                 media_urls: skipMedia ? '' : mediaUrls.join(';'),
+                image_urls: imageUrls,
                 is_retweet: isRetweet,
                 is_reply: false,
             });
@@ -1100,12 +1103,14 @@ class TwitterCookieFetcher:
 
             // ── 媒体提取 ──
             const mediaUrls = [];
+        const imageUrls = [];
             let hasPhoto = false, hasVideo = false;
 
             const photoEls = article.querySelectorAll('[data-testid="tweetPhoto"] img');
             for (const img of photoEls) {
                 const src = img.getAttribute('src') || '';
-                if (src && src.includes('pbs.twimg.com/media/') && !src.startsWith('blob:')) {
+                if (img.closest('article') === article && !img.closest('[data-testid="quoteTweet"]') && src && src.includes('pbs.twimg.com/media/') && !src.startsWith('blob:')) {
+                    imageUrls.push(src);
                     mediaUrls.push(src.replace(/&name=\w+/, '&name=large').replace(/\?name=\w+/, '?name=large'));
                     hasPhoto = true;
                 }
@@ -1129,7 +1134,7 @@ class TwitterCookieFetcher:
                 tweetId, author, displayName, text, datetime,
                 hasMedia: mediaUrls.length > 0 || hasVideo,
                 mediaType: mediaType,
-                mediaUrls: mediaUrls.join(';'),
+                mediaUrls: mediaUrls.join(';'), imageUrls,
             });
         }
         return results;
@@ -1214,6 +1219,7 @@ class TwitterCookieFetcher:
                         "has_media": r.get("hasMedia", False),
                         "media_type": r.get("mediaType", "none"),
                         "media_urls": r.get("mediaUrls", ""),
+                        "image_urls": r.get("imageUrls", []),
                     }
                     retained[tid] = collected[tid]
             retained.update(collected)

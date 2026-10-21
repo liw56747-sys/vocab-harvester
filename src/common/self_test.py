@@ -35,6 +35,18 @@ async def check():
         assert data['total_posts']==1 and base64.b64decode(data['xlsx_data']).startswith(b'PK')
         rows=list(csv.DictReader(io.StringIO(base64.b64decode(data['csv_data']).decode('utf-8-sig'))))
         assert rows[0]['content']=='中文😀'
+        from PIL import Image
+        from src.collection.images import Images
+        import zipfile
+        picture=io.BytesIO();Image.new('RGB',(2,2),'red').save(picture,format='PNG')
+        image_run=store.create(CollectionSpec(keywords=['image'],content_mode='images').model_dump(mode='json'))
+        images=Images(store)
+        images.discover(image_run,[{'platform':'reddit','keyword':'image','post_id':'1','image_urls':['https://i.redd.it/self-test.png']}])
+        await images.download(image_run,transport=httpx.MockTransport(lambda request:httpx.Response(200,content=picture.getvalue())))
+        assert images.summary(image_run)['images_downloaded']==1
+        archive=images.export(image_run,store.path.parent/'exports')
+        with zipfile.ZipFile(archive) as z:
+            assert z.testzip() is None and json.loads(z.read('manifest.json'))['images'][0]['status']=='downloaded'
         async with async_playwright() as p:
             browser=await p.chromium.launch(headless=True)
             page=await browser.new_page()
@@ -42,7 +54,7 @@ async def check():
             assert await page.locator('main').inner_text()=='bundled browser ready'
             await browser.close()
     return {'status':'passed','version':get_version(),'checks':['startup','database','static-ui','audit-disconnected',
-             'retired-endpoint','checkpoint','csv','xlsx','tzdata','crawler-imports','bundled-chromium']}
+             'retired-endpoint','checkpoint','csv','xlsx','tzdata','crawler-imports','image-download-validate-export','bundled-chromium']}
 
 
 def run(report):

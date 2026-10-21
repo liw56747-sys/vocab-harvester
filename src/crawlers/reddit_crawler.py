@@ -7,6 +7,8 @@ Reddit 的 .json 端点直接返回结构化数据，无需 Playwright DOM 解�
 
 from __future__ import annotations
 
+from src.collection.images import reddit_images
+
 from src.crawlers.progress import report_rows, report_progress, observe_rows, row_observer
 
 import asyncio
@@ -277,6 +279,7 @@ class RedditCookieFetcher:
                             "has_media": has_media,
                             "media_type": media_type,
                             "media_urls": ";".join(media_urls),
+                            "image_urls": reddit_images(d),
                         })
                         page_new += 1
 
@@ -572,7 +575,9 @@ class RedditCookieFetcher:
                     "content": d.get("body", "") or "", "created_at": created_at,
                     "url": f"https://www.reddit.com{d.get('permalink', '')}",
                     "score": d.get("score", 0), "upvote_ratio": 0, "num_comments": 0,
-                    "has_media": False, "media_type": "none", "media_urls": "",
+                    "has_media": bool(reddit_images(d, comment=True)), "media_type": "image" if reddit_images(d, comment=True) else "none",
+                    "media_urls": ";".join(reddit_images(d, comment=True)), "image_urls": reddit_images(d, comment=True),
+                    "root_post_id": parent_post_id,
                 })
             # 重复父节点仍可能带回新的深层回复。
             replies = d.get("replies")

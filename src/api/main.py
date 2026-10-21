@@ -335,6 +335,7 @@ class PlatformCookieConfig(BaseModel):
     proxy: str | None = None       
 
 class CollectionOptions(BaseModel):
+    content_mode: str = "text"
     count_scope: str = "per_keyword"
     since: str | None = None
     until: str | None = None
@@ -656,7 +657,7 @@ async def delete_scheduled_task(task_id: str):
 
 
 @app.post("/api/scheduled-tasks/{task_id}/run")
-async def run_scheduled_task_now(task_id: str, collection_id: str | None = None, comments_only: bool = False):
+async def run_scheduled_task_now(task_id: str, collection_id: str | None = None, comments_only: bool = False, images_only: bool = False):
     """立即执行一次定时任务"""
     try:
         from src.common.database import get_db
@@ -676,6 +677,7 @@ async def run_scheduled_task_now(task_id: str, collection_id: str | None = None,
                 raise ValueError("采集记录与定时任务不匹配")
             task['collection_id'] = collection_id
             task['comments_only'] = comments_only
+            task['images_only'] = images_only
         run = _claim_scheduled_run(task_id)
         if run is None:
             return {"status": "error", "message": "该任务正在运行或正在停止，请勿重复执行", "error": "该任务正在运行或正在停止，请勿重复执行"}
@@ -846,13 +848,15 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
                     beat()
                 elif event == 'start':
                     run.start_platform(platform)
+                elif event == 'progress':
+                    beat()
                 elif event == 'done':
                     run.finish_platform(platform)
             try:
                 rows, detail = await collect(Store(),run.collection_id,
                     {platform:{**cookies,'proxy':proxy} for platform,cookies,proxy in targets},
                     cancelled=run.cancelled.is_set,comments_only=run.comments_only,checkpoint=snapshot,seen_ids=seen_ids,
-                    platform_event=platform_event)
+                    platform_event=platform_event,images_only=getattr(run,'images_only',False))
                 snapshot(rows)
                 for platform,_,_ in targets:
                     run.finish_platform(platform)
@@ -988,6 +992,8 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
         else:
             _dimension = "kw:" + "|".join(sorted(k.strip() for k in keywords if k.strip()))
             _retention_days = 30
+        if params.get('content_mode') == 'images':
+            _dimension = 'images:' + _dimension
         _since_iso = (datetime.now() - timedelta(days=_retention_days)).isoformat()
         # 一次性取出该维度全部已见 post_id，传入抓取层用于丢弃历史重复 + 迭代补足到设定条数
         from src.vocabulary.storage import VocabStorage
@@ -1007,6 +1013,9 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
             proxy = pc.get("proxy") or None
             if proxy and not proxy.startswith(("http://", "https://", "socks5://")):
                 proxy = f"http://{proxy}"
+            if task_config.get("images_only") and p in platform_map:
+                targets.append((p, {}, proxy))
+                continue
             if p == "twitter":
                 if pc.get("ct0") and pc.get("auth_token"):
                     targets.append(("twitter", {"ct0": pc["ct0"], "auth_token": pc["auth_token"]}, proxy))
@@ -1064,6 +1073,7 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
             run.collection_id = _collection_store.create(_spec.model_dump(mode='json'),owner=task_id)
         run.collection_spec = _spec
         run.comments_only = task_config.get('comments_only',False)
+        run.images_only = task_config.get('images_only',False)
 
         import concurrent.futures as _cf
         loop = asyncio.get_running_loop()
@@ -1113,31 +1123,41 @@ async def _execute_scheduled_task_body(task_config: dict, run: ScheduledRun):
         if _new_ids:
             await _storage.record_seen_posts(_new_ids, _dimension, task_id, datetime.now().isoformat())
 
-        # 旧任务即使保留 analyze/model 配置，也只进行采集和导出。
-        from src.crawlers.real_crawler import PrefetchedCrawler
-        _crawlers = {p: PrefetchedCrawler(p, posts_by_platform.get(p, [])) for (p, _, _) in targets}
-        pipeline = Pipeline(crawlers=_crawlers)
-        stats = await pipeline.run(query, task_name=task_name, analyze=False, dedup_ctx=None)
-        stats["skipped_platforms"] = skipped_platforms
-
-        # 保存结果到指定路径
-        save_path = task_config.get("save_path", "")
-        save_format = params.get("save_format", "csv")
-        if save_path:
-            saved_file = await save_task_results_to_file(
-                save_path=save_path,
-                task_name=task_name,
-                stats=stats,
-                results=None,  # 从 stats.crawled_posts / sampled_posts 自动提取帖子明细
-                file_format=save_format,
-                completed_at=completed_at,
-            )
-            if saved_file:
-                logger.info(f"[定时任务 {task_id}] 结果已保存: {saved_file}")
-            else:
-                crawl_errors["导出"] = "自动导出失败；原始数据仍在采集记录中，可重新下载"
+        if _spec.content_mode == 'images':
+            from src.collection.api import summary
+            from src.collection.images import Images
+            stats = summary(_collection_store, run.collection_id)
+            stats['status'] = _collection_store.get(run.collection_id)['status']
+            save_path = task_config.get('save_path', '')
+            if save_path:
+                saved_file = await asyncio.to_thread(Images(_collection_store).export, run.collection_id, save_path)
+                logger.info('[定时任务 %s] 图片包已保存: %s', task_id, saved_file)
         else:
-            logger.info(f"[定时任务 {task_id}] 未设置自动导出路径，可从采集记录下载")
+            # 旧任务即使保留 analyze/model 配置，也只进行采集和导出。
+            from src.crawlers.real_crawler import PrefetchedCrawler
+            _crawlers = {p: PrefetchedCrawler(p, posts_by_platform.get(p, [])) for (p, _, _) in targets}
+            pipeline = Pipeline(crawlers=_crawlers)
+            stats = await pipeline.run(query, task_name=task_name, analyze=False, dedup_ctx=None)
+            stats["skipped_platforms"] = skipped_platforms
+
+            # 保存结果到指定路径
+            save_path = task_config.get("save_path", "")
+            save_format = params.get("save_format", "csv")
+            if save_path:
+                saved_file = await save_task_results_to_file(
+                    save_path=save_path,
+                    task_name=task_name,
+                    stats=stats,
+                    results=None,  # 从 stats.crawled_posts / sampled_posts 自动提取帖子明细
+                    file_format=save_format,
+                    completed_at=completed_at,
+                )
+                if saved_file:
+                    logger.info(f"[定时任务 {task_id}] 结果已保存: {saved_file}")
+                else:
+                    crawl_errors["导出"] = "自动导出失败；原始数据仍在采集记录中，可重新下载"
+            else:
+                logger.info(f"[定时任务 {task_id}] 未设置自动导出路径，可从采集记录下载")
 
         # 综合状态与失败原因：若本次未拓回任何数据且存在抳错/跳过，则标记 failed 并记录原因
         if stats.get("error"):
