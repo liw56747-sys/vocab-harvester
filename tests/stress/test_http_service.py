@@ -7,6 +7,23 @@ import subprocess
 import sys
 import time
 import httpx
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from src.collection.store import Store
+
+
+def test_concurrent_database_cold_start(tmp_path):
+    for round_number in range(10):
+        path = tmp_path / str(round_number) / 'collection.db'
+        barrier = Barrier(20)
+        def open_store(_):
+            barrier.wait(timeout=30)
+            store = Store(path)
+            assert store.list() == []
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            list(pool.map(open_store, range(20)))
+        with Store(path).connect() as db:
+            assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
 
 
 async def test_live_http_load_and_disconnected_collection(tmp_path):
