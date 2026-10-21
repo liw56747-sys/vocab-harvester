@@ -11,4 +11,10 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Reproduce cold-start HTTP pressure failure
-        run: python -m pytest tests/stress/test_http_service.py -x -q
+        shell: pwsh
+        run: |
+          for ($round = 1; $round -le 30; $round++) {
+            Write-Output "Cold-start round $round / 30"
+            python -m pytest tests/stress/test_http_service.py -x -q
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
