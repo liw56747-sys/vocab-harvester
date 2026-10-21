@@ -5,11 +5,16 @@ import hashlib
 import json
 import os
 import sqlite3
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from src.common.config import _resolve_data_dir, get_settings
+
+# SQLite's journal-mode transition can fail immediately during simultaneous
+# first opens on Windows, even with busy_timeout. Serialize schema setup only.
+_initialization_lock = threading.Lock()
 
 
 def now():
@@ -46,7 +51,7 @@ class Store:
         data_dir = os.environ.get('VOCAB_DATA_DIR') or get_settings().app.data_dir or _resolve_data_dir()
         self.path = Path(path or Path(data_dir) / 'collection.db')
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.connect() as db:
+        with _initialization_lock, self.connect() as db:
             # WAL allows readers during checkpoint writes; keep FULL commit durability.
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript('''
@@ -62,9 +67,9 @@ class Store:
     @contextmanager
     def connect(self):
         db = sqlite3.connect(str(self.path), timeout=30)
-        db.row_factory = sqlite3.Row
-        db.execute('PRAGMA synchronous=FULL')
         try:
+            db.row_factory = sqlite3.Row
+            db.execute('PRAGMA synchronous=FULL')
             with db:
                 yield db
         finally:
