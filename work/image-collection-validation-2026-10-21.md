@@ -22,12 +22,22 @@
 
 ## 本地测试结果
 
-- 最终完整自动化：289 passed，8 deselected，46.38 秒。日志 /private/tmp/v190-release-tests.log。排除项为显式 integration/interactive 标记。
+- 最终完整自动化：290 passed，8 deselected，38.69 秒。日志 /private/tmp/v190-final-regression.log。排除项为显式 integration/interactive 标记。
 - 六项真实 Chromium 界面检查通过，含 1400 次导航；图片模式最后的格式提示调整另经专项检查通过。日志 /private/tmp/v190-ui.log、/private/tmp/image-final-ui.log。
 - 同进程连续压力测试：10 轮，每轮 38 场景，共 380 通过，278.87 秒。涵盖既有采集/评论压力与图片专项；记录 image-collection-soak-2026-10-21.json。
 - 每轮收尾 1 个线程、5 个文件描述符；历史最高 RSS 从 480.8 MiB 到 550.7 MiB。历史峰值不是当前驻留内存，不能据此保证长期没有内存泄漏。
 - 连续压测之后的导出快照、Windows 重复文件写入和无 Cookie 图片恢复调整，再经 24 项图片专项/压力场景及上述最终完整回归通过。日志 /private/tmp/images-final-boundaries.log。
 - 应用离线自检通过，新增验证真实 PNG 解码、持久化和 ZIP 清单。打包后的 Windows/macOS 由发布 CI 再独立验证。
+
+## Windows 发布压测追加修复
+
+首次发布 CI 的 HTTP 并发测试发现采集历史接口返回 500；原测试未输出服务端堆栈。补充诊断后，普通冷启动 30 轮未重现；强化为 20 线程同时打开新数据库后，在 Windows 首轮直接复现 `Store.__init__` 的 `PRAGMA journal_mode=WAL` 抛出 `sqlite3.OperationalError: database is locked`（Actions 39583689898）。
+
+修复为进程内串行化数据库模式和表结构初始化，连接配置错误也确保关闭连接；不串行化后续正常读写。新增冷启动测试每轮覆盖 10 个独立新库；原 HTTP 压测保留失败堆栈输出。修复后本地相关 37 项及完整 290 项通过。
+
+Windows 修复后 30 轮全部通过（Actions 39584110950），共 60 项测试、300 个独立新库、每库 20 线程同时初始化、9000 次真实 HTTP 请求。日志 /private/tmp/v190-windows-fixed.log。临时诊断流水线已移除，回归场景保留在正式发布测试中。
+
+此数据库竞争不是用户 Win11 白屏的已确认根因。
 
 ## 压力场景规模
 
