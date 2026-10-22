@@ -67,6 +67,7 @@ async def main():
         await page.wait_for_function("document.getElementById('schedule-name').value==='旧规则任务'")
         assert await page.locator('#schedule-dialect').input_value()=='apscheduler'
         assert await page.locator('#schedule-collect-scope').input_value()=='per_keyword'
+        await page.locator('#schedule-step-next').click()
         await page.locator('#schedule-weekday').select_option('wed')
         await page.locator('#schedule-time').fill('15:00');await page.locator('#schedule-time').dispatch_event('change')
         await page.wait_for_function("document.getElementById('schedule-cron').value==='0 15 * * wed'")
@@ -105,6 +106,7 @@ async def main():
         assert created['params']['count']==50 and created['params']['platforms']==['twitter','reddit']
         await page.evaluate("setCollectionOptions('collect');showPage('twitter')")
         await page.locator('#search-keyword').fill('a,b,c,d,e,f')
+        await page.locator('#builder-next').click()
         await page.locator('#search-count').fill('50')
         assert await page.locator('#collect-scope').input_value() == 'per_keyword'
         assert '总目标 600 条主帖' in await page.locator('#collect-target-preview').inner_text()

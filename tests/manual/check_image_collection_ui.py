@@ -53,7 +53,8 @@ async def main():
         page.on('pageerror',lambda e:errors.append(str(e)))
         await page.goto('http://127.0.0.1:9876/')
         await page.evaluate("showPage('twitter')")
-        await page.locator('#collect-mode').evaluate("el=>el.closest('details').open=true")
+        await page.locator('#search-keyword').fill('test')
+        await page.locator('#builder-next').click()
         await page.locator('#collect-mode').select_option('images')
         assert await page.locator('#search-include-replies').is_checked()
         assert await page.locator('#search-include-replies').is_disabled()
@@ -79,7 +80,7 @@ async def main():
         await page.evaluate("showPage('schedule');showScheduleForm()")
         await page.locator('#schedule-name').fill('图片任务')
         await page.locator('#schedule-keywords').fill('a\nb\nc\nd\ne\nf')
-        await page.locator('#schedule-collect-mode').evaluate("el=>el.closest('details').open=true")
+        # Content mode is now a primary field in the first editor step.
         await page.locator('#schedule-collect-mode').select_option('images')
         await page.evaluate('openFetchConfigModal()')
         assert await page.locator('#modal-include-replies').is_checked()

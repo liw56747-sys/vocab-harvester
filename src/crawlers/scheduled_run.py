@@ -91,5 +91,7 @@ class ScheduledRun:
                         continue
                     errors[platform] = ('抓取无有效进展，已请求停止并保留已采集数据'
                                         if platform == self.current_platform
-                                        else '尚未执行：本轮任务已请求停止')
+                                        else ('已保存部分数据，后续阶段未完成：本轮任务已请求停止'
+                                              if self.posts.get(platform)
+                                              else '尚未执行：本轮任务已请求停止'))
             return {'posts': copy.deepcopy(self.posts), 'errors': errors}

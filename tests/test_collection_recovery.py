@@ -285,3 +285,119 @@ async def test_default_six_keywords_two_platforms_fifty_each(monkeypatch):
     # Reopening the saved run must retain all twelve targets and avoid duplicate searches.
     await collect(Store(store.path), rid, COOKIES)
     assert len(calls) == 12 and len(store.rows(rid)) == 600
+
+
+@pytest.mark.parametrize('mode',['text','images'])
+async def test_all_400_posts_saved_before_first_comment_and_image_download(monkeypatch, mode):
+    from src.collection.images import Images
+    spec=CollectionSpec(keywords=['a','b','c','d'],platforms=['twitter','reddit'],count=50,
+                        include_replies=True,content_mode=mode)
+    store=Store();rid=store.create(spec.model_dump(mode='json'))
+    events=[]
+    monkeypatch.setattr(Traffic,'enter',AsyncMock())
+    monkeypatch.setattr(Traffic,'leave',lambda *a,**k:None)
+    async def search(self,keyword,**kwargs):
+        platform='twitter' if isinstance(self,TwitterCookieFetcher) else 'reddit'
+        events.append(('search',platform,keyword))
+        return [dict(tweet_id=f'{platform}-{keyword}-{i}',post_id=f'{platform}-{keyword}-{i}',content='parent') for i in range(50)],''
+    async def comments(fetcher,platform,posts,cookies):
+        assert len(store.rows(rid))==400
+        state=store.progress(rid)
+        assert state['phase']=='comments' and state['search_units_completed']==8
+        assert state['current_platform']==platform and state['current_keyword']==posts[0]['keyword']
+        assert state['last_progress_at']
+        events.append(('comment',platform,posts[0]['post_id']))
+        posts[0]['comments_status']='finished'
+        return posts
+    async def download(self,*a,**k):
+        assert len([e for e in events if e[0]=='comment'])==400
+        events.append(('download',))
+    monkeypatch.setattr(TwitterCookieFetcher,'search_tweets',search)
+    monkeypatch.setattr(RedditCookieFetcher,'search_posts',search)
+    monkeypatch.setattr(engine,'fetch_comments',comments)
+    monkeypatch.setattr(Images,'download',download)
+    updates=[];finished=[]
+    def platform_event(event,platform):
+        if event=='done':
+            assert len([e for e in events if e[0]=='comment' and e[1]==platform])==200
+            finished.append(platform)
+    rows,info=await collect(store,rid,COOKIES,progress=updates.append,platform_event=platform_event)
+    assert finished==['twitter','reddit']
+    comment_updates=[u for u in updates if u['phase']=='comments']
+    assert comment_updates and all(u['saved_posts']==400 for u in comment_updates)
+    assert all(u['requested_posts']==400 and u['completed']==8 for u in comment_updates)
+    assert [e[0] for e in events[:8]]==['search']*8
+    assert len(rows)==400 and info['requested_posts']==400 and info['missing_posts']==0
+    assert len(info['count_results'])==8 and info['status']=='success'
+    assert store.progress(rid)['phase']=='finished'
+    assert (events[-1][0]=='download')==(mode=='images')
+
+
+async def test_comment_stall_cancel_preserves_all_platforms_and_resume_skips_search(monkeypatch):
+    spec=CollectionSpec(keywords=['a','b'],platforms=['twitter','reddit'],count=2,include_replies=True)
+    store=Store();rid=store.create(spec.model_dump(mode='json'))
+    monkeypatch.setattr(Traffic,'enter',AsyncMock())
+    monkeypatch.setattr(Traffic,'leave',lambda *a,**k:None)
+    searches=[]
+    async def search(self,kw,**kwargs):
+        platform='twitter' if isinstance(self,TwitterCookieFetcher) else 'reddit'
+        searches.append((platform,kw))
+        return [dict(tweet_id=f'{platform}-{kw}-{i}',post_id=f'{platform}-{kw}-{i}') for i in range(2)],''
+    entered=asyncio.Event()
+    async def stall(*a):
+        entered.set();await asyncio.Future()
+    monkeypatch.setattr(TwitterCookieFetcher,'search_tweets',search)
+    monkeypatch.setattr(RedditCookieFetcher,'search_posts',search)
+    monkeypatch.setattr(engine,'fetch_comments',stall)
+    task=asyncio.create_task(collect(store,rid,COOKIES))
+    await asyncio.wait_for(entered.wait(),5)
+    assert len(store.rows(rid))==8 and len(searches)==4
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):await task
+    async def finish(fetcher,platform,posts,cookies):
+        posts[0]['comments_status']='finished';return posts
+    monkeypatch.setattr(engine,'fetch_comments',finish)
+    _,info=await collect(Store(store.path),rid,COOKIES)
+    assert info['status']=='success' and len(searches)==4
+
+
+async def test_staged_comments_keep_parent_keyword_and_platform_after_resume(monkeypatch):
+    from src.crawlers.comment_results import search_export_rows
+    spec=CollectionSpec(keywords=['alpha','beta'],platforms=['twitter','reddit'],count=2,include_replies=True)
+    store=Store();rid=store.create(spec.model_dump(mode='json'))
+    searches=[];comment_calls=[]
+    monkeypatch.setattr(Traffic,'enter',AsyncMock())
+    monkeypatch.setattr(Traffic,'leave',lambda *a,**kw:None)
+    async def search(self,keyword,**kwargs):
+        searches.append(keyword)
+        # Same IDs on different platforms must remain distinct.
+        return [dict(tweet_id=f'{keyword}-{i}',post_id=f'{keyword}-{i}',type='post',content='parent') for i in range(2)],''
+    async def comments(fetcher,platform,posts,cookies):
+        p=posts[0];identity=p['post_id'];comment_calls.append((platform,identity))
+        p['comments_status']='finished'
+        if platform=='twitter':
+            p['replies_data']=[dict(tweet_id=identity+'-reply',content=identity)]
+            result=posts
+        else:
+            result=posts+[dict(post_id=identity,comment_id=identity+'-reply',parent_id=identity,type='comment',content=identity)]
+        report_rows(result)
+        if len(comment_calls)==5:
+            raise asyncio.CancelledError
+        return result
+    monkeypatch.setattr(TwitterCookieFetcher,'search_tweets',search)
+    monkeypatch.setattr(RedditCookieFetcher,'search_posts',search)
+    monkeypatch.setattr(engine,'fetch_comments',comments)
+    with pytest.raises(asyncio.CancelledError):
+        await collect(store,rid,COOKIES)
+    assert len(searches)==4
+    rows,info=await collect(Store(store.path),rid,COOKIES)
+    assert len(searches)==4 and len(comment_calls)==8
+    exported=search_export_rows(rows)
+    parents={(r['platform'],r['post_id']):r['keyword'] for r in exported if r['type']=='post'}
+    replies=[r for r in exported if r['type']=='comment']
+    assert len(parents)==8 and len(replies)==8
+    assert info['comments_pending']==0
+    for reply in replies:
+        assert parents[(reply['platform'],reply['parent_id'])]==reply['keyword']
+        assert reply['content']==reply['parent_id']
+        assert reply['comment_id']==reply['parent_id']+'-reply'

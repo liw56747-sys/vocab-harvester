@@ -132,3 +132,21 @@ async def test_legacy_scheduled_analysis_is_ignored(init_test_db,monkeypatch,tmp
     assert not state['last_error']
     assert (await (await db.execute('SELECT COUNT(*) FROM vocabulary')).fetchone())[0]==0
     assert list(tmp_path.glob('*.csv'))
+
+
+async def test_history_owner_filter_keeps_task_runs_separate():
+    spec=engine.CollectionSpec(keywords=['a','b','c','d'],platforms=['twitter','reddit'],count=50).model_dump(mode='json')
+    store=Store()
+    first=store.create(spec,owner='daily / test')
+    second=store.create(spec,owner='another')
+    manual=store.create(spec)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api.app),base_url='http://local') as client:
+        filtered=(await client.get('/api/collections',params={'owner':'daily / test'})).json()
+        assert [r['id'] for r in filtered['runs']]==[first]
+        assert filtered['runs'][0]['requested_posts']==400
+        assert filtered['runs'][0]['keyword_count']==4
+        assert filtered['runs'][0]['owner']=='daily / test'
+        all_runs=(await client.get('/api/collections')).json()
+        assert {r['id'] for r in all_runs['runs']}=={first,second,manual}
+        empty=(await client.get('/api/collections',params={'owner':'missing'})).json()
+        assert empty['runs']==[]

@@ -56,7 +56,10 @@ def _result(store, rid, detail=None):
             target = state.get('target', spec.count)
             counts.append({'platform':state.get('platform') or posts[0]['platform'],'keyword':state.get('keyword') or posts[0]['keyword'],
                            'actual_count':n,'requested_count':target,'missing_count':max(0,target-n), 'status':'fulfilled' if n>=target else 'shortfall'})
-    return {**(detail or {}), 'run_id':rid, 'status': 'cancelled' if record['status']=='interrupted' else record['status'],
+    saved_progress = store.progress(rid) or {}
+    stage_progress = {k: saved_progress[k] for k in ('phase', 'current_platform', 'current_keyword',
+        'last_progress_at', 'search_units_completed', 'search_units_total') if k in saved_progress}
+    return {**(detail or {}), **stage_progress, 'run_id':rid, 'status': 'cancelled' if record['status']=='interrupted' else record['status'],
             'count_scope':spec.count_scope, 'requested_posts':expected,'missing_posts':0 if spec.probe else max(0,expected-len(new)),
             'preflight':spec.probe,
             'total_posts':len(main), 'new_posts':len(new), 'refreshed_posts':len(main)-len(new),
@@ -183,13 +186,14 @@ def summary(store, rid):
             'status': status, 'active': active, 'error': record['error'],
             'errors': [record['error']] if record['error'] else [],
             'total_posts': cached['saved_posts'], 'requested_posts': expected, 'missing_posts': missing,
-            'preflight': spec.probe}
+            'preflight': spec.probe, 'keyword_count':len(spec.keywords), 'platforms':spec.platforms,
+            'owner':record['owner']}
 
 
 @router.get('/api/collections')
-def history(offset: int = Query(0,ge=0)):
+def history(offset: int = Query(0,ge=0), owner: str | None = None):
     store = Store()
-    runs = store.list(offset=offset)
+    runs = store.list(offset=offset, owner=owner)
     return {'runs': [summary(store, r['id']) for r in runs], 'offset': offset, 'has_more': len(runs)==30}
 
 

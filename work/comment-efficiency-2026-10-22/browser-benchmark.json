@@ -1,0 +1,64 @@
+{
+  "scope": "Local Chromium with simulated comment content; excludes real platform/network/scrolling delays.",
+  "results": [
+    {
+      "round": 1,
+      "mode": "per_parent",
+      "posts": 60,
+      "contexts_created": 60,
+      "pages_created": 60,
+      "seconds": 3.572,
+      "remaining_contexts": 0
+    },
+    {
+      "round": 1,
+      "mode": "reuse",
+      "posts": 60,
+      "contexts_created": 3,
+      "pages_created": 3,
+      "seconds": 0.738,
+      "remaining_contexts": 0
+    },
+    {
+      "round": 2,
+      "mode": "reuse",
+      "posts": 60,
+      "contexts_created": 3,
+      "pages_created": 3,
+      "seconds": 0.686,
+      "remaining_contexts": 0
+    },
+    {
+      "round": 2,
+      "mode": "per_parent",
+      "posts": 60,
+      "contexts_created": 60,
+      "pages_created": 60,
+      "seconds": 3.268,
+      "remaining_contexts": 0
+    },
+    {
+      "round": 3,
+      "mode": "per_parent",
+      "posts": 60,
+      "contexts_created": 60,
+      "pages_created": 60,
+      "seconds": 3.403,
+      "remaining_contexts": 0
+    },
+    {
+      "round": 3,
+      "mode": "reuse",
+      "posts": 60,
+      "contexts_created": 3,
+      "pages_created": 3,
+      "seconds": 0.723,
+      "remaining_contexts": 0
+    }
+  ],
+  "median_seconds": {
+    "per_parent": 3.403,
+    "reuse": 0.723
+  },
+  "local_elapsed_reduction_percent": 78.8
+}

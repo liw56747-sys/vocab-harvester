@@ -1,5 +1,6 @@
 """Comment outcomes shared by collectors, saved summaries and exports."""
 import json
+import re
 from collections import Counter
 
 
@@ -12,6 +13,9 @@ def error_reason(error):
         return 'authentication', '登录会话不可用，请更新 Cookie 后补抓'
     if any(s in lower for s in ('403', 'forbidden', 'blocked')):
         return 'access_denied', '平台拒绝评论访问（403），请检查账号权限、平台验证和网络出口'
+    if (re.search(r'(?:http(?:\s*(?:error|status))?|status(?:_code)?|server error|状态码|响应码)\D{0,8}(?:500|502|503|504)\b', lower)
+            or any(s in lower for s in ('internal server error', 'bad gateway', 'service unavailable', 'gateway timeout', 'something went wrong'))):
+        return 'platform', '平台服务暂时异常，可稍后补抓'
     if any(s in lower for s in ('404', '410', '不存在', 'unavailable', 'deleted')):
         return 'unavailable', '帖子或评论不可访问，无法确认评论完整性'
     if any(s in lower for s in ('timeout', '超时', 'connect', 'network', 'net::', 'proxy', 'closed', 'crash')):
@@ -36,7 +40,7 @@ def comment_summary(rows, enabled=True):
     reasons = Counter(p.get('comments_reason') or error_reason(p.get('comments_warning', ''))[0] for p in pending)
     labels = {
         'rate_limit': '平台限流', 'authentication': '需更新登录会话', 'access_denied': '评论访问被拒绝',
-        'unavailable': '帖子或评论不可访问', 'network': '网络或页面加载异常',
+        'unavailable': '帖子或评论不可访问', 'network': '网络或页面加载异常', 'platform': '平台服务暂时异常',
         'limit': '达到本轮上限', 'shortfall': '评论数量或分页仍有缺口',
         'pending': '等待处理', 'unknown': '原因未明确',
     }

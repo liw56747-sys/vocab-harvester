@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 from src.collection.store import Store, key, merge
+from src.collection.comment_session import CommentSession, CommentOutcomeError
 from src.crawlers.comment_state import comment_summary, error_reason
 from src.crawlers.progress import observe_rows, report_progress
 
@@ -135,9 +136,12 @@ class Traffic:
         with cls.lock:
             cls.active.discard(platform)
             delay = cls.delay.get(platform, 0)
-            if error:
-                kind, _, _ = classify(error)
+            kind = getattr(error, 'reason', None) or (classify(error)[0] if error else '')
+            if error and kind in {'rate_limit', 'network', 'platform'}:
                 delay = min(120, max(15 if kind == 'rate_limit' else 2, delay * 2))
+            elif error and kind not in {'shortfall', 'limit', 'unavailable'}:
+                # Unknown/per-post failures must not inflate a platform-wide delay.
+                delay = max(2, delay / 2 - .5)
             elif elapsed > 60:
                 delay = min(10, max(1, delay))
             else:
@@ -188,6 +192,13 @@ def in_window(row, start, end):
 
 
 async def fetch_comments(fetcher, platform, posts, cookies):
+    session = getattr(fetcher, '_collection_comment_session', None)
+    if session is not None:
+        if platform == 'twitter':
+            await fetcher._parallel_scrape_replies(await session.twitter_context(), posts)
+            return posts
+        return await fetcher._fetch_all_comments_parallel(posts, cookies, fetcher.request_headers(), fetcher.proxy,
+                                                         client=await session.reddit_client())
     if platform == 'twitter':
         from src.crawlers.browser_manager import BrowserManager
         context = await BrowserManager.get().new_context(cookies=cookies, proxy=fetcher.proxy)
@@ -234,16 +245,29 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
     previous = store.units(rid)
     all_rows = store.rows(rid)
     counts, errors = [], []
+    fetchers, comment_sessions = {}, {}
     baseline = comment_summary(all_rows, spec.include_replies)['total_comments']
     attempt_started = datetime.now(timezone.utc).isoformat()
-    def publish_progress(phase='collecting'):
+    current_platform = current_keyword = ''
+    stage = 'images' if images_only else 'comments' if comments_only else 'posts'
+    search_completed = set()
+    def publish_progress(phase=None):
+        phase = phase or stage
         summary = comment_summary(all_rows, spec.include_replies)
         summary['refreshed_posts'] = sum(r.get('type', 'post') != 'comment' and r.get('collection_kind') == 'revisit' for r in all_rows)
         summary.update(phase=phase, attempt_started=attempt_started,
                        new_comments=max(0, summary['total_comments']-baseline),
-                       comments_only=comments_only)
+                       comments_only=comments_only, current_platform=current_platform,
+                       current_keyword=current_keyword, last_progress_at=datetime.now(timezone.utc).isoformat(),
+                       search_units_completed=len(search_completed),
+                       search_units_total=len(spec.keywords)*len(spec.platforms))
         if images: summary.update(images.summary(rid))
         store.progress(rid, summary)
+        if progress:
+            total = len(spec.keywords)*len(spec.platforms)
+            progress({**summary, 'run_id':rid, 'total_posts':summary['saved_posts'],
+                      'requested_posts':expected_posts(spec), 'total':total,
+                      'completed':len(search_completed), 'percent':int(100*len(search_completed)/total)})
     publish_progress()
     # Legacy zero-comment shortcuts were never verified against the comment endpoint.
     if comments_only:
@@ -263,218 +287,247 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                 platform_event('acquired',platform)
     store.status(rid, 'running')
     try:
-        for platform in ([] if images_only else spec.platforms):
-            if platform_event:
-                platform_event('start',platform)
-            pc = cookie_map.get(platform, {})
-            cookies = {k:v for k,v in pc.items() if k not in ('proxy','extra_cookies') and v}
-            cookies.update(pc.get('extra_cookies') or {})
-            valid = bool(cookies.get('ct0') and cookies.get('auth_token')) if platform == 'twitter' else bool(cookies.get('reddit_session'))
-            if not valid:
-                errors.append(f'{platform}: 未配置 Cookie；请保存账号配置后续抓')
+        # Finish every search group before visiting any comment endpoint.
+        stages = [] if images_only else (['comments'] if comments_only else
+                  ['posts'] + (['comments'] if spec.include_replies else []))
+        for stage in stages:
+            previous = store.units(rid)
+            for platform in spec.platforms:
                 if platform_event:
-                    platform_event('done',platform)
-                continue
-            from src.crawlers.twitter_url import TwitterCookieFetcher
-            from src.crawlers.reddit_crawler import RedditCookieFetcher
-            proxy = pc.get('proxy') or None
-            if proxy and not proxy.startswith(('http://','https://','socks5://')):
-                proxy = 'http://' + proxy
-            fetcher = TwitterCookieFetcher(proxy=proxy, block_resources=spec.block_resources) if platform == 'twitter' else RedditCookieFetcher(proxy=proxy)
-            if spec.incremental and spec.include_replies:
-                cutoff = datetime.fromisoformat(stamp).date() - timedelta(days=spec.lookback_days)
-                recent = [r for r in history_rows if r.get('platform')==platform and r.get('type','post')!='comment'
-                          and in_window(r,cutoff,datetime.fromisoformat(stamp).date()+timedelta(days=1))]
-                for parent in recent:
-                    uid = 'revisit:'+key(parent)
-                    old_rows, old_state = previous.get(uid,([],{}))
-                    if old_state.get('finished'):
-                        continue
-                    post = {**parent,'collection_kind':'revisit','comments_status':'pending'}
-                    current = old_rows or [post]
-                    def save_revisit(incoming):
-                        nonlocal current, all_rows
-                        incoming = [{**r,'platform':platform,'keyword':parent.get('keyword',''), 'collection_kind':'revisit'} for r in incoming]
+                    platform_event('start',platform)
+                current_platform, current_keyword = platform, ''
+                publish_progress()
+                pc = cookie_map.get(platform, {})
+                cookies = {k:v for k,v in pc.items() if k not in ('proxy','extra_cookies') and v}
+                cookies.update(pc.get('extra_cookies') or {})
+                valid = bool(cookies.get('ct0') and cookies.get('auth_token')) if platform == 'twitter' else bool(cookies.get('reddit_session'))
+                if not valid:
+                    errors.append(f'{platform}: 未配置 Cookie；请保存账号配置后续抓')
+                    if platform_event:
+                        platform_event('done',platform)
+                    continue
+                from src.crawlers.twitter_url import TwitterCookieFetcher
+                from src.crawlers.reddit_crawler import RedditCookieFetcher
+                proxy = pc.get('proxy') or None
+                if proxy and not proxy.startswith(('http://','https://','socks5://')):
+                    proxy = 'http://' + proxy
+                if platform not in fetchers:
+                    fetchers[platform] = TwitterCookieFetcher(proxy=proxy, block_resources=spec.block_resources) if platform == 'twitter' else RedditCookieFetcher(proxy=proxy)
+                fetcher = fetchers[platform]
+                if stage == 'comments':
+                    session = CommentSession(fetcher, platform, cookies)
+                    comment_sessions[platform] = session
+                    fetcher._collection_comment_session = session
+                if stage == 'comments' and spec.incremental and spec.include_replies:
+                    cutoff = datetime.fromisoformat(stamp).date() - timedelta(days=spec.lookback_days)
+                    recent = [r for r in history_rows if r.get('platform')==platform and r.get('type','post')!='comment'
+                              and in_window(r,cutoff,datetime.fromisoformat(stamp).date()+timedelta(days=1))]
+                    for parent in recent:
+                        uid = 'revisit:'+key(parent)
+                        old_rows, old_state = previous.get(uid,([],{}))
+                        if old_state.get('finished'):
+                            continue
+                        post = {**parent,'collection_kind':'revisit','comments_status':'pending'}
+                        current = old_rows or [post]
+                        def save_revisit(incoming):
+                            nonlocal current, all_rows
+                            incoming = [{**r,'platform':platform,'keyword':parent.get('keyword',''), 'collection_kind':'revisit'} for r in incoming]
+                            if images:
+                                incoming = without_text(incoming)
+                                images.discover(rid, incoming)
+                            current = merge(current,incoming)
+                            store.save(rid,uid,current,old_state)
+                            all_rows = merge(all_rows,current)
+                            publish_progress("comments")
+                            if checkpoint:
+                                checkpoint(all_rows)
+                        save_revisit([post])
+                        if cancelled():
+                            raise asyncio.CancelledError
+                        if session.pause_post(post):
+                            save_revisit([post])
+                            await asyncio.sleep(0)
+                            continue
+                        await acquire(platform)
+                        failure = None
+                        try:
+                            with observe_rows(save_revisit):
+                                updated = await fetch_comments(fetcher,platform,[post],cookies)
+                            old_state['finished'] = post.get('comments_status')=='finished'
+                            save_revisit(updated)
+                            if not old_state['finished']:
+                                failure = CommentOutcomeError(post)
+                        except Exception as exc:
+                            failure = exc
+                            post['comments_status']='failed'
+                            post['comments_reason']=error_reason(exc)[0]
+                            post['comments_warning']=classify(exc)[2]
+                            save_revisit([post])
+                        finally:
+                            session.record(post)
+                            Traffic.leave(platform,failure)
+                for keyword_index, keyword in enumerate(spec.keywords):
+                    current_keyword = keyword
+                    publish_progress()
+                    unit = hashlib.sha256((platform+'\0'+keyword).encode()).hexdigest()[:24]
+                    rows, state = previous.get(unit, ([], {}))
+                    rows = list(rows)
+                    def persist(incoming=()):
+                        nonlocal rows, all_rows
+                        incoming = [{**r, 'platform':platform, 'keyword':keyword} for r in incoming]
                         if images:
                             incoming = without_text(incoming)
                             images.discover(rid, incoming)
-                        current = merge(current,incoming)
-                        store.save(rid,uid,current,old_state)
-                        all_rows = merge(all_rows,current)
-                        publish_progress("comments")
+                        rows = merge(rows, incoming)
+                        state['saved_posts'] = sum(r.get('type','post')!='comment' for r in rows)
+                        state['last_saved_id'] = key(rows[-1]) if rows else None
+                        store.save(rid, unit, rows, state)
+                        all_rows = merge(all_rows, rows)
+                        publish_progress()
                         if checkpoint:
                             checkpoint(all_rows)
-                    save_revisit([post])
-                    await acquire(platform)
-                    failure = None
-                    try:
-                        with observe_rows(save_revisit):
-                            updated = await fetch_comments(fetcher,platform,[post],cookies)
-                        old_state['finished'] = post.get('comments_status')=='finished'
-                        save_revisit(updated)
-                    except Exception as exc:
-                        failure = exc
-                        post['comments_status']='failed'
-                        post['comments_warning']=classify(exc)[2]
-                        save_revisit([post])
-                    finally:
-                        Traffic.leave(platform,failure)
-            for keyword_index, keyword in enumerate(spec.keywords):
-                unit = hashlib.sha256((platform+'\0'+keyword).encode()).hexdigest()[:24]
-                rows, state = previous.get(unit, ([], {}))
-                rows = list(rows)
-                def persist(incoming=()):
-                    nonlocal rows, all_rows
-                    incoming = [{**r, 'platform':platform, 'keyword':keyword} for r in incoming]
-                    if images:
-                        incoming = without_text(incoming)
-                        images.discover(rid, incoming)
-                    rows = merge(rows, incoming)
-                    state['saved_posts'] = sum(r.get('type','post')!='comment' for r in rows)
-                    state['last_saved_id'] = key(rows[-1]) if rows else None
-                    store.save(rid, unit, rows, state)
-                    all_rows = merge(all_rows, rows)
-                    publish_progress("comments" if comments_only else "collecting")
-                    if checkpoint:
-                        checkpoint(all_rows)
-                    if progress:
-                        progress({'total':len(spec.keywords)*len(spec.platforms),
-                                  'completed':len(counts), 'percent':int(100*len(counts)/(len(spec.keywords)*len(spec.platforms))),
-                                  'saved_posts':sum(r.get('type','post')!='comment' for r in all_rows), 'run_id':rid})
-                persist()
-                own = {key(r) for r in rows if r.get('type','post') != 'comment'}
-                outside = {key(r) for r in all_rows if r.get('type','post') != 'comment' and key(r) not in own and r.get('collection_kind')!='revisit'}
-                platform_used = sum(k.startswith(platform+':') for k in outside)
-                target = platform_target(spec,platform)
-                if spec.count_scope=='per_platform':
-                    target=max(0,target-platform_used)
-                elif spec.count_scope=='total':
-                    target=min(max(0,spec.count-len(outside)),max(0,target-platform_used))
-                outside |= historical - own
-                state['target'] = target
-                state['platform'],state['keyword'] = platform,keyword
-                if not comments_only and target and not state.get('search_finished'):
-                    plans = list(partitions(spec, platform, keyword))
-                    for index, (query, sort, start, end) in enumerate(plans):
-                        if index < state.get('partition', 0):
-                            continue
-                        if cancelled():
-                            raise asyncio.CancelledError
-                        state['partition'] = index
-                        def save_search(incoming):
-                            current = {key(r) for r in rows if r.get('type','post') != 'comment'}
-                            selected = []
-                            for raw in incoming:
-                                r = {**raw, 'platform':platform, 'keyword':keyword, 'search_query':query}
-                                if r.get('type','post') == 'comment' or not in_window(r, start, end):
-                                    continue
-                                k = key(r)
-                                if (str(r.get('tweet_id') or r.get('post_id') or '') in (seen_ids or set()) and k not in own) or k in outside or (k not in current and len(current) >= target):
-                                    continue
-                                current.add(k)
-                                if spec.include_replies:
-                                    saved = next((p for p in rows if key(p)==k),{})
-                                    r.setdefault('comments_status',saved.get('comments_status','pending'))
-                                selected.append(r)
-                            persist(selected)
-                        # Reposition by larger prefixes after restart; IDs are committed every page.
-                        requested = max(target, state.get('requested', target))
-                        succeeded, fetched, last_requested = True, [], requested
-                        for round_no in range(4):
-                            if len({key(r) for r in rows if r.get('type','post')!='comment'}) >= target:
-                                state.pop('error',None)
-                                break
-                            state['requested'] = requested
-                            last_requested = requested
-                            succeeded = False
-                            for attempt in range(spec.max_retries+1):
-                                if cancelled():
-                                    raise asyncio.CancelledError
-                                await acquire(platform)
-                                began, error = time.monotonic(), None
-                                try:
-                                    with observe_rows(save_search):
-                                        if spec.task_type == 'url_fetch':
-                                            fetched, _ = await fetcher.fetch_user_tweets([query], count=requested, cookies=cookies, include_replies=False)
-                                        elif platform == 'twitter':
-                                            fetched, _ = await fetcher.search_tweets(query, count=requested, cookies=cookies, sort_by=sort, include_replies=False)
-                                        else:
-                                            fetched, _ = await fetcher.search_posts(query, count=requested, cookies=cookies,
-                                                sort='new' if (start or sort in ('live','new')) else 'hot', include_replies=False)
-                                    save_search(fetched)
+                    persist()
+                    own = {key(r) for r in rows if r.get('type','post') != 'comment'}
+                    outside = {key(r) for r in all_rows if r.get('type','post') != 'comment' and key(r) not in own and r.get('collection_kind')!='revisit'}
+                    platform_used = sum(k.startswith(platform+':') for k in outside)
+                    target = platform_target(spec,platform)
+                    if spec.count_scope=='per_platform':
+                        target=max(0,target-platform_used)
+                    elif spec.count_scope=='total':
+                        target=min(max(0,spec.count-len(outside)),max(0,target-platform_used))
+                    if stage == 'comments':
+                        target = state.get('target', target)
+                    outside |= historical - own
+                    state['target'] = target
+                    state['platform'],state['keyword'] = platform,keyword
+                    if stage == 'posts' and target and not state.get('search_finished'):
+                        plans = list(partitions(spec, platform, keyword))
+                        for index, (query, sort, start, end) in enumerate(plans):
+                            if index < state.get('partition', 0):
+                                continue
+                            if cancelled():
+                                raise asyncio.CancelledError
+                            state['partition'] = index
+                            def save_search(incoming):
+                                current = {key(r) for r in rows if r.get('type','post') != 'comment'}
+                                selected = []
+                                for raw in incoming:
+                                    r = {**raw, 'platform':platform, 'keyword':keyword, 'search_query':query}
+                                    if r.get('type','post') == 'comment' or not in_window(r, start, end):
+                                        continue
+                                    k = key(r)
+                                    if (str(r.get('tweet_id') or r.get('post_id') or '') in (seen_ids or set()) and k not in own) or k in outside or (k not in current and len(current) >= target):
+                                        continue
+                                    current.add(k)
+                                    if spec.include_replies:
+                                        saved = next((p for p in rows if key(p)==k),{})
+                                        r.setdefault('comments_status',saved.get('comments_status','pending'))
+                                    selected.append(r)
+                                persist(selected)
+                            # Reposition by larger prefixes after restart; IDs are committed every page.
+                            requested = max(target, state.get('requested', target))
+                            succeeded, fetched, last_requested = True, [], requested
+                            for round_no in range(4):
+                                if len({key(r) for r in rows if r.get('type','post')!='comment'}) >= target:
+                                    state.pop('error',None)
+                                    break
+                                state['requested'] = requested
+                                last_requested = requested
+                                succeeded = False
+                                for attempt in range(spec.max_retries+1):
                                     if cancelled():
                                         raise asyncio.CancelledError
-                                    state.pop('error', None)
-                                    state['preflight'] = 'passed'
-                                    succeeded = True
-                                    break
-                                except Exception as exc:
-                                    error = exc
-                                    kind, retry, message = classify(exc)
-                                    state['error'] = f'{kind}: {message}'
-                                    persist()
-                                    if not retry or attempt == spec.max_retries:
+                                    await acquire(platform)
+                                    began, error = time.monotonic(), None
+                                    try:
+                                        with observe_rows(save_search):
+                                            if spec.task_type == 'url_fetch':
+                                                fetched, _ = await fetcher.fetch_user_tweets([query], count=requested, cookies=cookies, include_replies=False)
+                                            elif platform == 'twitter':
+                                                fetched, _ = await fetcher.search_tweets(query, count=requested, cookies=cookies, sort_by=sort, include_replies=False)
+                                            else:
+                                                fetched, _ = await fetcher.search_posts(query, count=requested, cookies=cookies,
+                                                    sort='new' if (start or sort in ('live','new')) else 'hot', include_replies=False)
+                                        save_search(fetched)
+                                        if cancelled():
+                                            raise asyncio.CancelledError
+                                        state.pop('error', None)
+                                        state['preflight'] = 'passed'
+                                        succeeded = True
                                         break
-                                finally:
-                                    Traffic.leave(platform, error, time.monotonic()-began)
-                            if not succeeded:
-                                errors.append(f'{platform} {keyword}: {state["error"]}')
+                                    except Exception as exc:
+                                        error = exc
+                                        kind, retry, message = classify(exc)
+                                        state['error'] = f'{kind}: {message}'
+                                        persist()
+                                        if not retry or attempt == spec.max_retries:
+                                            break
+                                    finally:
+                                        Traffic.leave(platform, error, time.monotonic()-began)
+                                if not succeeded:
+                                    errors.append(f'{platform} {keyword}: {state["error"]}')
+                                    break
+                                if len(fetched) < requested or requested >= 10000:
+                                    break
+                                requested = min(10000, requested*2)
+                                state['requested'] = requested
+                            if succeeded and len(fetched) >= last_requested and sum(r.get('type','post')!='comment' for r in rows) < target:
+                                state['error'] = 'scan_limit: 本轮扫描达到上限，可缩小日期范围后补抓'
+                                errors.append(f'{platform}: {state["error"]}')
+                            if state.get('error'):
                                 break
-                            if len(fetched) < requested or requested >= 10000:
+                            state['partition'] = index+1
+                            state.pop('requested',None)
+                            persist()
+                            if sum(r.get('type','post')!='comment' for r in rows) >= target:
                                 break
-                            requested = min(10000, requested*2)
-                            state['requested'] = requested
-                        if succeeded and len(fetched) >= last_requested and sum(r.get('type','post')!='comment' for r in rows) < target:
-                            state['error'] = 'scan_limit: 本轮扫描达到上限，可缩小日期范围后补抓'
-                            errors.append(f'{platform}: {state["error"]}')
-                        if state.get('error'):
-                            break
-                        state['partition'] = index+1
-                        state.pop('requested',None)
+                        state['search_finished'] = not bool(state.get('error'))
                         persist()
-                        if sum(r.get('type','post')!='comment' for r in rows) >= target:
-                            break
-                    state['search_finished'] = not bool(state.get('error'))
+                    if stage == 'posts':
+                        search_completed.add((platform, keyword))
+                        publish_progress()
+                    if stage == 'comments':
+                        # Independent durable per-parent queue; retry only unfinished parents.
+                        parents = [dict(r) for r in rows if r.get('type','post')!='comment' and r.get('comments_status')!='finished']
+                        for post in parents:
+                            if cancelled():
+                                raise asyncio.CancelledError
+                            if session.pause_post(post):
+                                persist([post])
+                                await asyncio.sleep(0)
+                                continue
+                            await acquire(platform)
+                            began, error = time.monotonic(), None
+                            try:
+                                with observe_rows(persist):
+                                    updated = await fetch_comments(fetcher, platform, [post], cookies)
+                                persist(updated)
+                                if post.get('comments_status') != 'finished':
+                                    error = CommentOutcomeError(post)
+                            except Exception as exc:
+                                error = exc
+                                post['comments_status'] = 'partial' if post.get('replies_data') else 'failed'
+                                post['comments_reason'] = error_reason(exc)[0]
+                                post['comments_warning'] = classify(exc)[2]
+                                persist([post])
+                            finally:
+                                session.record(post)
+                                Traffic.leave(platform, error, time.monotonic()-began)
+                    actual = sum(r.get('type','post')!='comment' for r in rows)
+                    if stage == 'posts' or comments_only:
+                        counts.append({'platform':platform, 'keyword':keyword, 'requested_count':target,
+                                       'actual_count':actual,'missing_count':max(0,target-actual),
+                                       'status':'fulfilled' if actual>=target else 'shortfall'})
                     persist()
-                if spec.include_replies or comments_only:
-                    # Independent durable per-parent queue; retry only unfinished parents.
-                    parents = [dict(r) for r in rows if r.get('type','post')!='comment' and r.get('comments_status')!='finished']
-                    for post in parents:
-                        if cancelled():
-                            raise asyncio.CancelledError
-                        if getattr(fetcher, 'comment_circuit_open', False):
-                            post.update(comments_status='failed', comments_reason='access_denied',
-                                        comments_warning='评论访问连续被拒绝，本轮暂停后续请求；请检查会话和网络后补抓')
-                            persist([post])
-                            continue
-                        await acquire(platform)
-                        began, error = time.monotonic(), None
-                        try:
-                            with observe_rows(persist):
-                                updated = await fetch_comments(fetcher, platform, [post], cookies)
-                            persist(updated)
-                            if post.get('comments_status') != 'finished':
-                                error = RuntimeError(post.get('comments_warning') or '评论未完成')
-                        except Exception as exc:
-                            error = exc
-                            post['comments_status'] = 'partial' if post.get('replies_data') else 'failed'
-                            post['comments_reason'] = error_reason(exc)[0]
-                            post['comments_warning'] = classify(exc)[2]
-                            persist([post])
-                        finally:
-                            Traffic.leave(platform, error, time.monotonic()-began)
-                if images:
-                    await download_images()
-                actual = sum(r.get('type','post')!='comment' for r in rows)
-                counts.append({'platform':platform, 'keyword':keyword, 'requested_count':target,
-                               'actual_count':actual,'missing_count':max(0,target-actual),
-                               'status':'fulfilled' if actual>=target else 'shortfall'})
-                persist()
-                if spec.batch_size and (keyword_index+1)%spec.batch_size==0 and keyword_index+1<len(spec.keywords):
-                    await asyncio.sleep(spec.batch_cooldown)
-            if platform_event:
-                platform_event('done',platform)
-        if images_only:
+                    if stage == 'posts' and spec.batch_size and (keyword_index+1)%spec.batch_size==0 and keyword_index+1<len(spec.keywords):
+                        await asyncio.sleep(spec.batch_cooldown)
+                if stage == 'comments':
+                    await session.close()
+                if platform_event and stage == stages[-1]:
+                    platform_event('done',platform)
+        if images:
+            current_platform = current_keyword = ''
+            publish_progress('images')
             await download_images()
         all_rows = store.rows(rid)
         if images:
@@ -491,6 +544,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
         if pending:
             errors.append(f'{pending} 个主帖的评论待补抓')
         status = 'partial' if errors else 'success'
+        current_platform = current_keyword = ''
         publish_progress('finished')
         store.status(rid,status,'；'.join(dict.fromkeys(errors)))
         if owner and status=='success':
@@ -507,3 +561,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
         publish_progress('failed')
         store.status(rid,'failed',classify(exc)[2])
         raise
+    finally:
+        for session in comment_sessions.values():
+            await session.close()
+            session.fetcher._collection_comment_session = None

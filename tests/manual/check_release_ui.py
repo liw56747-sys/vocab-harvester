@@ -11,7 +11,9 @@ for name,args in [
     ('check_update_ui.py',[]),
     ('check_comment_recovery_ui.py',[]),
     ('check_image_collection_ui.py',[]),
+    ('check_workspace_design.py',[]),
+    ('check_workspace_flows.py',[]),
 ]:
     print(f'Checking {name}',flush=True)
     subprocess.run([sys.executable,str(ROOT/'tests/manual'/name),*args],cwd=ROOT,check=True,timeout=180)
-print('PASS: all six release UI checks')
+print('PASS: all eight release UI checks')

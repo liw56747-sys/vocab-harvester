@@ -1,0 +1,82 @@
+[
+  {
+    "round": 1,
+    "exit_code": 0,
+    "seconds": 34.15,
+    "process_peak_rss_mb": 417.3,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 2,
+    "exit_code": 0,
+    "seconds": 33.46,
+    "process_peak_rss_mb": 497.1,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 3,
+    "exit_code": 0,
+    "seconds": 29.8,
+    "process_peak_rss_mb": 497.1,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 4,
+    "exit_code": 0,
+    "seconds": 28.18,
+    "process_peak_rss_mb": 545.3,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 5,
+    "exit_code": 0,
+    "seconds": 30.5,
+    "process_peak_rss_mb": 550.1,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 6,
+    "exit_code": 0,
+    "seconds": 35.64,
+    "process_peak_rss_mb": 550.1,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 7,
+    "exit_code": 0,
+    "seconds": 30.83,
+    "process_peak_rss_mb": 550.1,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 8,
+    "exit_code": 0,
+    "seconds": 29.55,
+    "process_peak_rss_mb": 550.1,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 9,
+    "exit_code": 0,
+    "seconds": 37.32,
+    "process_peak_rss_mb": 550.1,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 10,
+    "exit_code": 0,
+    "seconds": 33.1,
+    "process_peak_rss_mb": 550.1,
+    "thread_count": 1,
+    "open_fds": 5
+  }
+]

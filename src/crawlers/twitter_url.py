@@ -594,6 +594,7 @@ class TwitterCookieFetcher:
         """并发抓取多条推文的评论（Semaphore 限制 3 个并发标签页，降低内存/崩溃风险）"""
         from src.crawlers.browser_manager import apply_request_interceptors
 
+        session = getattr(self, '_collection_comment_session', None)
         sem = asyncio.Semaphore(3)
         parent_observer = row_observer()
         def comment_snapshot(_rows):
@@ -614,17 +615,18 @@ class TwitterCookieFetcher:
                     return
                 for attempt in range(_TC.comment_retry_attempts):
                     page = None
+                    reusable = False
                     before = tweet["replies_count"]
                     tweet["comments_attempts"] = tweet.get("comments_attempts", 0) + 1
                     try:
-                        page = await context.new_page()
+                        page = await session.acquire_page(context) if session is not None else await context.new_page()
                         page.set_default_timeout(_TC.comment_request_timeout * 1000)
-                        await apply_request_interceptors(
-                            page, block_resources=self.block_resources,
-                        )
+                        if session is None:
+                            await apply_request_interceptors(page, block_resources=self.block_resources)
                         with observe_rows(comment_snapshot):
                             await self._scrape_replies_page(page, tweet["url"], progress=tweet)
                         report_rows(tweets)
+                        reusable = True
                         if not tweet["replies_count"] and tweet.get("replies", 0):
                             raise RuntimeError("页面显示有回复，但未加载出评论，请稍后重试")
                         if tweet.get("comments_status") == "finished":
@@ -634,10 +636,12 @@ class TwitterCookieFetcher:
                         if attempt and tweet["replies_count"] <= before:
                             return  # A second exhausted pass made no progress; leave an explicit gap.
                     except asyncio.CancelledError:
+                        reusable = False
                         tweet["comments_status"] = "partial" if tweet["replies_count"] else "failed"
                         tweet["comments_warning"] = "评论抓取超时或被取消，已保留已采集评论"
                         raise
                     except Exception as e:
+                        reusable = False
                         tweet["comments_status"] = "partial" if tweet["replies_count"] else "failed"
                         tweet["comments_reason"] = error_reason(e)[0]
                         tweet["comments_warning"] = f"评论抓取未完成: {str(e) or type(e).__name__}"
@@ -647,7 +651,10 @@ class TwitterCookieFetcher:
                             return
                     finally:
                         if page is not None:
-                            await self._safe_close(page, label="page(reply)")
+                            if session is not None:
+                                await session.release_page(page, reusable)
+                            else:
+                                await self._safe_close(page, label="page(reply)")
                     if attempt + 1 < _TC.comment_retry_attempts:
                         await asyncio.sleep(_TC.comment_retry_wait * (2 ** attempt))
 

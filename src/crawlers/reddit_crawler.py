@@ -12,6 +12,7 @@ from src.collection.images import reddit_images
 from src.crawlers.progress import report_rows, report_progress, observe_rows, row_observer
 
 import asyncio
+from contextlib import AsyncExitStack
 import csv
 import io
 import json
@@ -320,6 +321,7 @@ class RedditCookieFetcher:
         cookie_dict: dict,
         headers: dict,
         proxy_url: str | None,
+        *, client=None,
     ) -> list[dict]:
         """并行为每个帖子抓取评论（Semaphore 限流 + asyncio.gather）"""
         import httpx
@@ -334,13 +336,14 @@ class RedditCookieFetcher:
                 parent_observer(list(posts) + [r for group in partial_comments.values() for r in group])
 
         try:
-            async with httpx.AsyncClient(
-                timeout=_RC.comment_request_timeout,
-                follow_redirects=True,
-                cookies=self._session_cookies if self._session_cookies is not None else cookie_dict,
-                headers=self.request_headers(),
-                proxy=proxy_url,
-            ) as client:
+            async with AsyncExitStack() as stack:
+                if client is None:
+                    client = await stack.enter_async_context(httpx.AsyncClient(
+                        timeout=_RC.comment_request_timeout,
+                        follow_redirects=True,
+                        cookies=self._session_cookies if self._session_cookies is not None else cookie_dict,
+                        headers=self.request_headers(), proxy=proxy_url,
+                    ))
                 async def _fetch_one(post: dict):
                     async with sem:
                         post_id = post.get("post_id", "")
