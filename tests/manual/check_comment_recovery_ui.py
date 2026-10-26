@@ -17,7 +17,8 @@ async def main():
         state = {'id':'run','run_id':'run','created':'2026-10-16T05:10:23+00:00',
                  'status':'partial','active':False,'saved_posts':100,'total_posts':100,
                  'requested_posts':100,'missing_posts':0,'total_comments':2902,'total_rows':3002,
-                 'comments_finished':25,'comments_pending':75,'comments_enabled':True,'new_comments':0}
+                 'comments_finished':25,'comments_pending':75,'comments_enabled':True,'new_comments':0,
+                 'comments_unstarted':30,'comments_in_progress':2,'comments_partial':40,'comments_failed':3}
         fail = False
         history_gate = asyncio.Event(); history_gate.set()
         export_gate = asyncio.Event(); export_gate.set()
@@ -52,6 +53,10 @@ async def main():
         await page.evaluate("showPage('twitter');document.getElementById('collection-history-panel').open=true")
         await page.locator('[data-comments="run"]').wait_for()
         await page.evaluate('(s)=>renderCrawlResult("multi-search-result",s)', state)
+        text = await page.locator('#multi-search-result').inner_text()
+        assert '评论已完成主帖：25' in text and '未开始：30' in text and '处理中：2' in text
+        assert '部分完成：40' in text and '失败或中断：3' in text
+        assert '不能除以已完成主帖数' in text
         # A refresh already in flight must not suppress the refresh after starting recovery.
         history_gate.clear()
         await page.evaluate("void loadCollectionHistory()")

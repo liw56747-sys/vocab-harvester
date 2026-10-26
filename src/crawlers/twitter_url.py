@@ -19,6 +19,7 @@ from typing import Any
 
 from src.crawlers.platform_config import twitter_config as _TC
 from src.crawlers.comment_state import error_reason, replies as saved_replies
+from src.crawlers.comment_policy import managed_comments
 from src.crawlers.progress import report_rows, observe_rows, row_observer
 
 logger = logging.getLogger(__name__)
@@ -599,7 +600,7 @@ class TwitterCookieFetcher:
         parent_observer = row_observer()
         def comment_snapshot(_rows):
             if parent_observer:
-                parent_observer(tweets)
+                parent_observer(_rows if managed_comments() else tweets)
         for tweet in tweets:
             tweet["comments_status"] = "pending"
             tweet["comments_warning"] = "评论任务尚未完成"
@@ -613,7 +614,7 @@ class TwitterCookieFetcher:
                     tweet["comments_status"] = "failed"
                     tweet["comments_warning"] = "缺少帖子链接，无法抓取评论"
                     return
-                for attempt in range(_TC.comment_retry_attempts):
+                for attempt in range(1 if managed_comments() else _TC.comment_retry_attempts):
                     page = None
                     reusable = False
                     before = tweet["replies_count"]
@@ -625,7 +626,8 @@ class TwitterCookieFetcher:
                             await apply_request_interceptors(page, block_resources=self.block_resources)
                         with observe_rows(comment_snapshot):
                             await self._scrape_replies_page(page, tweet["url"], progress=tweet)
-                        report_rows(tweets)
+                        if not managed_comments():
+                            report_rows(tweets)
                         reusable = True
                         if not tweet["replies_count"] and tweet.get("replies", 0):
                             raise RuntimeError("页面显示有回复，但未加载出评论，请稍后重试")
@@ -1199,6 +1201,8 @@ class TwitterCookieFetcher:
             raise
 
         retained = {str(r.get("tweet_id")): r for r in saved_replies(progress) if r.get("tweet_id")}
+        retained_rows = list(retained.values())
+        positions = {str(r["tweet_id"]): i for i, r in enumerate(retained_rows)}
         collected = {}
         stall_count = 0
         started = _time.monotonic()
@@ -1216,6 +1220,7 @@ class TwitterCookieFetcher:
             new_replies = await page.evaluate(
                 self._EXTRACT_REPLIES_JS, list({main_id} | set(collected)),
             )
+            delta = []
             for r in new_replies:
                 tid = r.get("tweetId", "")
                 if tid and tid != main_id and tid not in collected and (tid in retained or len(retained) < max_replies):
@@ -1228,22 +1233,26 @@ class TwitterCookieFetcher:
                         "media_urls": r.get("mediaUrls", ""),
                         "image_urls": r.get("imageUrls", []),
                     }
-                    retained[tid] = collected[tid]
-            retained.update(collected)
+                    reply = collected[tid]
+                    if retained.get(tid) != reply:
+                        delta.append(reply)
+                    retained[tid] = reply
+                    if tid in positions:
+                        retained_rows[positions[tid]] = reply
+                    else:
+                        positions[tid] = len(retained_rows)
+                        retained_rows.append(reply)
             progress["replies_count"] = len(retained)
-            progress["replies_data"] = json.dumps(list(retained.values()), ensure_ascii=False)
-            if len(collected) > prev_count:
-                report_rows(list(collected.values()))
+            progress["replies_data"] = retained_rows if managed_comments() else json.dumps(retained_rows, ensure_ascii=False)
+            if delta:
+                if managed_comments():
+                    report_rows([{**{k:v for k,v in progress.items() if k != 'replies_data'}, 'replies_data': delta}])
+                else:
+                    report_rows(list(collected.values()))
             if len(retained) >= max_replies:
                 warning = f"达到单帖评论上限 {max_replies} 条，可能仍有未采集评论"
                 break
             stall_count = stall_count + 1 if len(collected) == prev_count else 0
-            if stall_count >= 2:
-                clicked = await page.evaluate(self._CLICK_SHOW_MORE_REPLIES_JS)
-                if clicked:
-                    await asyncio.sleep(_TC.comment_more_wait)
-                    stall_count = 0
-                    continue
             if stall_count >= _TC.comment_max_stalls:
                 state = await page.evaluate(self._COMMENT_PAGE_STATE_JS)
                 if state:
@@ -1251,10 +1260,37 @@ class TwitterCookieFetcher:
                 warning = ""
                 break
             if stall_count >= 2:
+                clicked = await page.evaluate(self._CLICK_SHOW_MORE_REPLIES_JS)
+                if clicked:
+                    await asyncio.sleep(_TC.comment_more_wait)
+                    # Only newly extracted content resets stall_count. A
+                    # clickable button is not evidence of successful loading.
+                    continue
+            if stall_count >= 2:
                 await asyncio.sleep(_TC.comment_stall_wait)
             # X 使用虚拟列表，直接跳到底部会跳过尚未提取的中间评论。
             await page.evaluate("window.scrollBy(0, Math.max(300, window.innerHeight * 0.75))")
-            await asyncio.sleep(_TC.scroll_wait("comment"))
+            if managed_comments():
+                from playwright.async_api import TimeoutError as PageTimeout
+                # Keep a request pacing floor, but continue early once a new
+                # visible article arrives instead of sleeping the full interval.
+                await asyncio.sleep(_TC.comment_min_interval)
+                try:
+                    await page.wait_for_function(r"""ids => {
+                        const seen = new Set(ids);
+                        return [...document.querySelectorAll('article[data-testid="tweet"]')].some(article => {
+                            const time = article.querySelector('time');
+                            const href = time?.closest('a')?.getAttribute('href') || '';
+                            const match = href.match(/status\/(\d+)/);
+                            return match && !seen.has(match[1]);
+                        });
+                    }""", arg=list({main_id} | set(collected)),
+                        polling=_TC.comment_ready_poll_ms,
+                        timeout=max(1, (_TC.scroll_wait('comment') - _TC.comment_min_interval) * 1000))
+                except PageTimeout:
+                    pass
+            else:
+                await asyncio.sleep(_TC.scroll_wait("comment"))
 
         expected = progress.get("replies", 0)
         if not warning and isinstance(expected, (int, float)) and len(retained) < expected:

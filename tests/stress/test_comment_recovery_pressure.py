@@ -130,5 +130,6 @@ async def test_cancel_backfill_preserves_first_checkpoint_and_progress(monkeypat
     reopened = Store(store.path)
     assert reopened.get(rid)['status'] == 'interrupted'
     assert reopened.progress(rid)['phase'] == 'interrupted'
-    assert reopened.progress(rid)['total_comments'] == 3001
+    assert reopened.progress(rid)['total_comments'] == 3002
+    assert reopened.progress(rid)['comments_in_progress'] == 0
     assert any(r.get('post_id') == 'cancel-saved' for r in search_export_rows(reopened.rows(rid)))

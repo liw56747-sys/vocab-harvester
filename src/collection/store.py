@@ -46,6 +46,38 @@ def merge(old, new):
     return list(result.values())
 
 
+class RowIndex:
+    """Task-local ID indexes; update only incoming rows/replies, retaining order."""
+    def __init__(self, rows=()):
+        self.data = {}
+        self.reply_positions = {}
+        self.update(rows)
+
+    def update(self, rows):
+        for row in rows:
+            ident = key(row)
+            prev = self.data.get(ident, {})
+            item = {**prev, **row}
+            if 'replies_data' in prev or 'replies_data' in row:
+                positions = self.reply_positions.setdefault(ident, {})
+                retained = prev.get('replies_data', [])
+                incoming = row.get('replies_data') or []
+                incoming = json.loads(incoming) if isinstance(incoming, str) else incoming
+                for reply in incoming:
+                    reply_id = str(reply.get('tweet_id') or reply.get('content'))
+                    if reply_id in positions:
+                        retained[positions[reply_id]] = dict(reply)
+                    else:
+                        positions[reply_id] = len(retained)
+                        retained.append(dict(reply))
+                item['replies_data'] = retained
+                item['replies_count'] = len(retained)
+            self.data[ident] = item
+
+    def rows(self):
+        return list(self.data.values())
+
+
 class Store:
     def __init__(self, path=None):
         data_dir = os.environ.get('VOCAB_DATA_DIR') or get_settings().app.data_dir or _resolve_data_dir()
@@ -62,6 +94,10 @@ class Store:
             CREATE TABLE IF NOT EXISTS run_progress(run_id TEXT PRIMARY KEY, summary TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS export_names(run_id TEXT PRIMARY KEY, stem TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS watermarks(owner TEXT PRIMARY KEY, completed_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS comment_updates(run_id TEXT, unit_id TEXT, row_key TEXT,
+                row_json TEXT NOT NULL, PRIMARY KEY(run_id,unit_id,row_key));
+            CREATE TABLE IF NOT EXISTS comment_replies(run_id TEXT, unit_id TEXT, parent_key TEXT,
+                reply_id TEXT, row_json TEXT NOT NULL, PRIMARY KEY(run_id,unit_id,parent_key,reply_id));
             ''')
 
     @contextmanager
@@ -110,19 +146,57 @@ class Store:
         with self.connect() as db:
             changed = db.execute('INSERT INTO units VALUES(?,?,?,?) ON CONFLICT(run_id,unit_id) DO UPDATE SET rows_json=excluded.rows_json,state=excluded.state WHERE units.rows_json != excluded.rows_json OR units.state != excluded.state',
                        (rid, unit, json.dumps(rows, ensure_ascii=False), json.dumps(state, ensure_ascii=False)))
+            # Full snapshots are authoritative. Their caller has already read
+            # and merged any committed comment deltas through units()/rows().
+            db.execute('DELETE FROM comment_updates WHERE run_id=? AND unit_id=?', (rid, unit))
+            db.execute('DELETE FROM comment_replies WHERE run_id=? AND unit_id=?', (rid, unit))
             if changed.rowcount:
                 db.execute('UPDATE runs SET updated=? WHERE id=?', (now(), rid))
 
+    def save_comment_delta(self, rid, unit, rows):
+        """One FULL-durability transaction per chunk; never rewrite the unit JSON."""
+        with self.connect() as db:
+            for row in rows:
+                ident = key(row)
+                metadata = {k:v for k,v in row.items() if k not in {'replies_data', 'replies_count'}}
+                db.execute('INSERT INTO comment_updates VALUES(?,?,?,?) ON CONFLICT(run_id,unit_id,row_key) DO UPDATE SET row_json=excluded.row_json WHERE row_json != excluded.row_json',
+                           (rid, unit, ident, json.dumps(metadata, ensure_ascii=False)))
+                value = row.get('replies_data') or []
+                value = json.loads(value) if isinstance(value, str) else value
+                db.executemany('INSERT INTO comment_replies VALUES(?,?,?,?,?) ON CONFLICT(run_id,unit_id,parent_key,reply_id) DO UPDATE SET row_json=excluded.row_json WHERE row_json != excluded.row_json',
+                               ((rid, unit, ident, str(reply.get('tweet_id') or reply.get('content')), json.dumps(reply, ensure_ascii=False)) for reply in value))
+            db.execute('UPDATE runs SET updated=? WHERE id=?', (now(), rid))
+
     def units(self, rid):
         with self.connect() as db:
-            return {r['unit_id']: (json.loads(r['rows_json']), json.loads(r['state']))
-                    for r in db.execute('SELECT * FROM units WHERE run_id=?', (rid,))}
+            # Keep the baseline and both delta tables in a single read snapshot.
+            db.execute('BEGIN')
+            units = {r['unit_id']: (RowIndex(json.loads(r['rows_json'])), json.loads(r['state']))
+                     for r in db.execute('SELECT * FROM units WHERE run_id=?', (rid,))}
+            for row in db.execute('SELECT * FROM comment_updates WHERE run_id=? ORDER BY rowid', (rid,)):
+                index, _ = units.setdefault(row['unit_id'], (RowIndex(), {}))
+                index.update([json.loads(row['row_json'])])
+            for row in db.execute('SELECT * FROM comment_replies WHERE run_id=? ORDER BY rowid', (rid,)):
+                index, _ = units[row['unit_id']]
+                parent = index.data[row['parent_key']]
+                index.update([{**{k:v for k,v in parent.items() if k != 'replies_data'}, 'replies_data':[json.loads(row['row_json'])]}])
+            return {uid:(index.rows(), state) for uid,(index,state) in units.items()}
+
+    def compact_comments(self, rid):
+        # One final snapshot per changed unit also keeps normal completion and
+        # cancellation exports readable by installations predating delta tables.
+        with self.connect() as db:
+            changed = {r[0] for r in db.execute('SELECT DISTINCT unit_id FROM comment_updates WHERE run_id=?', (rid,))}
+        if changed:
+            for uid, (rows, state) in self.units(rid).items():
+                if uid in changed:
+                    self.save(rid, uid, rows, state)
 
     def rows(self, rid):
-        result = []
+        result = RowIndex()
         for rows, _ in self.units(rid).values():
-            result = merge(result, rows)
-        return result
+            result.update(rows)
+        return result.rows()
 
     def progress(self, rid, summary=None, *, only_if_missing=False):
         with self.connect() as db:

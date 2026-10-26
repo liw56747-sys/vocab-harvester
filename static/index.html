@@ -4702,6 +4702,11 @@ function collectionPhaseHtml(r) {
     ${r.phase==='comments'?(r.comments_only?' · 本轮仅补评论，不重新搜索主帖。':' · 主帖搜索阶段已结束，结果不足的部分仍可后续补抓。'):''}
     ${time?`<br><small>最近进展 ${esc(time)}${stale?' · 超过 5 分钟未更新，请检查运行日志；不代表已确认卡死。':''}</small>`:''}</div>`;
 }
+function commentQueueHtml(r) {
+  if (r.comments_unstarted == null) return '';
+  const n = value => Number(value) || 0;
+  return `<div class="run-detail"><span>未开始：${n(r.comments_unstarted)}</span><span>处理中：${n(r.comments_in_progress)}</span><span>部分完成：${n(r.comments_partial)}</span><span>失败或中断：${n(r.comments_failed)}</span></div><p class="hint">评论总数包含部分完成主帖下已保存的评论，不能除以已完成主帖数计算平均值。评论按主帖关联保存。</p>`;
+}
 function collectionRunCard(r, labels) {
   const saved=Number(r.saved_posts)||0,target=Number(r.requested_posts)||0;
   const fresh=Math.max(0,saved-(Number(r.refreshed_posts)||0));
@@ -4711,7 +4716,8 @@ function collectionRunCard(r, labels) {
     <div class="run-count"><span>已保存 <strong>${saved}</strong> 条主帖</span><span> / 目标 <b>${target||'—'}</b> 条${r.refreshed_posts?`（含回查旧帖 ${Number(r.refreshed_posts)} 条）`:''}</span></div>
     <div class="run-progress" role="progressbar" aria-label="新增主帖目标完成比例" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(percent)}"><div class="run-progress-fill" style="width:${percent}%"></div></div>
     ${collectionPhaseHtml(r)}
-    ${r.comments_pending!=null?`<div class="run-detail"><span>评论已处理主帖：<b>${Number(r.comments_finished)||0}</b></span><span>待补抓：${Number(r.comments_pending)||0}</span><span>本轮新增评论：<b>${Number(r.new_comments)||0}</b></span></div>`:''}
+    ${r.comments_pending!=null?`<div class="run-detail"><span>评论已完成主帖：<b>${Number(r.comments_finished)||0}</b></span><span>待补抓：${Number(r.comments_pending)||0}</span><span>本轮新增评论：<b>${Number(r.new_comments)||0}</b></span></div>`:''}
+    ${commentQueueHtml(r)}
     ${r.content_mode==='images'?`<div class="run-detail"><span>图片地址 ${Number(r.images_found)||0}</span><span>已下载 ${Number(r.images_downloaded)||0}</span><span>待下载 ${Number(r.images_pending)||0}</span><span>失败/不支持 ${Number(r.images_failed)||0}</span><span>去重文件 ${Number(r.image_files)||0}</span></div>`:''}
     ${r.error?`<div class="run-error">${esc(r.error)}</div>`:''}
     <div class="run-actions"><button class="btn btn-secondary" data-result="${esc(r.id)}" ${collectionDownloading.has(r.id)?'disabled':''}>汇总与下载</button>
@@ -4762,7 +4768,8 @@ function renderCrawlResult(containerId, stats, {title, keywordCount = 0, skipped
       ${metrics.length ? `<div class="result-stats">${metrics.join('')}</div>` : ''}
       ${collectionPhaseHtml(stats)}
       ${stats.preflight ? '<p>本次仅检查搜索可用性，不代表正式采集数量或评论完整性。</p>':''}
-      ${stats.comments_pending != null ? `<p>评论已处理主帖：${number(stats.comments_finished)}；待补抓：${number(stats.comments_pending)}</p>`:''}
+      ${stats.comments_pending != null ? `<p>评论已完成主帖：${number(stats.comments_finished)}；待补抓：${number(stats.comments_pending)}</p>`:''}
+      ${commentQueueHtml(stats)}
       ${stats.new_comments != null ? `<p>本轮新增评论：${number(stats.new_comments)}；已核验无可访问评论的主帖：${number(stats.comments_empty)}</p>`:''}
       ${Array.isArray(stats.comments_reasons) && stats.comments_reasons.length ? `<p>${stats.comments_reasons.map(r=>`${esc(r.label)}：${number(r.count)} 个主帖`).join('；')}</p>`:''}
       ${!running && !failed && !cancelled && !partial && stats.comments_enabled ? '<p>可访问评论已处理完成；不包含平台隐藏、删除或权限受限的评论。</p>':''}

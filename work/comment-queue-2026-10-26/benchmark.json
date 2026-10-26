@@ -1,0 +1,48 @@
+{
+  "scope": "simulation; current engine one/two lanes; not real platform speed",
+  "runs": [
+    {
+      "lanes": 1,
+      "seconds": 16.955,
+      "comment_seconds": 16.781,
+      "parents": 300,
+      "comments": 30000,
+      "peak_active": 1,
+      "calls": 300
+    },
+    {
+      "lanes": 2,
+      "seconds": 7.826,
+      "comment_seconds": 7.737,
+      "parents": 300,
+      "comments": 30000,
+      "peak_active": 2,
+      "calls": 300
+    },
+    {
+      "lanes": 2,
+      "seconds": 7.773,
+      "comment_seconds": 7.678,
+      "parents": 300,
+      "comments": 30000,
+      "peak_active": 2,
+      "calls": 300
+    },
+    {
+      "lanes": 1,
+      "seconds": 16.856,
+      "comment_seconds": 16.758,
+      "parents": 300,
+      "comments": 30000,
+      "peak_active": 1,
+      "calls": 300
+    }
+  ],
+  "serialization": {
+    "legacy_full_group_bytes": 27178000,
+    "delta_chunk_bytes": 222450,
+    "parents": 50,
+    "comments": 5000
+  },
+  "final_comments_each_run": 30000
+}

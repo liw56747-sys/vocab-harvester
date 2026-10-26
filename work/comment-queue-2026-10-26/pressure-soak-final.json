@@ -1,0 +1,42 @@
+[
+  {
+    "round": 1,
+    "exit_code": 0,
+    "seconds": 48.06,
+    "process_peak_rss_mb": 723.6,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 2,
+    "exit_code": 0,
+    "seconds": 45.13,
+    "process_peak_rss_mb": 723.6,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 3,
+    "exit_code": 0,
+    "seconds": 43.97,
+    "process_peak_rss_mb": 724.4,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 4,
+    "exit_code": 0,
+    "seconds": 42.85,
+    "process_peak_rss_mb": 724.4,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 5,
+    "exit_code": 0,
+    "seconds": 42.09,
+    "process_peak_rss_mb": 727.1,
+    "thread_count": 1,
+    "open_fds": 5
+  }
+]

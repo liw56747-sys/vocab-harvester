@@ -37,6 +37,11 @@ async def check():
         assert data['total_posts']==1 and base64.b64decode(data['xlsx_data']).startswith(b'PK')
         rows=list(csv.DictReader(io.StringIO(base64.b64decode(data['csv_data']).decode('utf-8-sig'))))
         assert rows[0]['content']=='中文😀'
+        store.save_comment_delta(rid, 'unit', [{'platform':'twitter', 'tweet_id':'1',
+            'comments_status':'partial', 'replies_data':[{'tweet_id':'reply-1','content':'增量评论'}]}])
+        assert store.rows(rid)[0]['replies_data'][0]['content'] == '增量评论'
+        store.compact_comments(rid)
+        assert Store(store.path).rows(rid)[0]['replies_count'] == 1
         from PIL import Image
         from src.collection.images import Images
         import zipfile
@@ -56,7 +61,7 @@ async def check():
             assert await page.locator('main').inner_text()=='bundled browser ready'
             await browser.close()
     return {'status':'passed','version':get_version(),'network_runtime':network_runtime,'checks':['startup','database','static-ui','audit-disconnected',
-             'retired-endpoint','checkpoint','csv','xlsx','tzdata','crawler-imports','image-download-validate-export','bundled-chromium']}
+             'retired-endpoint','checkpoint','comment-delta-recovery-compaction','csv','xlsx','tzdata','crawler-imports','image-download-validate-export','bundled-chromium']}
 
 
 def run(report):

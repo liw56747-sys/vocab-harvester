@@ -178,6 +178,10 @@ def summary(store, rid):
         status = 'running' if status in {'running', 'pending'} else 'finishing'
     elif status in {'running', 'pending'}:
         status = 'interrupted'
+    if not active and cached.get('comments_in_progress'):
+        # A process exit cannot leave phantom live workers in history.
+        cached = {**cached, 'comments_failed': cached.get('comments_failed', 0) + cached['comments_in_progress'],
+                  'comments_in_progress': 0}
     expected = expected_posts(spec)
     missing = 0 if spec.probe else max(0, expected-cached['saved_posts']+cached.get('refreshed_posts', 0))
     if status == 'success' and (missing or cached.get('comments_pending') or cached.get('images_pending') or cached.get('images_failed')):

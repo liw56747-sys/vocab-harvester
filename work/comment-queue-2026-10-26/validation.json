@@ -1,0 +1,42 @@
+{
+  "full_regression": {
+    "passed": 333,
+    "deselected": 8,
+    "seconds": 69.73
+  },
+  "browser_gate": {
+    "checks": 9,
+    "navigation_clicks": 1400,
+    "passed": true
+  },
+  "pressure": {
+    "rounds": 5,
+    "cases_per_round": 72,
+    "total_passed": 360
+  },
+  "packaged_self_test": {
+    "status": "passed",
+    "version": "1.9.3",
+    "network_runtime": {
+      "python": "3.12.14",
+      "openssl": "OpenSSL 3.5.8 25 Aug 2026",
+      "platform": "darwin",
+      "packaged": true
+    },
+    "checks": [
+      "startup",
+      "database",
+      "static-ui",
+      "audit-disconnected",
+      "retired-endpoint",
+      "checkpoint",
+      "comment-delta-recovery-compaction",
+      "csv",
+      "xlsx",
+      "tzdata",
+      "crawler-imports",
+      "image-download-validate-export",
+      "bundled-chromium"
+    ]
+  }
+}

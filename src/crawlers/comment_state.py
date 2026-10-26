@@ -39,6 +39,7 @@ def comment_summary(rows, enabled=True):
     pending = [p for p in posts if p.get('comments_status') != 'finished'] if enabled else []
     reasons = Counter(p.get('comments_reason') or error_reason(p.get('comments_warning', ''))[0] for p in pending)
     labels = {
+        'time_slice': '分轮处理时间已到，仍未完整', 'interrupted': '已停止，可继续补抓',
         'rate_limit': '平台限流', 'authentication': '需更新登录会话', 'access_denied': '评论访问被拒绝',
         'unavailable': '帖子或评论不可访问', 'network': '网络或页面加载异常', 'platform': '平台服务暂时异常',
         'limit': '达到本轮上限', 'shortfall': '评论数量或分页仍有缺口',
@@ -47,6 +48,10 @@ def comment_summary(rows, enabled=True):
     return {
         'saved_posts': len(posts), 'total_comments': total, 'total_rows': len(posts) + total,
         'comments_pending': len(pending), 'comments_finished': len(posts)-len(pending) if enabled else 0,
+        'comments_in_progress': sum(bool(p.get('comments_active')) for p in pending),
+        'comments_partial': sum(p.get('comments_status') == 'partial' and not p.get('comments_active') for p in pending),
+        'comments_failed': sum(p.get('comments_status') == 'failed' and not p.get('comments_active') for p in pending),
+        'comments_unstarted': sum(p.get('comments_status') not in {'partial', 'failed'} and not p.get('comments_active') for p in pending),
         'comments_empty': sum(p.get('comments_empty_verified') is True and p.get('comments_status') == 'finished' for p in posts),
         'comments_unavailable': reasons['unavailable'],
         'comments_reasons': [{'code': code, 'label': labels.get(code, labels['unknown']), 'count': count}

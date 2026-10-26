@@ -1,6 +1,7 @@
 """Task-local comment connections. Never shared between accounts or event loops."""
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from src.crawlers.comment_state import error_reason
 
@@ -28,9 +29,22 @@ class CommentSession:
         self.client = None
         self.pause_reason = ''
         self.denials = 0
+        self.context_lock = asyncio.Lock()
+        self.context_users = 0
+
+    @asynccontextmanager
+    async def twitter_lease(self):
+        # A context may be recycled only after both active pages have returned.
+        async with self.context_lock:
+            context = await self.twitter_context()
+            self.context_users += 1
+        try:
+            yield context
+        finally:
+            self.context_users -= 1
 
     async def twitter_context(self):
-        if self.context is not None and self.context_posts >= self.CONTEXT_POST_LIMIT:
+        if self.context is not None and self.context_posts >= self.CONTEXT_POST_LIMIT and not self.context_users:
             await self.close_context()
         if self.context is None:
             from src.crawlers.browser_manager import BrowserManager
@@ -62,7 +76,7 @@ class CommentSession:
         return page
 
     async def release_page(self, page, reusable):
-        if reusable and not page.is_closed() and not self.idle_pages:
+        if reusable and not page.is_closed() and len(self.idle_pages) < 2:
             try:
                 # Stop the previous post's background traffic while waiting for the gate.
                 await page.goto('about:blank', wait_until='commit', timeout=5000)
@@ -103,7 +117,8 @@ class CommentSession:
             'rate_limit': '平台已限流，本轮暂停该平台后续评论请求；等待限制解除后可补抓',
             'access_denied': '评论访问连续被拒绝，本轮暂停后续请求；检查会话和网络后可补抓',
         }
-        post.update(comments_status='partial' if post.get('replies_data') or post.get('comments_fetched') else 'failed',
+        status = 'partial' if post.get('replies_data') or post.get('comments_fetched') else ('failed' if post.get('comments_attempted') or post.get('comments_status') == 'failed' else 'pending')
+        post.update(comments_status=status, comments_active=False,
                     comments_reason=reason, comments_warning=messages[reason])
         return True
 

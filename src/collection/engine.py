@@ -10,7 +10,8 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from pydantic import BaseModel, Field, model_validator
-from src.collection.store import Store, key, merge
+from src.collection.store import Store, key, merge, RowIndex
+from src.collection.comment_queue import CommentJob, drain_comments
 from src.collection.comment_session import CommentSession, CommentOutcomeError
 from src.crawlers.comment_state import comment_summary, error_reason
 from src.crawlers.progress import observe_rows, report_progress
@@ -195,7 +196,8 @@ async def fetch_comments(fetcher, platform, posts, cookies):
     session = getattr(fetcher, '_collection_comment_session', None)
     if session is not None:
         if platform == 'twitter':
-            await fetcher._parallel_scrape_replies(await session.twitter_context(), posts)
+            async with session.twitter_lease() as context:
+                await fetcher._parallel_scrape_replies(context, posts)
             return posts
         return await fetcher._fetch_all_comments_parallel(posts, cookies, fetcher.request_headers(), fetcher.proxy,
                                                          client=await session.reddit_client())
@@ -243,6 +245,17 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                 history_rows = merge(history_rows, store.rows(old['id']))
     historical = {key(r) for r in history_rows if r.get('type','post')!='comment'}
     previous = store.units(rid)
+    # A previous process may have exited between a chunk commit and cleanup.
+    for uid, (saved_rows, _) in previous.items():
+        interrupted = []
+        for row in saved_rows:
+            if row.get('comments_active'):
+                row.update(comments_active=False,
+                           comments_status='partial' if row.get('replies_count') or row.get('comments_fetched') else 'failed',
+                           comments_reason='interrupted', comments_warning='上次处理被中断，可继续补抓')
+                interrupted.append(row)
+        if interrupted:
+            store.save_comment_delta(rid, uid, interrupted)
     all_rows = store.rows(rid)
     counts, errors = [], []
     unit_errors = {uid: f"{state.get('platform', '')} {state.get('keyword', '')}: {state['error']}"
@@ -290,6 +303,29 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
         finally:
             if platform_event:
                 platform_event('acquired',platform)
+    comment_index = None
+    last_comment_checkpoint = 0
+
+    def comment_saver(uid, platform, keyword, revisit=False):
+        # Bind unit/keyword per queue entry, not the enclosing loop variables.
+        def save(incoming):
+            nonlocal all_rows, last_comment_checkpoint
+            incoming = [{**r, 'platform': platform, 'keyword': keyword,
+                         **({'collection_kind': 'revisit'} if revisit else {})} for r in incoming]
+            if images:
+                incoming = without_text(incoming)
+                images.discover(rid, incoming)
+            store.save_comment_delta(rid, uid, incoming)
+            comment_index.update(incoming)
+            all_rows = comment_index.rows()
+            publish_progress('comments')
+            # Database chunks remain immediately durable; legacy scheduled
+            # result conversion is expensive and need not run every scroll.
+            if checkpoint and time.monotonic() - last_comment_checkpoint >= 2:
+                checkpoint(all_rows)
+                last_comment_checkpoint = time.monotonic()
+        return save
+
     store.status(rid, 'running')
     try:
         # Finish every search group before visiting any comment endpoint.
@@ -323,6 +359,8 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     session = CommentSession(fetcher, platform, cookies)
                     comment_sessions[platform] = session
                     fetcher._collection_comment_session = session
+                    comment_index = RowIndex(all_rows)
+                    comment_jobs = []
                 if stage == 'comments' and spec.incremental and spec.include_replies:
                     cutoff = datetime.fromisoformat(stamp).date() - timedelta(days=spec.lookback_days)
                     recent = [r for r in history_rows if r.get('platform')==platform and r.get('type','post')!='comment'
@@ -330,47 +368,15 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     for parent in recent:
                         uid = 'revisit:'+key(parent)
                         old_rows, old_state = previous.get(uid,([],{}))
-                        if old_state.get('finished'):
+                        if old_state.get('finished') or (old_rows and all(r.get('comments_status') == 'finished' for r in old_rows if r.get('type', 'post') != 'comment')):
                             continue
-                        post = {**parent,'collection_kind':'revisit','comments_status':'pending'}
-                        current = old_rows or [post]
-                        def save_revisit(incoming):
-                            nonlocal current, all_rows
-                            incoming = [{**r,'platform':platform,'keyword':parent.get('keyword',''), 'collection_kind':'revisit'} for r in incoming]
-                            if images:
-                                incoming = without_text(incoming)
-                                images.discover(rid, incoming)
-                            current = merge(current,incoming)
-                            store.save(rid,uid,current,old_state)
-                            all_rows = merge(all_rows,current)
-                            publish_progress("comments")
-                            if checkpoint:
-                                checkpoint(all_rows)
-                        save_revisit([post])
-                        if cancelled():
-                            raise asyncio.CancelledError
-                        if session.pause_post(post):
-                            save_revisit([post])
-                            await asyncio.sleep(0)
-                            continue
-                        await acquire(platform)
-                        failure = None
-                        try:
-                            with observe_rows(save_revisit):
-                                updated = await fetch_comments(fetcher,platform,[post],cookies)
-                            old_state['finished'] = post.get('comments_status')=='finished'
-                            save_revisit(updated)
-                            if not old_state['finished']:
-                                failure = CommentOutcomeError(post)
-                        except Exception as exc:
-                            failure = exc
-                            post['comments_status']='failed'
-                            post['comments_reason']=error_reason(exc)[0]
-                            post['comments_warning']=classify(exc)[2]
-                            save_revisit([post])
-                        finally:
-                            session.record(post)
-                            Traffic.leave(platform,failure)
+                        post = {**parent, 'collection_kind':'revisit', 'comments_status':'pending'}
+                        current = merge(old_rows, [post])
+                        store.save(rid, uid, current, old_state)
+                        save = comment_saver(uid, platform, parent.get('keyword', ''), True)
+                        post = next(r for r in current if r.get('type', 'post') != 'comment')
+                        save([post])
+                        comment_jobs.append(CommentJob(post, save))
                 for keyword_index, keyword in enumerate(spec.keywords):
                     current_keyword = keyword
                     publish_progress()
@@ -503,32 +509,9 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                         search_completed.add((platform, keyword))
                         publish_progress()
                     if stage == 'comments':
-                        # Independent durable per-parent queue; retry only unfinished parents.
-                        parents = [dict(r) for r in rows if r.get('type','post')!='comment' and r.get('comments_status')!='finished']
-                        for post in parents:
-                            if cancelled():
-                                raise asyncio.CancelledError
-                            if session.pause_post(post):
-                                persist([post])
-                                await asyncio.sleep(0)
-                                continue
-                            await acquire(platform)
-                            began, error = time.monotonic(), None
-                            try:
-                                with observe_rows(persist):
-                                    updated = await fetch_comments(fetcher, platform, [post], cookies)
-                                persist(updated)
-                                if post.get('comments_status') != 'finished':
-                                    error = CommentOutcomeError(post)
-                            except Exception as exc:
-                                error = exc
-                                post['comments_status'] = 'partial' if post.get('replies_data') else 'failed'
-                                post['comments_reason'] = error_reason(exc)[0]
-                                post['comments_warning'] = classify(exc)[2]
-                                persist([post])
-                            finally:
-                                session.record(post)
-                                Traffic.leave(platform, error, time.monotonic()-began)
+                        save = comment_saver(unit, platform, keyword)
+                        comment_jobs.extend(CommentJob(dict(r), save) for r in rows
+                                            if r.get('type', 'post') != 'comment' and r.get('comments_status') != 'finished')
                     actual = sum(r.get('type','post')!='comment' for r in rows)
                     if stage == 'posts' or comments_only:
                         counts.append({'platform':platform, 'keyword':keyword, 'requested_count':target,
@@ -538,6 +521,19 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     if stage == 'posts' and spec.batch_size and (keyword_index+1)%spec.batch_size==0 and keyword_index+1<len(spec.keywords):
                         await asyncio.sleep(spec.batch_cooldown)
                 if stage == 'comments':
+                    from src.crawlers.platform_config import PLATFORM_TIMING_MAP
+                    async def fetch_parent(post):
+                        nonlocal current_keyword
+                        current_keyword = post.get('keyword', '')
+                        publish_progress('comments')
+                        return await fetch_comments(fetcher, platform, [post], cookies)
+                    await drain_comments(comment_jobs, session, fetch_parent,
+                                         lambda: acquire(platform),
+                                         lambda error, elapsed: Traffic.leave(platform, error, elapsed),
+                                         cancelled, PLATFORM_TIMING_MAP[platform])
+                    store.compact_comments(rid)
+                    if checkpoint:
+                        checkpoint(all_rows)
                     await session.close()
                 if platform_event and stage == stages[-1]:
                     platform_event('done',platform)
@@ -570,6 +566,9 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
             'comments_finished':len(main)-pending if spec.include_replies else 0, 'run_id':rid,
             'count_scope':spec.count_scope, 'date_filter_note': '日期范围按 UTC 日期、结束日期不含当天；Reddit 在可访问搜索结果内筛选，语言过滤仅作用于 X' if spec.since or spec.languages else ''}
     except asyncio.CancelledError:
+        store.compact_comments(rid)
+        if checkpoint:
+            checkpoint(all_rows)
         publish_progress('interrupted')
         store.status(rid,'interrupted','已停止并保存检查点，可继续抓取')
         raise

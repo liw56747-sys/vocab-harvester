@@ -7,6 +7,7 @@ Reddit 的 .json 端点直接返回结构化数据，无需 Playwright DOM 解�
 
 from __future__ import annotations
 
+from src.crawlers.comment_policy import managed_comments
 from src.collection.images import reddit_images
 
 from src.crawlers.progress import report_rows, report_progress, observe_rows, row_observer
@@ -328,10 +329,17 @@ class RedditCookieFetcher:
         sem = asyncio.Semaphore(2)  # 避免大量帖子评论请求瞬间触发限流
         parent_observer = row_observer()
         partial_comments = {}
+        reported = {}
         def comment_snapshot(post_id, comments):
             partial_comments[post_id] = list(comments)
             if parent_observer:
-                parent_observer(list(posts) + [r for group in partial_comments.values() for r in group])
+                if managed_comments():
+                    known = reported.setdefault(post_id, set())
+                    delta = [r for r in comments if r.get('comment_id') not in known]
+                    known.update(r.get('comment_id') for r in delta)
+                    parent_observer(list(posts) + delta)
+                else:
+                    parent_observer(list(posts) + [r for group in partial_comments.values() for r in group])
 
         try:
             async with AsyncExitStack() as stack:
@@ -430,12 +438,13 @@ class RedditCookieFetcher:
         import httpx
         from email.utils import parsedate_to_datetime
 
-        for attempt in range(_RC.comment_retry_attempts):
+        attempts = 1 if managed_comments() else _RC.comment_retry_attempts
+        for attempt in range(attempts):
             delay = _RC.comment_retry_wait * (2 ** attempt)
             try:
                 resp = await client.get(url, params=params)
                 if resp.status_code == 429 or resp.status_code >= 500:
-                    if attempt + 1 == _RC.comment_retry_attempts:
+                    if attempt + 1 == attempts:
                         resp.raise_for_status()
                     retry_after = resp.headers.get("Retry-After")
                     if retry_after:
@@ -453,7 +462,7 @@ class RedditCookieFetcher:
                     resp.raise_for_status()
                     return resp.json()
             except (httpx.TransportError, ValueError):
-                if attempt + 1 == _RC.comment_retry_attempts:
+                if attempt + 1 == attempts:
                     raise
             await asyncio.sleep(delay)
 
@@ -485,6 +494,7 @@ class RedditCookieFetcher:
         warning = ""
         self._parse_comment_tree(data[1].get("data", {}).get("children", []),
                                  post_id, comments, max_comments, seen, pending, continuations)
+        progress["comments_fetched"] = len(comments)
         report_rows(comments)
         try:
             for _ in range(_RC.comment_max_rounds):
@@ -516,6 +526,7 @@ class RedditCookieFetcher:
                     children = thread[1].get("data", {}).get("children", [])
                 self._parse_comment_tree(children, post_id, comments, max_comments,
                                          seen, pending, continuations)
+                progress["comments_fetched"] = len(comments)
                 report_rows(comments)
             else:
                 warning = "达到评论翻页上限，可能仍有未采集评论"

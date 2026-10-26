@@ -262,7 +262,7 @@ async def test_cancellation_with_real_comment_loop_closes_leased_page_and_saves_
     await asyncio.wait_for(blocked.wait(),5);task.cancel()
     with pytest.raises(asyncio.CancelledError):await task
     assert all(c.closed and all(p.closed for p in c.pages) for c in contexts)
-    assert len(contexts[0].pages)==1
+    assert len(contexts[0].pages)==2
     saved=next(r for r in store.rows(rid) if r['tweet_id']=='a-0')
     assert saved['replies_data'][0]['tweet_id']=='a-0-saved'
     assert not Traffic.active
