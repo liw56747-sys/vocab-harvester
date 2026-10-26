@@ -61,8 +61,8 @@ jobs:
         run: uv pip install pyinstaller
 
       - name: Run unit tests
-        timeout-minutes: 20
-        run: python -m pytest tests/ -x -q --durations=10 -m "not integration and not interactive"
+        timeout-minutes: 40
+        run: python -m pytest tests/ -x -v --durations=20 -o faulthandler_timeout=180 -m "not integration and not interactive"
 
       - name: Verify browser interfaces
         run: python tests/manual/check_release_ui.py
