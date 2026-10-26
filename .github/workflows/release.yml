@@ -18,7 +18,8 @@ on:
         type: string
 
 env:
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.12.14'
+  UV_PYTHON_PREFERENCE: only-managed
 
 # ����������������������������������������������������������������������������������������������������������������������������������������
 # Windows build
@@ -31,14 +32,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - name: Set up managed Python runtime
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+          enable-cache: true
+
+      - name: Create release environment
+        shell: pwsh
+        run: |
+          uv venv --python $env:PYTHON_VERSION .venv
+          "$PWD/.venv/Scripts" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - name: Verify TLS runtime before packaging
+        run: python -c "from src.common.network_runtime import require_release_tls; print(require_release_tls())"
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: uv pip install -r requirements.txt
 
       - name: Install Playwright & Chromium
         run: |
@@ -49,7 +58,7 @@ jobs:
           echo "PLAYWRIGHT_BROWSERS_PATH=$env:LOCALAPPDATA\ms-playwright" >> $env:GITHUB_ENV
 
       - name: Install PyInstaller
-        run: pip install pyinstaller
+        run: uv pip install pyinstaller
 
       - name: Run unit tests
         timeout-minutes: 20
@@ -196,14 +205,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - name: Set up managed Python runtime
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+          enable-cache: true
+
+      - name: Create release environment
+        shell: bash
+        run: |
+          uv venv --python "$PYTHON_VERSION" .venv
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Verify TLS runtime before packaging
+        run: python -c "from src.common.network_runtime import require_release_tls; print(require_release_tls())"
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: uv pip install -r requirements.txt
 
       - name: Install Playwright & Chromium
         run: |
@@ -215,7 +232,7 @@ jobs:
           # build_mac.spec will pick up chromium_headless_shell-* from the default cache path.
 
       - name: Install PyInstaller
-        run: pip install pyinstaller
+        run: uv pip install pyinstaller
 
       - name: Run unit tests
         timeout-minutes: 20

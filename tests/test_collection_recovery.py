@@ -401,3 +401,33 @@ async def test_staged_comments_keep_parent_keyword_and_platform_after_resume(mon
         assert parents[(reply['platform'],reply['parent_id'])]==reply['keyword']
         assert reply['content']==reply['parent_id']
         assert reply['comment_id']==reply['parent_id']+'-reply'
+
+
+async def test_search_denial_is_visible_before_task_ends_and_resume_clears_it(monkeypatch):
+    from src.collection.api import summary
+    monkeypatch.setattr(Traffic, 'enter', AsyncMock())
+    store = Store()
+    spec = CollectionSpec(keywords=['first','second'], platforms=['reddit','twitter'], count=1)
+    rid = store.create(spec.model_dump(mode='json'))
+    denied = AsyncMock(side_effect=RuntimeError('403 Blocked'))
+    monkeypatch.setattr(RedditCookieFetcher,'search_posts',denied)
+    live=[]
+    async def twitter(self, keyword, **kwargs):
+        # Reddit failure must be visible while another platform is still running.
+        assert store.get(rid)['status']=='running' and store.get(rid)['error']==''
+        current=summary(store,rid)
+        assert 'access_denied' in current['error'] and current['errors']
+        live.append(current)
+        return [tweet(keyword)], ''
+    monkeypatch.setattr(TwitterCookieFetcher,'search_tweets',twitter)
+    rows,info=await collect(store,rid,COOKIES)
+    assert denied.await_count==1 and len(live)==2
+    assert len(rows)==2 and info['status']=='partial'
+    reddit_units=[state for _,state in store.units(rid).values() if state['platform']=='reddit']
+    assert len(reddit_units)==2 and all(state.get('error') for state in reddit_units)
+    async def recovered(self, keyword, **kwargs):
+        return [{'post_id':keyword,'type':'post','content':'ok'}],''
+    monkeypatch.setattr(RedditCookieFetcher,'search_posts',recovered)
+    rows,info=await collect(store,rid,COOKIES)
+    assert len(rows)==4 and info['status']=='success'
+    assert not summary(store,rid)['errors'] and not summary(store,rid)['error']

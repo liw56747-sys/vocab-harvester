@@ -245,6 +245,9 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
     previous = store.units(rid)
     all_rows = store.rows(rid)
     counts, errors = [], []
+    unit_errors = {uid: f"{state.get('platform', '')} {state.get('keyword', '')}: {state['error']}"
+                   for uid, (_, state) in previous.items() if state.get('error')}
+    search_denials = {}
     fetchers, comment_sessions = {}, {}
     baseline = comment_summary(all_rows, spec.include_replies)['total_comments']
     attempt_started = datetime.now(timezone.utc).isoformat()
@@ -255,6 +258,8 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
         phase = phase or stage
         summary = comment_summary(all_rows, spec.include_replies)
         summary['refreshed_posts'] = sum(r.get('type', 'post') != 'comment' and r.get('collection_kind') == 'revisit' for r in all_rows)
+        visible_errors = list(dict.fromkeys([*errors, *unit_errors.values()]))
+        summary.update(errors=visible_errors, error='；'.join(visible_errors))
         summary.update(phase=phase, attempt_started=attempt_started,
                        new_comments=max(0, summary['total_comments']-baseline),
                        comments_only=comments_only, current_platform=current_platform,
@@ -382,6 +387,10 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                         state['saved_posts'] = sum(r.get('type','post')!='comment' for r in rows)
                         state['last_saved_id'] = key(rows[-1]) if rows else None
                         store.save(rid, unit, rows, state)
+                        if state.get('error'):
+                            unit_errors[unit] = f'{platform} {keyword}: {state["error"]}'
+                        else:
+                            unit_errors.pop(unit, None)
                         all_rows = merge(all_rows, rows)
                         publish_progress()
                         if checkpoint:
@@ -400,7 +409,12 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     outside |= historical - own
                     state['target'] = target
                     state['platform'],state['keyword'] = platform,keyword
-                    if stage == 'posts' and target and not state.get('search_finished'):
+                    if stage == 'posts' and platform in search_denials and not state.get('search_finished'):
+                        state['error'] = search_denials[platform] + '；本轮暂停该平台后续搜索，请处理访问问题后续抓'
+                        errors.append(f'{platform} {keyword}: {state["error"]}')
+                        persist()
+                        await asyncio.sleep(0)
+                    if stage == 'posts' and target and not state.get('search_finished') and platform not in search_denials:
                         plans = list(partitions(spec, platform, keyword))
                         for index, (query, sort, start, end) in enumerate(plans):
                             if index < state.get('partition', 0):
@@ -459,6 +473,8 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                                         error = exc
                                         kind, retry, message = classify(exc)
                                         state['error'] = f'{kind}: {message}'
+                                        if kind in {'access_denied', 'authentication'}:
+                                            search_denials[platform] = state['error']
                                         persist()
                                         if not retry or attempt == spec.max_retries:
                                             break

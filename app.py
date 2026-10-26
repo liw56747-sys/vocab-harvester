@@ -12,6 +12,11 @@ import asyncio
 import traceback
 from pathlib import Path
 
+# Explicit diagnostics must not start the UI, scheduler, or write task history.
+if "--diagnose-reddit" in sys.argv:
+    from src.common.reddit_diagnostics import cli as reddit_diagnostic_cli
+    sys.exit(reddit_diagnostic_cli(sys.argv[sys.argv.index("--diagnose-reddit") + 1:]))
+
 # ── PyInstaller 路径处理 ──
 # sys._MEIPASS = _internal/ 目录（打包进来的静态资源）
 # sys.executable 父目录 = exe 所在目录（用于写日志、数据库等可变文件）

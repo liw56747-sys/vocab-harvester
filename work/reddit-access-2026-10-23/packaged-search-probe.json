@@ -1,0 +1,14 @@
+{
+  "runtime": {
+    "python": "3.12.14",
+    "openssl": "OpenSSL 3.5.8 25 Aug 2026",
+    "platform": "darwin",
+    "packaged": true
+  },
+  "version": "1.9.1",
+  "proxy_configured": true,
+  "requested_posts": 5,
+  "status": "passed",
+  "saved_posts": 5,
+  "endpoint": "www.reddit.com"
+}

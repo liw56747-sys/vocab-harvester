@@ -4501,6 +4501,7 @@ function saveCookie(platform) {
     lockCookiePanel('reddit');
   }
   updateCookieSummary();
+  updateCollectionReview();
   // Keep both platform settings accessible after saving.
   document.getElementById('twitter-login-card').classList.remove('collapsed');
   toast(t('cookie_saved'), 'success');
@@ -5338,6 +5339,7 @@ function setCollectionView(view) {
   const panel=document.getElementById('collection-history-panel');
   if(view==='history'){panel.open=true;loadCollectionHistory();}else {panel.open=false;clearTimeout(collectionHistoryTimer);}
   if(view==='accounts'){loadAllCookies();document.getElementById('twitter-login-card').classList.remove('collapsed');}
+  if(view==='create')updateCollectionReview();
 }
 function setCollectionSource(source) {
   collectionSource=source;

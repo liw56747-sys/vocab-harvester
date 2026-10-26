@@ -50,7 +50,7 @@ class RedditCookieFetcher:
         self._comment_host = None
         self._comment_denials = 0
         self.comment_circuit_open = False
-        logger.info(f"RedditCookieFetcher 初始化, proxy={self.proxy}")
+        logger.info("RedditCookieFetcher 初始化，代理=%s", "已配置" if self.proxy else "未配置")
 
     @staticmethod
     def request_headers():
@@ -175,10 +175,8 @@ class RedditCookieFetcher:
                     if data is None:
                         if last_error == "403":
                             raise RuntimeError(
-                                "Reddit 所有端点均返回 403。可能原因：\n"
-                                "1) Cookie 已过期 — 请重新从浏览器获取\n"
-                                "2) 缺少必要 Cookie — 请同时复制 reddit_session、edgebucket、redesign_optout\n"
-                                "3) 账号被限制 — 尝试更换 Reddit 账号"
+                                "Reddit 搜索接口拒绝访问（403）；这不等同于 Cookie 过期或没有搜索结果。"
+                                "请核对登录会话、代理出口及应用网络运行库；持续失败时停止重试并运行网络诊断。"
                             )
                         raise RuntimeError(f"Reddit 搜索第{page_num+1}页失败: {last_error}")
 

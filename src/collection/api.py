@@ -66,7 +66,7 @@ def _result(store, rid, detail=None):
             'total_rows':len(exported),'total_comments':len(exported)-len(main),
             **comment_summary(rows, spec.include_replies),
             'new_comments': (store.progress(rid) or {}).get('new_comments', 0),
-            'errors':[record['error']] if record['error'] else [], 'count_results':counts,
+            'errors':[record['error']] if record['error'] else saved_progress.get('errors', []), 'count_results':counts,
             'platform_counts':{p:sum(r['platform']==p for r in main) for p in spec.platforms},
             'keyword_results':[{'keyword':kw,'post_count':sum(r.get('keyword')==kw for r in main),'total_rows':sum(r.get('keyword')==kw for r in exported)} for kw in spec.keywords],
             'sampled_posts':[], 'csv_data':base64.b64encode(buf.getvalue().encode('utf-8-sig')).decode(),
@@ -183,8 +183,8 @@ def summary(store, rid):
     if status == 'success' and (missing or cached.get('comments_pending') or cached.get('images_pending') or cached.get('images_failed')):
         status = 'partial'
     return {**cached, 'id': rid, 'run_id': rid, 'created': record['created'], 'updated': record['updated'],
-            'status': status, 'active': active, 'error': record['error'],
-            'errors': [record['error']] if record['error'] else [],
+            'status': status, 'active': active, 'error': record['error'] or cached.get('error', ''),
+            'errors': [record['error']] if record['error'] else cached.get('errors', []),
             'total_posts': cached['saved_posts'], 'requested_posts': expected, 'missing_posts': missing,
             'preflight': spec.probe, 'keyword_count':len(spec.keywords), 'platforms':spec.platforms,
             'owner':record['owner']}

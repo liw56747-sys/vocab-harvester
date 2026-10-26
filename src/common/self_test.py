@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo
 
 async def check():
     import httpx
+    from src.common.network_runtime import require_release_tls
+    network_runtime = require_release_tls()
     from playwright.async_api import async_playwright
     from src.api import main as api
     from src.collection.engine import CollectionSpec
@@ -53,7 +55,7 @@ async def check():
             await page.set_content('<main>bundled browser ready</main>')
             assert await page.locator('main').inner_text()=='bundled browser ready'
             await browser.close()
-    return {'status':'passed','version':get_version(),'checks':['startup','database','static-ui','audit-disconnected',
+    return {'status':'passed','version':get_version(),'network_runtime':network_runtime,'checks':['startup','database','static-ui','audit-disconnected',
              'retired-endpoint','checkpoint','csv','xlsx','tzdata','crawler-imports','image-download-validate-export','bundled-chromium']}
 
 

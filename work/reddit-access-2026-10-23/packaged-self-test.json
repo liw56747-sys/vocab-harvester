@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "version": "1.9.1",
+  "network_runtime": {
+    "python": "3.12.14",
+    "openssl": "OpenSSL 3.5.8 25 Aug 2026",
+    "platform": "darwin",
+    "packaged": true
+  },
+  "checks": [
+    "startup",
+    "database",
+    "static-ui",
+    "audit-disconnected",
+    "retired-endpoint",
+    "checkpoint",
+    "csv",
+    "xlsx",
+    "tzdata",
+    "crawler-imports",
+    "image-download-validate-export",
+    "bundled-chromium"
+  ]
+}

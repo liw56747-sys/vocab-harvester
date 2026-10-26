@@ -62,6 +62,11 @@ async def main():
         assert await page.locator('#tw-ct0').get_attribute('readonly') is not None
         await page.locator('.cookie-tab').nth(1).click()
         assert await page.locator('#rd-cookies').is_visible()
+        await page.evaluate('updateCollectionReview()')
+        assert '尚未配置账号' in await page.locator('#collection-review').inner_text()
+        await page.locator('#rd-cookies').fill('reddit_session=fixture; edgebucket=edge')
+        await page.locator('#cookie-panel-reddit .cookie-save-btn').click()
+        assert '尚未配置账号' not in await page.locator('#collection-review').inner_text()
         await page.locator('[data-collection-view="create"]').click()
         # File import prepares a draft and never fires a search.
         await page.locator('#keyword-file-input').set_input_files({'name':'keywords.txt','mimeType':'text/plain','buffer':'alpha\nbeta\ngamma\ndelta'.encode()})

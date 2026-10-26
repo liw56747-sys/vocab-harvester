@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Vocab Harvester — Gather</title>
+  <desc>Two folded ribbons converge into a V, with a gold incoming data tile on an emerald rounded square.</desc>
+  <defs>
+    <linearGradient id="base" x1="160" y1="96" x2="850" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24574F"/><stop offset=".55" stop-color="#123D37"/><stop offset="1" stop-color="#082B29"/>
+    </linearGradient>
+    <linearGradient id="left" x1="280" y1="310" x2="540" y2="720" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FAFBED"/><stop offset="1" stop-color="#D8E8D6"/>
+    </linearGradient>
+    <linearGradient id="right" x1="694" y1="409" x2="490" y2="737" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A8E9CB"/><stop offset="1" stop-color="#53B995"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="686" y1="263" x2="766" y2="354" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5DA91"/><stop offset="1" stop-color="#D6AD56"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="82" width="896" height="880" rx="204" fill="#031E1A" opacity=".14"/>
+  <rect x="64" y="64" width="896" height="896" rx="204" fill="url(#base)"/>
+  <rect x="66" y="66" width="892" height="892" rx="202" fill="none" stroke="#DAF1DD" stroke-opacity=".14" stroke-width="4"/>
+  <path d="M279 307 H367 Q385 307 396 327 L573 647 L526 734 Q512 757 489 743 Q480 737 473 724 L256 350 Q242 326 258 313 Q266 307 279 307Z" fill="#051F1B" opacity=".22" transform="translate(0 12)"/>
+  <path d="M279 295 H367 Q385 295 396 315 L573 635 L526 722 Q512 745 489 731 Q480 725 473 712 L256 338 Q242 314 258 301 Q266 295 279 295Z" fill="url(#left)"/>
+  <path d="M636 416 Q643 403 660 403 H752 Q777 403 764 427 L587 728 Q574 750 549 750 H504 Q480 750 469 727 L445 684 Q483 699 503 665Z" fill="url(#right)"/>
+  <path d="M636 416 Q643 403 660 403 H752" fill="none" stroke="#D2F7DE" stroke-opacity=".6" stroke-width="4" stroke-linecap="round"/>
+  <rect x="675" y="260" width="112" height="102" rx="25" fill="#041F1B" opacity=".25" transform="translate(0 10)"/>
+  <rect x="675" y="260" width="112" height="102" rx="25" fill="url(#gold)"/>
+  <path d="M701 262 H761 Q785 262 785 286" fill="none" stroke="#FFF2C9" stroke-opacity=".65" stroke-width="4" stroke-linecap="round"/>
+</svg>

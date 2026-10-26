@@ -28,6 +28,8 @@ data/
 *.db
 *.log
 *.png
+!icon_macos.png
+!assets/branding/app-icon-*.png
 .port
 twitter.log
 
@@ -49,3 +51,6 @@ installer/*.exe
 # 本地安装包产物，勿入库
 *.exe
 vocab-harvester-*-setup.exe
+
+# Local diagnostic installers
+work/reddit-access-2026-10-23/packages/
