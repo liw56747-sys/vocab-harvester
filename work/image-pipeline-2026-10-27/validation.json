@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-28",
+  "status": "release_candidate_locally_verified",
+  "base_commit": "561e7b3ebec1390c793fed4dfc7e3d52fc7ebcf9",
+  "full_regression": {
+    "passed": 345,
+    "deselected": 8,
+    "seconds": 83.09,
+    "command": ".venv/bin/python -m pytest tests/ -q -m 'not integration and not interactive'"
+  },
+  "ui": {
+    "release_checks": 9,
+    "sparse_image_browser_check": "200 inspected comments / 10 retained image comments; all source images retained"
+  },
+  "pressure_soak": {
+    "rounds": 3,
+    "passed_each_round": 81,
+    "note": "Completed before final adaptive-wait and exceptional-downloader cleanup refinements; final full regression includes pressure tests plus new exceptional-cleanup case.",
+    "report": "pressure-soak.json"
+  },
+  "benchmark": "benchmark.json",
+  "source_sha256": {
+    "src/collection/engine.py": "4c3bacca2858d658e99b21bbbd572e8ad197d778613b2126196993725d5bbb9f",
+    "src/collection/images.py": "0be267937216a5e58c99a51e020f3ef1c60b0b2adbf58a64a7ba67283bbd4c77",
+    "src/collection/comment_queue.py": "f5b792d47d16e705bc4111e308e94fe966a3dc6aef2635a88d9be5525bf1ec8d",
+    "src/crawlers/twitter_url.py": "4b77d4bedbf85f6ecb76fa0afddef17126b7ed0e906d37726632797992641f4a",
+    "src/crawlers/reddit_crawler.py": "f04eacc6a5bbc242d2aae3608814018c6baf88745320e9aacc11ee0fb8566db0",
+    "src/api/main.py": "4a02e847f9791a6573fb5f578d49e12a18cdfd1314f9c3c54259155f718a5207",
+    "static/index.html": "5d53f1b6b53c5abb686966b0819099fe3dcd59e72db39fc80702d00c4f54323f"
+  },
+  "limits": [
+    "No production X/Reddit throughput measurement",
+    "No persisted comment cursor or retained page position",
+    "Same-platform batch barrier remains",
+    "Installed app not replaced; GitHub packaged checks required before publication"
+  ],
+  "version": "1.9.4",
+  "source_self_test": {
+    "status": "passed",
+    "version": "1.9.4"
+  }
+}

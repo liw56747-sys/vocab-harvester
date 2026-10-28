@@ -1,0 +1,26 @@
+[
+  {
+    "round": 1,
+    "exit_code": 0,
+    "seconds": 52.22,
+    "process_peak_rss_mb": 768.5,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 2,
+    "exit_code": 0,
+    "seconds": 52.84,
+    "process_peak_rss_mb": 768.5,
+    "thread_count": 1,
+    "open_fds": 5
+  },
+  {
+    "round": 3,
+    "exit_code": 0,
+    "seconds": 53.14,
+    "process_peak_rss_mb": 768.5,
+    "thread_count": 1,
+    "open_fds": 5
+  }
+]

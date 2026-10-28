@@ -102,11 +102,15 @@ async def test_watchdog_cancels_real_worker_and_saves_partial_results(scheduled,
     if reddit_first:
         scheduled['params']['platforms'] = ['reddit', 'twitter']
     cancelled = threading.Event()
+    reddit_done = asyncio.Event()
     async def search(self, *args, **kwargs):
         # 使用生产增量映射链路，不能用直接返回模拟结果绕过取消。
         report_rows([{'tweet_id': 'post1', 'content': '已取得的主帖',
                       'replies_data': [{'tweet_id': 'reply1', 'content': '已取得的评论'}]}])
         run = api._scheduled_runs[scheduled['id']]
+        # Platforms now advance independently. Age the clock only after the
+        # other platform's valid progress, so this still tests a real stall.
+        await reddit_done.wait()
         with run._lock:
             run.last_progress -= 3000  # 模拟后续无进展，无需真正等待 40 分钟。
         try:
@@ -116,17 +120,18 @@ async def test_watchdog_cancels_real_worker_and_saves_partial_results(scheduled,
             raise
     monkeypatch.setattr(TwitterCookieFetcher, 'search_tweets', search)
     from src.crawlers.reddit_crawler import RedditCookieFetcher
-    reddit = AsyncMock(return_value=([{'post_id':'rd','author':'test','content':'另一平台数据','comments_status':'finished'}],''))
+    async def reddit_search(*args, **kwargs):
+        reddit_done.set()
+        return [{'post_id':'rd','author':'test','content':'另一平台数据','comments_status':'finished'}],''
+    reddit = AsyncMock(side_effect=reddit_search)
     monkeypatch.setattr(RedditCookieFetcher, 'search_posts', reddit)
     await asyncio.wait_for(api._execute_scheduled_task(scheduled), timeout=5)
     assert cancelled.is_set()
-    assert reddit.await_count == int(reddit_first)
+    assert reddit.await_count == 1
     db = await get_db()
     row = await (await db.execute('SELECT last_run_status,last_error FROM scheduled_tasks WHERE id=?', (scheduled['id'],))).fetchone()
     assert row[0] == 'partial'
     assert '抓取已停止' in row[1]
-    if not reddit_first:
-        assert '尚未执行' in row[1]
     files = list(tmp_path.glob('*.' + save_format))
     assert len(files) == 1
     if save_format == 'csv':
@@ -137,7 +142,7 @@ async def test_watchdog_cancels_real_worker_and_saves_partial_results(scheduled,
         rows = [dict(zip(values[0], value)) for value in values[1:]]
     contents = {r['content'] for r in rows}
     assert {'已取得的主帖', '已取得的评论'} <= contents
-    assert ('另一平台数据' in contents) == reddit_first
+    assert '另一平台数据' in contents
     assert next(r for r in rows if r['content'] == '已取得的评论')['parent_id'] == 'post1'
 
 

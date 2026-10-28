@@ -475,6 +475,10 @@ class RedditCookieFetcher:
             max_comments = _RC.comment_max_replies
         if progress is None:
             progress = {}
+        images_only = getattr(self, '_image_collection', False)
+        if images_only:
+            progress.setdefault('image_comments_scanned', 0)
+            progress['image_scan_exhausted'] = False
         preferred = progress.get("reddit_endpoint")
         if self._comment_host is None and preferred in {"www.reddit.com", "old.reddit.com"}:
             self._preferred_host = preferred
@@ -495,12 +499,14 @@ class RedditCookieFetcher:
         self._parse_comment_tree(data[1].get("data", {}).get("children", []),
                                  post_id, comments, max_comments, seen, pending, continuations)
         progress["comments_fetched"] = len(comments)
+        if images_only:
+            progress['image_comments_scanned'] = max(progress['image_comments_scanned'], len(seen))
         report_rows(comments)
         try:
             for _ in range(_RC.comment_max_rounds):
                 pending = list(dict.fromkeys(cid for cid in pending if cid not in seen and cid not in requested))
                 continuations = list(dict.fromkeys(cid for cid in continuations if cid not in expanded_threads))
-                if len(comments) >= max_comments:
+                if (len(seen) if images_only else len(comments)) >= max_comments:
                     warning = f"达到单帖评论上限 {max_comments} 条，可能仍有未采集评论"
                     break
                 if not pending and not continuations:
@@ -527,6 +533,8 @@ class RedditCookieFetcher:
                 self._parse_comment_tree(children, post_id, comments, max_comments,
                                          seen, pending, continuations)
                 progress["comments_fetched"] = len(comments)
+                if images_only:
+                    progress['image_comments_scanned'] = max(progress['image_comments_scanned'], len(seen))
                 report_rows(comments)
             else:
                 warning = "达到评论翻页上限，可能仍有未采集评论"
@@ -536,11 +544,13 @@ class RedditCookieFetcher:
             warning = f"部分评论加载失败，已保留已采集评论: {str(e) or type(e).__name__}"
             logger.warning(warning)
         advertised = progress.get("num_comments", 0) or 0
-        if not warning and len(comments) < advertised:
+        if not images_only and not warning and len(comments) < advertised:
             warning = f"页面显示 {advertised} 条评论，实际采集 {len(comments)} 条；可能存在未返回或不可访问评论"
         progress["comments_reason"] = error_reason(warning)[0] if warning else ""
         progress["comments_empty_verified"] = not warning and not comments
         progress["comments_status"] = "partial" if warning else "finished"
+        if images_only:
+            progress['image_scan_exhausted'] = not bool(warning)
         progress["comments_warning"] = warning
         progress["comments_fetched"] = len(comments)
         return comments
@@ -557,8 +567,9 @@ class RedditCookieFetcher:
             pending = []
         if continuations is None:
             continuations = []
+        images_only = getattr(self, '_image_collection', False)
         for child in children:
-            if len(comments) >= max_comments:
+            if (len(seen) if images_only else len(comments)) >= max_comments:
                 return
             d = child.get("data", {})
             if child.get("kind") == "more":
@@ -577,20 +588,25 @@ class RedditCookieFetcher:
                         created_at = datetime.fromtimestamp(d["created_utc"], tz=timezone.utc).isoformat()
                     except (ValueError, TypeError, OSError):
                         pass
-                comments.append({
+                native_images = reddit_images(d, comment=True)
+                row = {
                     "type": "comment", "comment_id": cid,
                     # 保留 post_id 指向根帖，兼容定时任务的评论分组。
                     "post_id": parent_post_id,
                     "parent_id": d.get("parent_id", "").removeprefix("t3_").removeprefix("t1_"),
                     "author": "", "commenter": f"u/{d.get('author', '[deleted]')}",
                     "subreddit": f"r/{d.get('subreddit', '')}", "title": "",
-                    "content": d.get("body", "") or "", "created_at": created_at,
+                    "created_at": created_at,
                     "url": f"https://www.reddit.com{d.get('permalink', '')}",
                     "score": d.get("score", 0), "upvote_ratio": 0, "num_comments": 0,
-                    "has_media": bool(reddit_images(d, comment=True)), "media_type": "image" if reddit_images(d, comment=True) else "none",
-                    "media_urls": ";".join(reddit_images(d, comment=True)), "image_urls": reddit_images(d, comment=True),
+                    "has_media": bool(native_images), "media_type": "image" if native_images else "none",
+                    "media_urls": ";".join(native_images), "image_urls": native_images,
                     "root_post_id": parent_post_id,
-                })
+                }
+                if not images_only:
+                    row['content'] = d.get('body', '') or ''
+                if not images_only or native_images:
+                    comments.append(row)
             # 重复父节点仍可能带回新的深层回复。
             replies = d.get("replies")
             if isinstance(replies, dict):

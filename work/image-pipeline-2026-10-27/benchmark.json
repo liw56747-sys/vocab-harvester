@@ -1,0 +1,34 @@
+{
+  "scenario": "60 parents / 3000 scanned comments / 60 image URLs; local simulated latency",
+  "limitation": "Does not measure real X/Reddit pagination, rate limiting or network throughput.",
+  "results": [
+    {
+      "mode": "v1.9.3",
+      "seconds": 1.875,
+      "first_image_seconds": 1.476,
+      "downloaded": 60,
+      "retained_comment_records": 3000
+    },
+    {
+      "mode": "working-tree",
+      "seconds": 1.106,
+      "first_image_seconds": 0.149,
+      "downloaded": 60,
+      "retained_comment_records": 60
+    },
+    {
+      "mode": "working-tree",
+      "seconds": 1.196,
+      "first_image_seconds": 0.128,
+      "downloaded": 60,
+      "retained_comment_records": 60
+    },
+    {
+      "mode": "v1.9.3",
+      "seconds": 1.887,
+      "first_image_seconds": 1.498,
+      "downloaded": 60,
+      "retained_comment_records": 3000
+    }
+  ]
+}

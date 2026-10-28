@@ -288,7 +288,7 @@ async def test_default_six_keywords_two_platforms_fifty_each(monkeypatch):
 
 
 @pytest.mark.parametrize('mode',['text','images'])
-async def test_all_400_posts_saved_before_first_comment_and_image_download(monkeypatch, mode):
+async def test_all_400_posts_saved_before_first_comment_and_download_pipeline_joins(monkeypatch, mode):
     from src.collection.images import Images
     spec=CollectionSpec(keywords=['a','b','c','d'],platforms=['twitter','reddit'],count=50,
                         include_replies=True,content_mode=mode)
@@ -310,7 +310,6 @@ async def test_all_400_posts_saved_before_first_comment_and_image_download(monke
         posts[0]['comments_status']='finished'
         return posts
     async def download(self,*a,**k):
-        assert len([e for e in events if e[0]=='comment'])==400
         events.append(('download',))
     monkeypatch.setattr(TwitterCookieFetcher,'search_tweets',search)
     monkeypatch.setattr(RedditCookieFetcher,'search_posts',search)
@@ -322,11 +321,11 @@ async def test_all_400_posts_saved_before_first_comment_and_image_download(monke
             assert len([e for e in events if e[0]=='comment' and e[1]==platform])==200
             finished.append(platform)
     rows,info=await collect(store,rid,COOKIES,progress=updates.append,platform_event=platform_event)
-    assert finished==['twitter','reddit']
+    assert sorted(finished)==['reddit','twitter']
     comment_updates=[u for u in updates if u['phase']=='comments']
     assert comment_updates and all(u['saved_posts']==400 for u in comment_updates)
     assert all(u['requested_posts']==400 and u['completed']==8 for u in comment_updates)
-    assert [e[0] for e in events[:8]]==['search']*8
+    assert [e[0] for e in events if e[0]!='download'][:8]==['search']*8
     assert len(rows)==400 and info['requested_posts']==400 and info['missing_posts']==0
     assert len(info['count_results'])==8 and info['status']=='success'
     assert store.progress(rid)['phase']=='finished'

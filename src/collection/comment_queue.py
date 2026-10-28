@@ -15,6 +15,8 @@ class CommentJob:
 
 
 def comment_count(post):
+    if 'image_comments_scanned' in post:
+        return post['image_comments_scanned']
     return len(replies(post)) if post.get('platform') == 'twitter' else post.get('comments_fetched', 0)
 
 

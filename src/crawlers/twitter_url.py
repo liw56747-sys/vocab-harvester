@@ -629,7 +629,7 @@ class TwitterCookieFetcher:
                         if not managed_comments():
                             report_rows(tweets)
                         reusable = True
-                        if not tweet["replies_count"] and tweet.get("replies", 0):
+                        if not getattr(self, '_image_collection', False) and not tweet["replies_count"] and tweet.get("replies", 0):
                             raise RuntimeError("页面显示有回复，但未加载出评论，请稍后重试")
                         if tweet.get("comments_status") == "finished":
                             return
@@ -1020,8 +1020,9 @@ class TwitterCookieFetcher:
     # ── 评论/回复抓取 ─────────────────────────────────────
 
     # 提取回复的 JS（在 page.evaluate 中使用）
-    _EXTRACT_REPLIES_JS = r"""(excludeIds) => {
-        const excludeSet = new Set(excludeIds);
+    _EXTRACT_REPLIES_JS = r"""(options) => {
+        const imagesOnly = !Array.isArray(options) && options.imagesOnly;
+        const excludeSet = new Set(Array.isArray(options) ? options : options.excludeIds);
         function extractText(container) {
             if (!container) return '';
             let result = '';
@@ -1054,6 +1055,18 @@ class TwitterCookieFetcher:
                 }
             }
             if (!tweetId || excludeSet.has(tweetId)) continue;
+
+            if (imagesOnly) {
+                const imageUrls = [...article.querySelectorAll('[data-testid="tweetPhoto"] img')]
+                    .filter(img => img.closest('article') === article && !img.closest('[data-testid="quoteTweet"]'))
+                    .map(img => img.getAttribute('src') || '')
+                    .filter(src => src.includes('pbs.twimg.com/media/') && !src.startsWith('blob:'));
+                // Return bare IDs too: an image-free screen is still traversal
+                // progress and must never make us skip later image replies.
+                results.push({tweetId, imageUrls,
+                    datetime: article.querySelector('time')?.getAttribute('datetime') || ''});
+                continue;
+            }
 
             const textEl = article.querySelector('[data-testid="tweetText"]');
             const text = extractText(textEl);
@@ -1174,6 +1187,24 @@ class TwitterCookieFetcher:
         return '';
     }"""
 
+    async def _wait_for_reply_articles(self, page, excluded_ids, seconds):
+        """Wait for useful DOM progress, keeping the old maximum grace period."""
+        from playwright.async_api import TimeoutError as PageTimeout
+        await asyncio.sleep(_TC.comment_min_interval)
+        try:
+            await page.wait_for_function(r"""ids => {
+                const seen = new Set(ids);
+                return [...document.querySelectorAll('article[data-testid="tweet"]')].some(article => {
+                    const time = article.querySelector('time');
+                    const href = time?.closest('a')?.getAttribute('href') || '';
+                    const match = href.match(/status\/(\d+)/);
+                    return match && !seen.has(match[1]);
+                });
+            }""", arg=excluded_ids, polling=_TC.comment_ready_poll_ms,
+                timeout=max(1, (seconds - _TC.comment_min_interval) * 1000))
+        except PageTimeout:
+            pass
+
     async def _scrape_replies_page(
         self, page, tweet_url: str, max_replies: int | None = None,
         *, progress: dict | None = None,
@@ -1185,6 +1216,10 @@ class TwitterCookieFetcher:
             max_replies = _TC.comment_max_replies
         if progress is None:
             progress = {}
+        images_only = getattr(self, '_image_collection', False)
+        if images_only:
+            progress.setdefault('image_comments_scanned', 0)
+            progress['image_scan_exhausted'] = False
         response = await page.goto(tweet_url, wait_until="domcontentloaded", timeout=60000)
         http_status = getattr(response, "status", None)
         if isinstance(http_status, int) and http_status in {401, 403, 404, 410, 429}:
@@ -1214,16 +1249,19 @@ class TwitterCookieFetcher:
                 break
             # 必须在本轮提取前记录数量，否则每轮都会误判为无新增。
             prev_count = len(collected)
-            expanded = await page.evaluate(_EXPAND_TWEETS_JS)
+            expanded = 0 if images_only else await page.evaluate(_EXPAND_TWEETS_JS)
             if expanded > 0:
                 await asyncio.sleep(_TC.comment_expand_wait)
-            new_replies = await page.evaluate(
-                self._EXTRACT_REPLIES_JS, list({main_id} | set(collected)),
-            )
+            exclude_ids = list({main_id} | set(collected))
+            new_replies = await page.evaluate(self._EXTRACT_REPLIES_JS,
+                {'excludeIds': exclude_ids, 'imagesOnly': True} if images_only else exclude_ids)
             delta = []
             for r in new_replies:
                 tid = r.get("tweetId", "")
-                if tid and tid != main_id and tid not in collected and (tid in retained or len(retained) < max_replies):
+                if tid and tid != main_id and tid not in collected and (len(collected) < max_replies if images_only else (tid in retained or len(retained) < max_replies)):
+                    if images_only and not r.get('imageUrls'):
+                        collected[tid] = None
+                        continue
                     collected[tid] = {
                         "tweet_id": tid, "author": r.get("author", ""),
                         "display_name": r.get("displayName", ""),
@@ -1243,13 +1281,15 @@ class TwitterCookieFetcher:
                         positions[tid] = len(retained_rows)
                         retained_rows.append(reply)
             progress["replies_count"] = len(retained)
+            if images_only:
+                progress['image_comments_scanned'] = max(progress['image_comments_scanned'], len(collected))
             progress["replies_data"] = retained_rows if managed_comments() else json.dumps(retained_rows, ensure_ascii=False)
-            if delta:
+            if delta or images_only and len(collected) != prev_count:
                 if managed_comments():
                     report_rows([{**{k:v for k,v in progress.items() if k != 'replies_data'}, 'replies_data': delta}])
                 else:
-                    report_rows(list(collected.values()))
-            if len(retained) >= max_replies:
+                    report_rows([r for r in collected.values() if r is not None])
+            if (len(collected) if images_only else len(retained)) >= max_replies:
                 warning = f"达到单帖评论上限 {max_replies} 条，可能仍有未采集评论"
                 break
             stall_count = stall_count + 1 if len(collected) == prev_count else 0
@@ -1262,42 +1302,33 @@ class TwitterCookieFetcher:
             if stall_count >= 2:
                 clicked = await page.evaluate(self._CLICK_SHOW_MORE_REPLIES_JS)
                 if clicked:
-                    await asyncio.sleep(_TC.comment_more_wait)
+                    if managed_comments():
+                        await self._wait_for_reply_articles(page, list({main_id} | set(collected)), _TC.comment_more_wait)
+                    else:
+                        await asyncio.sleep(_TC.comment_more_wait)
                     # Only newly extracted content resets stall_count. A
                     # clickable button is not evidence of successful loading.
                     continue
-            if stall_count >= 2:
+            if stall_count >= 2 and not managed_comments():
                 await asyncio.sleep(_TC.comment_stall_wait)
             # X 使用虚拟列表，直接跳到底部会跳过尚未提取的中间评论。
             await page.evaluate("window.scrollBy(0, Math.max(300, window.innerHeight * 0.75))")
             if managed_comments():
-                from playwright.async_api import TimeoutError as PageTimeout
-                # Keep a request pacing floor, but continue early once a new
-                # visible article arrives instead of sleeping the full interval.
-                await asyncio.sleep(_TC.comment_min_interval)
-                try:
-                    await page.wait_for_function(r"""ids => {
-                        const seen = new Set(ids);
-                        return [...document.querySelectorAll('article[data-testid="tweet"]')].some(article => {
-                            const time = article.querySelector('time');
-                            const href = time?.closest('a')?.getAttribute('href') || '';
-                            const match = href.match(/status\/(\d+)/);
-                            return match && !seen.has(match[1]);
-                        });
-                    }""", arg=list({main_id} | set(collected)),
-                        polling=_TC.comment_ready_poll_ms,
-                        timeout=max(1, (_TC.scroll_wait('comment') - _TC.comment_min_interval) * 1000))
-                except PageTimeout:
-                    pass
+                # Stalls retain their full grace period, but a reply arriving
+                # early no longer sits behind a fixed five-second sleep.
+                seconds = _TC.scroll_wait('comment') + (_TC.comment_stall_wait if stall_count >= 2 else 0)
+                await self._wait_for_reply_articles(page, list({main_id} | set(collected)), seconds)
             else:
                 await asyncio.sleep(_TC.scroll_wait("comment"))
 
         expected = progress.get("replies", 0)
-        if not warning and isinstance(expected, (int, float)) and len(retained) < expected:
+        if not images_only and not warning and isinstance(expected, (int, float)) and len(retained) < expected:
             warning = f"页面显示 {expected} 条回复，实际采集 {len(retained)} 条；可能存在未加载或不可访问的回复"
         progress["comments_reason"] = error_reason(warning)[0] if warning else ""
         progress["comments_empty_verified"] = not warning and not retained
         progress["comments_status"] = "partial" if warning else "finished"
+        if images_only:
+            progress['image_scan_exhausted'] = not bool(warning)
         progress["comments_warning"] = warning
         logger.info(f"共获取 {len(collected)} 条回复" + (f"（{warning}）" if warning else ""))
         return list(retained.values())

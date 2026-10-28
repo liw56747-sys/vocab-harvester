@@ -120,17 +120,31 @@ class Traffic:
     active = set()
     delay = {}
     until = {}
+    waiters = {}
 
     @classmethod
     async def enter(cls, platform, cancelled):
-        while True:
-            if cancelled():
-                raise asyncio.CancelledError
+        ticket = object()
+        with cls.lock:
+            cls.waiters.setdefault(platform, []).append(ticket)
+        try:
+            while True:
+                if cancelled():
+                    raise asyncio.CancelledError
+                with cls.lock:
+                    queue = cls.waiters[platform]
+                    if queue[0] is ticket and platform not in cls.active and len(cls.active) < 2 and time.monotonic() >= cls.until.get(platform, 0):
+                        queue.pop(0)
+                        cls.active.add(platform)
+                        return
+                await asyncio.sleep(.1)
+        finally:
             with cls.lock:
-                if platform not in cls.active and len(cls.active) < 2 and time.monotonic() >= cls.until.get(platform, 0):
-                    cls.active.add(platform)
-                    return
-            await asyncio.sleep(.2)
+                queue = cls.waiters.get(platform, [])
+                if ticket in queue:
+                    queue.remove(ticket)
+                if not queue:
+                    cls.waiters.pop(platform, None)
 
     @classmethod
     def leave(cls, platform, error=None, elapsed=0):
@@ -221,17 +235,34 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
     if comments_only and not spec.include_replies:
         spec.include_replies = True
         store.update_spec(rid,spec.model_dump(mode='json'))
-    from src.collection.images import Images, without_text
+    from src.collection.images import Images, image_records
     images = Images(store) if spec.content_mode == 'images' else None
     if images_only and images is None:
         raise ValueError('该记录不是图片采集任务')
     image_attempted = set()
+    image_wake = asyncio.Event()
+    image_task = None
+    image_finished = False
     async def download_images():
         def progress_images():
-            publish_progress('images')
+            # Downloading overlaps discovery; keep the actual traversal stage.
+            publish_progress()
             if platform_event: platform_event('progress', '')
         await images.download(rid, {p:c.get('proxy') for p,c in cookie_map.items()}, cancelled,
                               progress_images, attempted=image_attempted)
+    async def image_pipeline():
+        while True:
+            await image_wake.wait()
+            image_wake.clear()
+            await download_images()
+            if image_finished and not image_wake.is_set():
+                return
+
+    def prepare_images(incoming):
+        incoming = image_records(incoming)
+        if images.discover(rid, incoming):
+            image_wake.set()
+        return incoming
     owner = record['owner']
     stamp = record['created']
     history_rows = []
@@ -245,6 +276,13 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                 history_rows = merge(history_rows, store.rows(old['id']))
     historical = {key(r) for r in history_rows if r.get('type','post')!='comment'}
     previous = store.units(rid)
+    if images:
+        # Convert resumed older image runs too; text-mode runs are untouched.
+        for uid, (saved_rows, saved_state) in previous.items():
+            cleaned = image_records(saved_rows)
+            if cleaned != saved_rows:
+                store.save(rid, uid, cleaned, saved_state)
+        previous = store.units(rid)
     # A previous process may have exited between a chunk commit and cleanup.
     for uid, (saved_rows, _) in previous.items():
         interrupted = []
@@ -265,6 +303,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
     baseline = comment_summary(all_rows, spec.include_replies)['total_comments']
     attempt_started = datetime.now(timezone.utc).isoformat()
     current_platform = current_keyword = ''
+    waiting_platforms, busy_platforms = set(), set()
     stage = 'images' if images_only else 'comments' if comments_only else 'posts'
     search_completed = set()
     def publish_progress(phase=None):
@@ -278,7 +317,8 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                        comments_only=comments_only, current_platform=current_platform,
                        current_keyword=current_keyword, last_progress_at=datetime.now(timezone.utc).isoformat(),
                        search_units_completed=len(search_completed),
-                       search_units_total=len(spec.keywords)*len(spec.platforms))
+                       search_units_total=len(spec.keywords)*len(spec.platforms),
+                       waiting_platforms=sorted(waiting_platforms), busy_platforms=sorted(busy_platforms))
         if images: summary.update(images.summary(rid))
         store.progress(rid, summary)
         if progress:
@@ -296,13 +336,28 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
             store.save(rid, uid, saved_rows, saved_state)
 
     async def acquire(platform):
+        waiting_platforms.add(platform)
+        publish_progress()
         if platform_event:
             platform_event('waiting',platform)
         try:
             await Traffic.enter(platform,cancelled)
-        finally:
+        except BaseException:
+            waiting_platforms.discard(platform)
             if platform_event:
-                platform_event('acquired',platform)
+                platform_event('wait_cancelled',platform)
+            raise
+        waiting_platforms.discard(platform)
+        busy_platforms.add(platform)
+        if platform_event:
+            platform_event('acquired',platform)
+        publish_progress()
+
+    def release(platform, error=None, elapsed=0):
+        Traffic.leave(platform, error, elapsed)
+        busy_platforms.discard(platform)
+        if platform_event:
+            platform_event('released', platform)
     comment_index = None
     last_comment_checkpoint = 0
 
@@ -313,8 +368,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
             incoming = [{**r, 'platform': platform, 'keyword': keyword,
                          **({'collection_kind': 'revisit'} if revisit else {})} for r in incoming]
             if images:
-                incoming = without_text(incoming)
-                images.discover(rid, incoming)
+                incoming = prepare_images(incoming)
             store.save_comment_delta(rid, uid, incoming)
             comment_index.update(incoming)
             all_rows = comment_index.rows()
@@ -328,12 +382,16 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
 
     store.status(rid, 'running')
     try:
+        if images:
+            image_task = asyncio.create_task(image_pipeline())
+            image_wake.set()
         # Finish every search group before visiting any comment endpoint.
         stages = [] if images_only else (['comments'] if comments_only else
                   ['posts'] + (['comments'] if spec.include_replies else []))
         for stage in stages:
             previous = store.units(rid)
-            for platform in spec.platforms:
+            async def run_platform(platform):
+                nonlocal current_platform, current_keyword
                 if platform_event:
                     platform_event('start',platform)
                 current_platform, current_keyword = platform, ''
@@ -346,7 +404,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     errors.append(f'{platform}: 未配置 Cookie；请保存账号配置后续抓')
                     if platform_event:
                         platform_event('done',platform)
-                    continue
+                    return
                 from src.crawlers.twitter_url import TwitterCookieFetcher
                 from src.crawlers.reddit_crawler import RedditCookieFetcher
                 proxy = pc.get('proxy') or None
@@ -355,11 +413,11 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                 if platform not in fetchers:
                     fetchers[platform] = TwitterCookieFetcher(proxy=proxy, block_resources=spec.block_resources) if platform == 'twitter' else RedditCookieFetcher(proxy=proxy)
                 fetcher = fetchers[platform]
+                fetcher._image_collection = images is not None
                 if stage == 'comments':
                     session = CommentSession(fetcher, platform, cookies)
                     comment_sessions[platform] = session
                     fetcher._collection_comment_session = session
-                    comment_index = RowIndex(all_rows)
                     comment_jobs = []
                 if stage == 'comments' and spec.incremental and spec.include_replies:
                     cutoff = datetime.fromisoformat(stamp).date() - timedelta(days=spec.lookback_days)
@@ -387,8 +445,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                         nonlocal rows, all_rows
                         incoming = [{**r, 'platform':platform, 'keyword':keyword} for r in incoming]
                         if images:
-                            incoming = without_text(incoming)
-                            images.discover(rid, incoming)
+                            incoming = prepare_images(incoming)
                         rows = merge(rows, incoming)
                         state['saved_posts'] = sum(r.get('type','post')!='comment' for r in rows)
                         state['last_saved_id'] = key(rows[-1]) if rows else None
@@ -485,7 +542,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                                         if not retry or attempt == spec.max_retries:
                                             break
                                     finally:
-                                        Traffic.leave(platform, error, time.monotonic()-began)
+                                        release(platform, error, time.monotonic()-began)
                                 if not succeeded:
                                     errors.append(f'{platform} {keyword}: {state["error"]}')
                                     break
@@ -523,13 +580,14 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                 if stage == 'comments':
                     from src.crawlers.platform_config import PLATFORM_TIMING_MAP
                     async def fetch_parent(post):
-                        nonlocal current_keyword
+                        nonlocal current_platform, current_keyword
+                        current_platform = platform
                         current_keyword = post.get('keyword', '')
                         publish_progress('comments')
                         return await fetch_comments(fetcher, platform, [post], cookies)
                     await drain_comments(comment_jobs, session, fetch_parent,
                                          lambda: acquire(platform),
-                                         lambda error, elapsed: Traffic.leave(platform, error, elapsed),
+                                         lambda error, elapsed: release(platform, error, elapsed),
                                          cancelled, PLATFORM_TIMING_MAP[platform])
                     store.compact_comments(rid)
                     if checkpoint:
@@ -537,10 +595,40 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
                     await session.close()
                 if platform_event and stage == stages[-1]:
                     platform_event('done',platform)
+            if stage == 'comments':
+                comment_index = RowIndex(all_rows)
+            if stage == 'posts' and spec.count_scope == 'total':
+                # Legacy shared totals allocate the remaining budget in
+                # platform order. Preserve that contract instead of racing
+                # two platforms against the same remaining quota.
+                for platform in spec.platforms:
+                    await run_platform(platform)
+                continue
+            # Independent platform queues share the process-wide fair gates.
+            # Join the whole posts stage before any comment endpoint is visited.
+            workers = [asyncio.create_task(run_platform(p)) for p in spec.platforms]
+            joined = asyncio.gather(*workers)
+            try:
+                if image_task:
+                    completed, _ = await asyncio.wait([joined, image_task], return_when=asyncio.FIRST_COMPLETED)
+                    if image_task in completed:
+                        # The pipeline normally stays alive until discovery
+                        # finishes. Propagate an unexpected failure promptly.
+                        await image_task
+                await joined
+            finally:
+                for worker in workers:
+                    if not worker.done():
+                        worker.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
+                await asyncio.gather(joined, return_exceptions=True)
         if images:
+            stage = 'images'
             current_platform = current_keyword = ''
             publish_progress('images')
-            await download_images()
+            image_finished = True
+            image_wake.set()
+            await image_task
         all_rows = store.rows(rid)
         if images:
             image_state = images.summary(rid)
@@ -554,7 +642,7 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
         if missing:
             errors.append(f'目标 {expected} 条去重主帖，当前新增 {len(fresh)} 条；可访问结果不足或分区未完成，可继续补抓')
         if pending:
-            errors.append(f'{pending} 个主帖的评论待补抓')
+            errors.append(f'{pending} 个主帖的评论区配图待继续检查' if images else f'{pending} 个主帖的评论待补抓')
         status = 'partial' if errors else 'success'
         current_platform = current_keyword = ''
         publish_progress('finished')
@@ -566,6 +654,9 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
             'comments_finished':len(main)-pending if spec.include_replies else 0, 'run_id':rid,
             'count_scope':spec.count_scope, 'date_filter_note': '日期范围按 UTC 日期、结束日期不含当天；Reddit 在可访问搜索结果内筛选，语言过滤仅作用于 X' if spec.since or spec.languages else ''}
     except asyncio.CancelledError:
+        if image_task:
+            image_task.cancel()
+            await asyncio.gather(image_task, return_exceptions=True)
         store.compact_comments(rid)
         if checkpoint:
             checkpoint(all_rows)
@@ -577,6 +668,9 @@ async def collect(store, rid, cookie_map, *, cancelled=lambda: False, progress=N
         store.status(rid,'failed',classify(exc)[2])
         raise
     finally:
+        if image_task:
+            image_task.cancel()
+            await asyncio.gather(image_task, return_exceptions=True)
         for session in comment_sessions.values():
             await session.close()
             session.fetcher._collection_comment_session = None

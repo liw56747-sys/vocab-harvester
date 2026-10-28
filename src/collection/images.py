@@ -89,6 +89,19 @@ def without_text(rows):
     return result
 
 
+def image_records(rows):
+    """Keep parents for traversal recovery, but retain only image-bearing replies."""
+    result = []
+    for row in without_text(rows):
+        if row.get('type') == 'comment' and not image_urls(row):
+            continue
+        if 'replies_data' in row:
+            row['replies_data'] = [r for r in row['replies_data'] or [] if image_urls(r)]
+            row['replies_count'] = len(row['replies_data'])
+        result.append(row)
+    return result
+
+
 def image_urls(row):
     if 'image_urls' in row:
         urls = row['image_urls']
@@ -118,6 +131,7 @@ class Images:
             ''')
 
     def discover(self, rid, rows):
+        added = 0
         with self.store.connect() as db:
             for row in search_export_rows(rows):
                 comment = row.get('type') == 'comment'
@@ -133,10 +147,11 @@ class Images:
                     fields = [row.get('platform',''),row.get('keyword',''),pid,cid,source]
                     ref_id = hashlib.sha256(json.dumps([*fields,target],ensure_ascii=False).encode()).hexdigest()
                     status, error = ('pending','') if allowed_url(target) else ('unsupported','不支持的平台图片地址')
-                    db.execute('INSERT OR IGNORE INTO image_assets(run_id,url,fallback,status,error) VALUES(?,?,?,?,?)',
-                               (rid,target,url,status,error))
+                    added += db.execute('INSERT OR IGNORE INTO image_assets(run_id,url,fallback,status,error) VALUES(?,?,?,?,?)',
+                               (rid,target,url,status,error)).rowcount
                     db.execute('INSERT OR IGNORE INTO image_sources VALUES(?,?,?,?,?,?,?,?)',
                                (rid,ref_id,target,*fields))
+        return added
 
     def summary(self, rid):
         with self.store.connect() as db:

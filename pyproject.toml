@@ -1,6 +1,6 @@
 [project]
 name = "vocab-harvester"
-version = "1.9.3"
+version = "1.9.4"
 description = "社交平台词库采集系统"
 requires-python = ">=3.10"
 

@@ -840,18 +840,24 @@ def _scheduled_real_crawl(targets, keywords, count, sort_by, include_replies, bl
                 if signature != last_signature:
                     beat()
                     last_signature = signature
+            waiting_platforms, busy_platforms = set(), set()
             def platform_event(event, platform):
                 if event == 'waiting':
-                    run.waiting_for_slot = True
+                    waiting_platforms.add(platform)
                 elif event == 'acquired':
-                    run.waiting_for_slot = False
+                    waiting_platforms.discard(platform)
+                    busy_platforms.add(platform)
                     beat()
+                elif event in {'released', 'wait_cancelled'}:
+                    waiting_platforms.discard(platform)
+                    busy_platforms.discard(platform)
                 elif event == 'start':
                     run.start_platform(platform)
                 elif event == 'progress':
                     beat()
                 elif event == 'done':
                     run.finish_platform(platform)
+                run.waiting_for_slot = bool(waiting_platforms) and not busy_platforms
             try:
                 rows, detail = await collect(Store(),run.collection_id,
                     {platform:{**cookies,'proxy':proxy} for platform,cookies,proxy in targets},

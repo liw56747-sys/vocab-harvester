@@ -28,12 +28,20 @@ async def main():
         replies=await page.evaluate(TwitterCookieFetcher._EXTRACT_REPLIES_JS,['123'])
         assert len(replies)==2 and all(len(r['imageUrls'])==1 for r in replies)
         assert replies[0]['text']=='' and replies[1]['text']=='文字配图'
+        # Image mode only extracts IDs/images; text-only rows remain visible to
+        # traversal, without expanding/extracting their bodies.
+        await page.locator('body').evaluate("el=>el.insertAdjacentHTML('beforeend','<article data-testid=\"tweet\"><a href=\"/u/status/999\"></a><div data-testid=\"tweetText\">无图正文</div></article>')")
+        image_replies=await page.evaluate(TwitterCookieFetcher._EXTRACT_REPLIES_JS,{'excludeIds':['123'],'imagesOnly':True})
+        assert len(image_replies)==3 and all('text' not in r for r in image_replies)
+        assert image_replies[-1]['imageUrls']==[]
         errors=[];requests=[];exports=0
         export_gate=asyncio.Event();export_gate.clear()
         state={'id':'images','run_id':'images','created':'2026-10-21','status':'running','active':True,
                'content_mode':'images','saved_posts':100,'total_posts':100,'requested_posts':600,'missing_posts':500,
                'images_found':120,'images_downloaded':90,'images_pending':20,'images_failed':10,'image_files':60,
-               'comments_pending':40,'comments_finished':60,'total_comments':800}
+               'comments_pending':40,'comments_finished':60,'total_comments':800,'new_comments':800,
+               'comments_unstarted':30,'comments_in_progress':2,'comments_partial':8,'comments_failed':0,
+               'phase':'comments','waiting_platforms':['twitter'],'busy_platforms':['reddit']}
         async def route(r):
             nonlocal exports
             path=urlparse(r.request.url).path
@@ -63,6 +71,11 @@ async def main():
         await page.evaluate("document.getElementById('collection-history-panel').open=true")
         await page.locator('[data-result="images"]').click()
         await page.locator('[data-image-export]').wait_for()
+        summary=await page.locator('#collection-history-result').inner_text()
+        card=await page.locator('.run-card').inner_text()
+        assert '本轮新增评论' not in summary+card and '不能除以已完成主帖数' not in summary+card
+        assert '评论区配图已检查主帖' in summary and '检查评论区配图' in card
+        assert '正在等待平台时隙' in card and '同步下载' in card
         assert await page.locator('#collection-history-result [data-download]').count()==0
         await page.wait_for_timeout(3400)
         assert await page.locator('[data-image-export]').count()==1

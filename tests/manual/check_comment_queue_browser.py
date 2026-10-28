@@ -26,11 +26,17 @@ async def main():
         browser=await p.chromium.launch(headless=True)
         context=await browser.new_context()
         errors=[]
+        image_mode=False
         context.on('page',lambda page:page.on('pageerror',lambda e:errors.append(str(e))))
         async def route(r):
             if r.request.resource_type=='document':
                 pid=r.request.url.rsplit('/',1)[-1]
-                await r.fulfill(content_type='text/html',body=HTML.replace('__POST__',pid))
+                body=HTML.replace('__POST__',pid)
+                if image_mode:
+                    body=body.replace('function article(id,text) { return',
+                        'function article(id,text) { const media=id%20===0 ? \'<div data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/\'+id+\'.jpg"></div>\' : \'\'; return')
+                    body=body.replace('<div data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/${id}.jpg"></div>','${media}')
+                await r.fulfill(content_type='text/html',body=body)
             else:
                 await r.abort()
         await context.route('**/*',route)
@@ -44,7 +50,18 @@ async def main():
         assert all(int(post['tweet_id'])*1000 < int(r['tweet_id']) <= int(post['tweet_id'])*1000+100 for post in posts for r in post['replies_data'])
         assert all(len(r['image_urls'])==1 for post in posts for r in post['replies_data'])
         assert not context.pages and not errors,(len(context.pages),errors)
+        image_mode=True
+        posts=[dict(platform='twitter',tweet_id=str(i),url=f'https://x.com/tester/status/{i}',replies=10000) for i in [3000,4000]]
+        fetcher=twitter_url.TwitterCookieFetcher();fetcher._image_collection=True
+        chunks=[]
+        with patch.object(twitter_url,'_TC',timing), managed_attempt(), observe_rows(lambda rows:chunks.extend(rows)):
+            await fetcher._parallel_scrape_replies(context,posts)
+        assert all(post['comments_status']=='finished' and post['image_comments_scanned']==100 for post in posts),posts
+        assert all(len(post['replies_data'])==5 and post['image_scan_exhausted'] for post in posts)
+        assert len(chunks)==10 and all(len(c['replies_data'])==1 for c in chunks)
+        assert all(not r['content'] for post in posts for r in post['replies_data'])
+        assert not context.pages and not errors,(len(context.pages),errors)
         await context.close();await browser.close()
-    print('PASS: real Chromium, two virtual threads, 200 unique replies, ten delta chunks, adaptive waits, image metadata, page cleanup')
+    print('PASS: real Chromium, text traversal 200 replies; sparse image traversal 200 checks/10 images, no count-based retry, adaptive waits and page cleanup')
 
 asyncio.run(main())
